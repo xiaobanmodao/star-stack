@@ -1229,6 +1229,9 @@ button.small {
 .oj-detail {
   display: grid;
   gap: 16px;
+  max-width: 800px;
+  margin: 0 auto;
+  width: calc(100vw - var(--sidebar-collapsed-width, 44px) - 64px);
 }
 
 .oj-detail.split {
@@ -1241,7 +1244,8 @@ button.small {
 
 .oj-detail-main {
   display: grid;
-  gap: 0;
+  grid-template-columns: 1fr auto;
+  gap: 16px;
 }
 
 .oj-detail-content {
@@ -1249,6 +1253,32 @@ button.small {
   border: 1px solid var(--border);
   background: rgba(8, 12, 20, 0.9);
   overflow: hidden;
+}
+
+.oj-detail-sidebar {
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.oj-sidebar-section {
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(8, 12, 20, 0.9);
+  padding: 12px 16px;
+}
+
+.oj-sidebar-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.oj-sidebar-value {
+  font-size: 14px;
+  color: var(--text);
+  font-weight: 500;
 }
 
 .oj-detail-ide {
@@ -1310,8 +1340,14 @@ button.small {
 
 .oj-sample {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: 12px;
+  align-items: start;
+}
+
+.oj-sample > div {
+  display: grid;
+  grid-template-rows: auto 1fr;
 }
 
 .oj-sample-title {
@@ -1321,6 +1357,7 @@ button.small {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 32px;
 }
 
 .oj-sample-title button {
@@ -1336,6 +1373,7 @@ button.small {
   color: #dfe9f7;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 12px;
+  overflow: auto;
 }
 
 .oj-record-filters {

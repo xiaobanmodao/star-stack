@@ -375,8 +375,8 @@ app.get('/api/oj/problems/:id', async (req, res) => {
   const identifier = req.params.id
   const isNumeric = /^\d+$/.test(identifier)
   const row = isNumeric
-    ? await db.get(`SELECT * FROM problems WHERE id = ?`, Number(identifier))
-    : await db.get(`SELECT * FROM problems WHERE slug = ?`, identifier)
+    ? await db.get(`SELECT p.*, u.name as creator_name FROM problems p LEFT JOIN users u ON p.creator_id = u.id WHERE p.id = ?`, Number(identifier))
+    : await db.get(`SELECT p.*, u.name as creator_name FROM problems p LEFT JOIN users u ON p.creator_id = u.id WHERE p.slug = ?`, identifier)
   if (!row) {
     return res.status(404).json({ message: '题目不存在' })
   }
@@ -399,6 +399,8 @@ app.get('/api/oj/problems/:id', async (req, res) => {
       dataRange: row.data_range || '',
       samples: sampleList,
       createdAt: row.created_at,
+      creatorId: row.creator_id,
+      creatorName: row.creator_name,
     },
   })
 })
@@ -425,11 +427,24 @@ app.post('/api/problems', async (req, res) => {
   const now = new Date().toISOString()
 
   try {
-    // 插入题目
-    const result = await db.run(
-      `INSERT INTO problems (slug, title, difficulty, tags, statement, input_desc, output_desc, data_range, samples, creator_id, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      null, // slug 暂时为空，后面根据ID生成
+    // 查找最小的闲置题号
+    const existingIds = await db.all(`SELECT id FROM problems ORDER BY id ASC`)
+    let nextId = 1001 // 从 1001 开始
+
+    for (const row of existingIds) {
+      if (row.id === nextId) {
+        nextId++
+      } else if (row.id > nextId) {
+        break
+      }
+    }
+
+    // 插入题目，指定题号
+    await db.run(
+      `INSERT INTO problems (id, slug, title, difficulty, tags, statement, input_desc, output_desc, data_range, samples, creator_id, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      nextId,
+      `p${nextId}`,
       title.trim(),
       difficulty || '入门',
       Array.isArray(tags) ? tags.join(',') : (tags || ''),
@@ -443,15 +458,8 @@ app.post('/api/problems', async (req, res) => {
       now
     )
 
-    const problemId = result.lastID
-
-    // 更新 slug
-    const slug = `p${problemId}`
-    await db.run(
-      `UPDATE problems SET slug = ? WHERE id = ?`,
-      slug,
-      problemId
-    )
+    const problemId = nextId
+    const slug = `p${nextId}`
 
     // 插入样例作为测试用例
     for (const sample of samples) {
