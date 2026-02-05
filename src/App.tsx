@@ -3060,6 +3060,12 @@ function App() {
                         verticalScrollbarSize: 8,
                         horizontalScrollbarSize: 8,
                       },
+                      // 禁用代码提示
+                      quickSuggestions: false,
+                      suggestOnTriggerCharacters: false,
+                      acceptSuggestionOnCommitCharacter: false,
+                      acceptSuggestionOnEnter: 'off',
+                      wordBasedSuggestions: 'off',
                     }}
                   />
                 </div>
