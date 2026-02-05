@@ -1,0 +1,53 @@
+StarStack 部署文件清单
+======================
+
+✅ 核心配置文件
+  - docker-compose.yml          Docker 编排配置
+  - Dockerfile.frontend          前端镜像构建
+  - Dockerfile.backend           后端镜像构建
+  - nginx.conf                   Nginx 配置
+  - ecosystem.config.js          PM2 配置（传统部署）
+
+✅ 部署文档
+  - README_DEPLOYMENT.md         部署文档总览（从这里开始）
+  - DEPLOYMENT.md                快速部署指南
+  - OPERATIONS.md                运维手册
+  - CODE_QUALITY_REPORT.md       代码质量报告
+
+✅ 自动化脚本
+  - deploy-check.sh              部署前环境检查脚本
+  - deploy.sh                    一键部署脚本
+  - backup.sh                    数据库备份脚本
+  - healthcheck.sh               健康检查脚本
+
+✅ 项目文件
+  - package.json                 前端依赖
+  - server/package.json          后端依赖
+  - server/index.js              后端主程序
+  - server/judge.js              评测引擎
+  - server/db.js                 数据库初始化
+  - src/App.tsx                  前端主组件
+
+部署步骤
+========
+
+方式一：一键部署（推荐）
+  1. bash deploy-check.sh      # 检查环境
+  2. bash deploy.sh            # 自动部署
+  3. 访问 http://服务器IP:3000
+
+方式二：手动部署
+  1. mkdir -p server/data logs backups
+  2. docker-compose build --no-cache
+  3. docker-compose up -d
+  4. docker-compose logs -f
+  5. 访问 http://服务器IP:3000
+
+重要提醒
+========
+⚠️  部署后必须立即修改默认密码！
+⚠️  默认账号：admin / admin123
+⚠️  建议配置 SSL 证书
+⚠️  建议设置自动备份
+
+详细文档请查看 README_DEPLOYMENT.md

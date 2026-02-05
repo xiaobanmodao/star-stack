@@ -1,0 +1,17 @@
+{
+  "users": [
+    {
+      "id": "xiaobanmodao",
+      "name": "小版魔刀",
+      "passwordHash": "$2a$10$BZYjL5tk0Dug.3OEvv2YkO95gVSEdUv0NkP4YnmQAA2wcjUqhtnru",
+      "createdAt": "2026-01-30T14:24:32.047Z"
+    }
+  ],
+  "sessions": [
+    {
+      "token": "935d30482722e5f8fe198c2a2b5c867e77e86b2e65c3382f",
+      "userId": "xiaobanmodao",
+      "createdAt": "2026-01-30T14:24:41.712Z"
+    }
+  ]
+}
