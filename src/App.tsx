@@ -31,6 +31,7 @@ type OjProblemDetail = OjProblemSummary & {
   samples: { input: string; output: string }[]
   creatorId?: string
   creatorName?: string
+  maxScore?: number | null
 }
 
 type OjSubmission = {
@@ -47,6 +48,7 @@ type OjSubmission = {
   code?: string | null
   canViewCode?: boolean
   results?: { index: number; status: string; message?: string; timeMs?: number }[]
+  score?: number
   createdAt?: string
 }
 
@@ -3213,55 +3215,49 @@ function App() {
 
     return (
       <div className={`oj-detail ${ideOpen ? 'split' : ''}`}>
+        {/* 标题区域 - 在最外层 */}
+        <div className="oj-detail-title-wrapper">
+          <div className="oj-detail-title">
+            <span className="oj-code-label">p{problem.id}</span>
+            {problem.title}
+          </div>
+          <div className="oj-detail-meta">
+            {problem.tags.map((tagItem) => (
+              <span key={tagItem} className="oj-tag">
+                {tagItem}
+              </span>
+            ))}
+          </div>
+        </div>
+
         <div className="oj-detail-main">
           <div className="oj-detail-content">
-            {/* 标题 */}
-            <div className="oj-detail-header">
-              <div>
-                <div className="oj-detail-title">
-                  <span className="oj-code-label">p{problem.id}</span>
-                  {problem.title}
-                </div>
-                <div className="oj-detail-meta">
-                  <span className={`oj-badge ${problem.difficulty}`}>{problem.difficulty}</span>
-                  {problem.tags.map((tagItem) => (
-                    <span key={tagItem} className="oj-tag">
-                      {tagItem}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <div className="hero-actions">
-                {!ideOpen && currentUser && (
-                  <button
-                    className="ghost"
-                    onClick={async () => {
-                      const inPlan = problemPlan.some(p => p.problem_id === problem.id)
-                      if (inPlan) {
-                        const plan = problemPlan.find(p => p.problem_id === problem.id)
-                        if (plan) await removeFromPlan(plan.id)
-                      } else {
-                        await addToPlan(problem.id)
-                      }
-                    }}
-                  >
-                    {problemPlan.some(p => p.problem_id === problem.id) ? '从计划移除' : '加入计划'}
-                  </button>
-                )}
-                {!ideOpen && (
-                  <button className="ghost" onClick={() => navigate(`/oj/records/${problem.id}`)}>
-                    提交记录
-                  </button>
-                )}
-                <button className="ghost submit-btn" onClick={ideOpen ? () => setIdeOpen(false) : openIde}>
-                  {ideOpen ? '关闭提交' : '提交'}
-                </button>
-              </div>
-            </div>
-
             {/* 题目描述 */}
-            <section className="oj-section">
-              <h3>题目描述</h3>
+            <section className="oj-section oj-section-with-actions">
+              <div className="oj-section-header-row">
+                <h3>题目描述</h3>
+                <div className="hero-actions">
+                  {currentUser && (
+                    <button
+                      className="ghost small"
+                      onClick={async () => {
+                        const inPlan = problemPlan.some(p => p.problem_id === problem.id)
+                        if (inPlan) {
+                          const plan = problemPlan.find(p => p.problem_id === problem.id)
+                          if (plan) await removeFromPlan(plan.id)
+                        } else {
+                          await addToPlan(problem.id)
+                        }
+                      }}
+                    >
+                      {problemPlan.some(p => p.problem_id === problem.id) ? '从计划移除' : '加入计划'}
+                    </button>
+                  )}
+                  <button className="ghost small" onClick={ideOpen ? () => setIdeOpen(false) : openIde}>
+                    {ideOpen ? '关闭提交' : '提交'}
+                  </button>
+                </div>
+              </div>
               <div dangerouslySetInnerHTML={{ __html: renderLatex(problem.statement) }} />
             </section>
 
@@ -3314,15 +3310,35 @@ function App() {
           {!ideOpen && (
             <div className="oj-detail-sidebar">
               <div className="oj-sidebar-section">
-                <div className="oj-sidebar-label">题号</div>
-                <div className="oj-sidebar-value">P{problem.id}</div>
-              </div>
-              {problem.creatorName && (
-                <div className="oj-sidebar-section">
-                  <div className="oj-sidebar-label">出题人</div>
-                  <div className="oj-sidebar-value">{problem.creatorName}</div>
+                <div className="oj-sidebar-item">
+                  <div className="oj-sidebar-label">题号</div>
+                  <div className="oj-sidebar-value">P{problem.id}</div>
                 </div>
-              )}
+                {problem.creatorName && (
+                  <div className="oj-sidebar-item">
+                    <div className="oj-sidebar-label">出题人</div>
+                    <div className="oj-sidebar-value">{problem.creatorName}</div>
+                  </div>
+                )}
+                <div className="oj-sidebar-item">
+                  <div className="oj-sidebar-label">难度</div>
+                  <div className="oj-sidebar-value">
+                    <span className={`oj-badge ${problem.difficulty}`}>{problem.difficulty}</span>
+                  </div>
+                </div>
+                {problem.maxScore !== null && problem.maxScore !== undefined && (
+                  <div className="oj-sidebar-item">
+                    <div className="oj-sidebar-label">历史最高分</div>
+                    <div className="oj-sidebar-value">{problem.maxScore}</div>
+                  </div>
+                )}
+                <button
+                  className="oj-sidebar-button"
+                  onClick={() => navigate(`/oj/records/${problem.id}`)}
+                >
+                  提交记录
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -3632,6 +3648,11 @@ function App() {
               {submission?.status || (stage === 'running' ? '评测中' : '等待提交')}
             </div>
             {submission?.message && <div className="judge-status-message">{submission.message}</div>}
+            {submission?.score !== undefined && (
+              <div className={`judge-status-score ${submission.score === 100 ? 'score-perfect' : 'score-partial'}`}>
+                得分: {submission.score}
+              </div>
+            )}
             {!submission && stage === 'running' && <div className="judge-status-wait">正在判题</div>}
           </div>
         </div>
@@ -3777,6 +3798,7 @@ function App() {
             <div>用户</div>
             <div>语言</div>
             <div>状态</div>
+            <div>分数</div>
             <div>耗时</div>
           </div>
           {currentRecords.map((record) => (
@@ -3791,6 +3813,7 @@ function App() {
               </div>
               <div>{record.language}</div>
               <div>{record.status}</div>
+              <div className={record.score === 100 ? 'score-perfect' : 'score-partial'}>{record.score ?? 0}</div>
               <div>{record.timeMs ? `${record.timeMs}ms` : '-'}</div>
             </div>
           ))}
@@ -3947,6 +3970,7 @@ function App() {
               <div>{record.problemTitle}</div>
               <div>{record.language}</div>
               <div>{record.status}</div>
+              <div className={record.score === 100 ? 'score-perfect' : 'score-partial'}>{record.score ?? 0}分</div>
               <div>{record.timeMs ? `${record.timeMs}ms` : '-'}</div>
             </div>
           ))}

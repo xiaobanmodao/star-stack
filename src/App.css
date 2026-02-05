@@ -342,7 +342,7 @@ body {
 
 .hero-actions {
   display: flex;
-  gap: 12px;
+  gap: 16px;
   flex-wrap: wrap;
 }
 
@@ -498,14 +498,14 @@ body {
 button.primary,
 button.ghost {
   border-radius: 12px;
-  padding: 10px 18px;
+  padding: 12px 20px;
   font-weight: 600;
   letter-spacing: 0.05em;
   font-size: 14px;
 }
 
 button.ghost.submit-btn {
-  padding: 10px 24px;
+  padding: 12px 28px;
 }
 
 button {
@@ -1229,7 +1229,7 @@ button.small {
 .oj-detail {
   display: grid;
   gap: 16px;
-  max-width: 800px;
+  max-width: 1000px;
   margin: 0 auto;
   width: calc(100vw - var(--sidebar-collapsed-width, 44px) - 64px);
 }
@@ -1239,6 +1239,7 @@ button.small {
   grid-template-columns: 1fr;
   gap: 16px;
   align-items: start;
+  max-width: none;
   --ide-panel-width: clamp(420px, 55vw, 860px);
 }
 
@@ -1246,6 +1247,11 @@ button.small {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 16px;
+}
+
+.oj-detail.split .oj-detail-main {
+  grid-template-columns: 1fr;
+  margin-right: calc(var(--ide-panel-width) + 24px);
 }
 
 .oj-detail-content {
@@ -1256,29 +1262,59 @@ button.small {
 }
 
 .oj-detail-sidebar {
-  width: 200px;
+  width: 220px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
 }
 
 .oj-sidebar-section {
   border-radius: 8px;
   border: 1px solid var(--border);
   background: rgba(8, 12, 20, 0.9);
-  padding: 12px 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.oj-sidebar-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
 }
 
 .oj-sidebar-label {
   font-size: 12px;
   color: var(--muted);
-  margin-bottom: 6px;
+  font-weight: 400;
+  flex-shrink: 0;
 }
 
 .oj-sidebar-value {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--text);
+  font-weight: 600;
+  text-align: right;
+}
+
+.oj-sidebar-button {
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 6px;
+  border: 1px solid rgba(79, 195, 247, 0.3);
+  background: transparent;
+  color: var(--accent);
+  font-size: 14px;
   font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.oj-sidebar-button:hover {
+  background: rgba(79, 195, 247, 0.15);
+  border-color: rgba(79, 195, 247, 0.5);
 }
 
 .oj-detail-ide {
@@ -1290,21 +1326,15 @@ button.small {
   z-index: 12;
 }
 
-.oj-detail.split .oj-detail-main {
-  margin-right: calc(var(--ide-panel-width) + 24px);
-}
-
-.oj-detail-header {
+.oj-detail-title-wrapper {
+  margin-bottom: 12px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  padding: 20px 24px;
-  background: rgba(8, 12, 20, 0.95);
+  flex-direction: column;
+  gap: 8px;
 }
 
 .oj-detail-title {
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -1319,15 +1349,36 @@ button.small {
 }
 
 .oj-section {
-  padding: 24px 24px;
+  padding: 20px 32px;
+}
+
+.oj-section-with-actions {
+  position: relative;
+}
+
+.oj-section-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 10px;
+  gap: 20px;
+}
+
+.oj-section-header-row h3 {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.oj-section-header-row .hero-actions {
+  margin-top: -4px;
 }
 
 .oj-section:first-of-type {
-  padding-top: 20px;
+  padding-top: 24px;
 }
 
 .oj-section h3 {
-  margin: 0 0 12px 0;
+  margin: 0 0 10px 0;
   font-size: 16px;
   font-weight: 600;
   color: var(--text);
@@ -1335,13 +1386,13 @@ button.small {
 
 .oj-samples {
   display: grid;
-  gap: 12px;
+  gap: 16px;
 }
 
 .oj-sample {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 16px;
   align-items: start;
 }
 
@@ -1353,7 +1404,7 @@ button.small {
 .oj-sample-title {
   font-size: 12px;
   color: var(--muted);
-  margin-bottom: 6px;
+  margin-bottom: 10px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1743,6 +1794,20 @@ button.small {
 .judge-status-message {
   font-size: 13px;
   color: var(--muted);
+}
+
+.judge-status-score {
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.score-perfect {
+  color: #4caf50;
+}
+
+.score-partial {
+  color: #f44336;
 }
 
 .judge-status-wait {

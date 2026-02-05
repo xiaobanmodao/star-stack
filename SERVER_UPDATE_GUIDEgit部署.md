@@ -191,11 +191,16 @@ cp server/data/starstack.sqlite server/data/starstack.sqlite.backup.$(date +%Y%m
 # 拉取更新
 git pull
 
-# 重启服务
-pm2 restart starstack
+const PORT = process.env.PORT || 3000
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`)
+})
 
-# 查看日志确认正常
-pm2 logs starstack
+
+pm2 reload starstack-backend
+
+# 6. 重载 Nginx
+sudo nginx -s reload
 ```
 
 ### 场景2：添加新功能后更新

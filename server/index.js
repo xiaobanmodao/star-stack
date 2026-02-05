@@ -341,8 +341,19 @@ app.get('/api/oj/problems', async (req, res) => {
   const where = ['status = ?']
   const params = ['published']
   if (search) {
-    where.push(`(title LIKE ? OR statement LIKE ?)`)
-    params.push(`%${search}%`, `%${search}%`)
+    const trimmedSearch = search.trim()
+    // 检查是否是题号搜索 (P1001, p1001, 1001等格式)
+    const problemNumberMatch = trimmedSearch.match(/^[pP]?(\d+)$/)
+    if (problemNumberMatch) {
+      // 题号搜索：精确匹配题号
+      const problemId = problemNumberMatch[1]
+      where.push(`(id = ? OR slug LIKE ?)`)
+      params.push(Number(problemId), `%${problemId}%`)
+    } else {
+      // 关键字搜索：搜索标题、题目描述和标签
+      where.push(`(title LIKE ? OR statement LIKE ? OR tags LIKE ?)`)
+      params.push(`%${trimmedSearch}%`, `%${trimmedSearch}%`, `%${trimmedSearch}%`)
+    }
   }
   if (tag) {
     where.push(`tags LIKE ?`)
@@ -386,6 +397,22 @@ app.get('/api/oj/problems/:id', async (req, res) => {
   )
   const sampleList =
     samples.length > 0 ? samples : JSON.parse(row.samples || '[]')
+
+  // 获取当前用户的最高分数
+  let maxScore = null
+  const token = req.headers.authorization?.replace('Bearer ', '')
+  if (token) {
+    const session = await db.get(`SELECT user_id FROM sessions WHERE token = ?`, token)
+    if (session) {
+      const scoreResult = await db.get(
+        `SELECT MAX(score) as max_score FROM submissions WHERE problem_id = ? AND user_id = ?`,
+        row.id,
+        session.user_id
+      )
+      maxScore = scoreResult?.max_score ?? null
+    }
+  }
+
   return res.json({
     problem: {
       id: row.id,
@@ -401,6 +428,7 @@ app.get('/api/oj/problems/:id', async (req, res) => {
       createdAt: row.created_at,
       creatorId: row.creator_id,
       creatorName: row.creator_name,
+      maxScore,
     },
   })
 })
@@ -736,7 +764,7 @@ app.get('/api/oj/submissions', async (req, res) => {
     params.push(Number(problemId))
   }
   const rows = await db.all(
-    `SELECT s.id, s.problem_id, s.language, s.status, s.time_ms, s.memory_kb, s.created_at, s.results_json,
+    `SELECT s.id, s.problem_id, s.language, s.status, s.time_ms, s.memory_kb, s.score, s.created_at, s.results_json,
             p.title as problem_title
      FROM submissions s
      JOIN problems p ON p.id = s.problem_id
@@ -754,6 +782,7 @@ app.get('/api/oj/submissions', async (req, res) => {
       status: row.status,
       timeMs: row.time_ms,
       memoryKb: row.memory_kb,
+      score: row.score ?? 0,
       results: parseResults(row.results_json),
       createdAt: row.created_at,
     })),
@@ -812,7 +841,7 @@ app.get('/api/oj/submissions/all', async (req, res) => {
     params.push(String(userId))
   }
   const rows = await db.all(
-    `SELECT s.id, s.problem_id, s.user_id, s.language, s.status, s.time_ms, s.memory_kb, s.message, s.code, s.created_at, s.results_json,
+    `SELECT s.id, s.problem_id, s.user_id, s.language, s.status, s.time_ms, s.memory_kb, s.score, s.message, s.code, s.created_at, s.results_json,
             u.name as user_name
      FROM submissions s
      JOIN users u ON u.id = s.user_id
@@ -831,6 +860,7 @@ app.get('/api/oj/submissions/all', async (req, res) => {
       status: row.status,
       timeMs: row.time_ms,
       memoryKb: row.memory_kb,
+      score: row.score ?? 0,
       message: row.message,
       code: row.user_id === user.id ? row.code : null,
       canViewCode: row.user_id === user.id,
@@ -849,7 +879,7 @@ app.get('/api/oj/submissions/:id', async (req, res) => {
     return res.status(400).json({ message: '无效的提交编号' })
   }
   const row = await db.get(
-    `SELECT s.id, s.problem_id, s.user_id, s.language, s.status, s.time_ms, s.memory_kb, s.message, s.code, s.created_at, s.results_json,
+    `SELECT s.id, s.problem_id, s.user_id, s.language, s.status, s.time_ms, s.memory_kb, s.score, s.message, s.code, s.created_at, s.results_json,
             p.title as problem_title,
             u.name as user_name
      FROM submissions s
@@ -878,6 +908,7 @@ app.get('/api/oj/submissions/:id', async (req, res) => {
       timeMs: row.time_ms,
       memoryKb: row.memory_kb,
       message: row.message,
+      score: row.score ?? 0,
       code: canViewCode ? row.code : null,
       canViewCode: canViewCode,
       results: parseResults(row.results_json),
@@ -927,12 +958,13 @@ app.post('/api/oj/submissions', async (req, res) => {
   const message = judgeResult.message
   const timeMs = judgeResult.timeMs ?? null
   const memoryKb = null
+  const score = judgeResult.score ?? 0
   const results = Array.isArray(judgeResult.results) ? judgeResult.results : []
   const resultsJson = JSON.stringify(results)
   const createdAt = new Date().toISOString()
   const result = await db.run(
-    `INSERT INTO submissions (problem_id, user_id, language, code, status, time_ms, memory_kb, message, results_json, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO submissions (problem_id, user_id, language, code, status, time_ms, memory_kb, message, results_json, score, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     Number(problemId),
     user.id,
     language,
@@ -942,6 +974,7 @@ app.post('/api/oj/submissions', async (req, res) => {
     memoryKb,
     message,
     resultsJson,
+    score,
     createdAt
   )
 
@@ -977,6 +1010,7 @@ app.post('/api/oj/submissions', async (req, res) => {
       memoryKb,
       message,
       results,
+      score,
       createdAt,
     },
   })

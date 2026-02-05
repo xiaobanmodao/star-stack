@@ -433,12 +433,16 @@ export const judgeSubmission = async ({ language, code, testcases }) => {
     }
 
     const totalTime = results.reduce((sum, item) => sum + (item.timeMs ?? 0), 0)
+    const totalTests = results.length
+    const passedTests = results.filter(r => r.status === 'Accepted').length
+    const score = totalTests > 0 ? Math.round((passedTests / totalTests) * 100) : 0
 
     return {
       status: overallStatus,
       message: statusMessage(overallStatus),
       timeMs: totalTime,
       results,
+      score,
     }
   } catch (error) {
     return {

@@ -101,6 +101,9 @@ export const initDb = async () => {
   if (submissionColumns.length > 0 && !submissionNames.includes('results_json')) {
     await db.exec(`ALTER TABLE submissions ADD COLUMN results_json TEXT;`)
   }
+  if (submissionColumns.length > 0 && !submissionNames.includes('score')) {
+    await db.exec(`ALTER TABLE submissions ADD COLUMN score INTEGER DEFAULT 0;`)
+  }
 
   // 添加 problems 表的新字段
   const problemColumns = await db.all(`PRAGMA table_info(problems)`)
