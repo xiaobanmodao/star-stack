@@ -43,7 +43,7 @@ sudo nginx -s reload
 pm2 logs star-stack-api --lines 50
 
 # 10. 验证服务
-curl http://localhost:5174/api/health
+curl http://localhost:3000/api/health
 curl -I http://localhost
 ```
 
@@ -69,14 +69,21 @@ cd server && npm install --production && cd ..
 npm run build
 
 # 5. 零停机重启后端（PM2 会自动处理）
-pm2 reload star-stack-api
+
+const PORT = process.env.PORT || 3000
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`)
+})
+
+
+pm2 reload starstack-backend
 
 # 6. 重载 Nginx
 sudo nginx -s reload
 
 # 7. 验证
 pm2 status
-curl http://localhost:5174/api/health
+curl http://localhost:3000/api/health
 ```
 
 **说明：**
