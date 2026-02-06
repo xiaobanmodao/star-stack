@@ -7,40 +7,47 @@
 
 ## 快速修复步骤
 
-### 步骤 1: 上传诊断工具到服务器
+### 方法 A: 使用完整修复工具（推荐）
 
-将 `diagnose.js` 文件上传到服务器的 `server/` 目录下。
-
-### 步骤 2: 在服务器上运行诊断
+如果诊断工具报错 "no such table: sessions" 或数据库结构不完整，使用此方法。
 
 ```bash
-# 进入项目目录
-cd /path/to/star-stack/server
+# 1. 进入项目目录
+cd /path/to/star-stack
 
-# 运行诊断
-node diagnose.js
+# 2. 拉取最新代码
+git pull origin main
+
+# 3. 进入 server 目录
+cd server
+
+# 4. 运行完整修复工具
+node fix-database.js
 ```
 
-诊断工具会检查：
-- ✓ submissions 表是否有 score 字段
-- ✓ 数据库索引是否完整
-- ✓ sessions 和 problems 表数据
-- ✓ 关键查询是否能正常执行
+这个工具会：
+- ✓ 运行完整的数据库初始化
+- ✓ 创建所有缺失的表
+- ✓ 添加所有必需的字段
+- ✓ 创建优化索引
+- ✓ 验证修复结果
 
-### 步骤 3: 运行修复程序
+### 方法 B: 使用诊断工具（数据库结构完整时）
 
-如果诊断发现问题，运行修复：
+如果只是缺少 score 字段或索引，使用此方法。
 
 ```bash
+# 1. 进入项目目录
+cd /path/to/star-stack/server
+
+# 2. 运行诊断
+node diagnose.js
+
+# 3. 如果发现问题，运行修复
 node diagnose.js --fix
 ```
 
-修复程序会：
-- ✓ 添加缺失的 score 字段
-- ✓ 创建必要的数据库索引
-- ✓ 验证修复结果
-
-### 步骤 4: 重启后端服务
+### 步骤 2: 重启后端服务
 
 ```bash
 pm2 restart star-stack-api
@@ -49,7 +56,7 @@ pm2 restart star-stack-api
 pm2 logs star-stack-api --lines 50
 ```
 
-### 步骤 5: 测试
+### 步骤 3: 测试
 
 1. 清除浏览器缓存
 2. 重新登录
