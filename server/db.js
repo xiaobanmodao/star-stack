@@ -317,6 +317,66 @@ export const initDb = async () => {
     CREATE INDEX IF NOT EXISTS idx_problem_plan_user ON problem_plan (user_id);
   `)
 
+  // Discussion tables
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS discussion_posts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      content TEXT NOT NULL,
+      problem_id INTEGER,
+      view_count INTEGER DEFAULT 0,
+      like_count INTEGER DEFAULT 0,
+      comment_count INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (problem_id) REFERENCES problems(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS discussion_comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      parent_id INTEGER,
+      like_count INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (post_id) REFERENCES discussion_posts(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (parent_id) REFERENCES discussion_comments(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS discussion_likes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(user_id, target_type, target_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_posts_user ON discussion_posts(user_id);
+    CREATE INDEX IF NOT EXISTS idx_posts_problem ON discussion_posts(problem_id);
+    CREATE INDEX IF NOT EXISTS idx_posts_created ON discussion_posts(created_at);
+    CREATE INDEX IF NOT EXISTS idx_comments_post ON discussion_comments(post_id);
+    CREATE INDEX IF NOT EXISTS idx_comments_parent ON discussion_comments(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_likes_target ON discussion_likes(target_type, target_id);
+    CREATE INDEX IF NOT EXISTS idx_likes_user ON discussion_likes(user_id);
+
+    CREATE TABLE IF NOT EXISTS discussion_views (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(post_id, user_id),
+      FOREIGN KEY (post_id) REFERENCES discussion_posts(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_discussion_views_post ON discussion_views(post_id);
+  `)
+
   // Initialize user_stats for existing users
   const existingUsers = await db.all(`SELECT id FROM users`)
   for (const user of existingUsers) {

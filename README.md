@@ -5,6 +5,7 @@
 ## 功能概览
 - 账号系统：注册/登录/修改资料
 - OJ 评测：题库筛选、题目详情、在线 IDE、提交评测与记录
+- 讨论大厅：发帖、楼中楼评论、点赞、富文本编辑器、关联题目
 - 后台管理：仅管理员可见（用户管理）
 - 评测优化：预热机制消除时间误差、独立路由防止重复评测
 - 视觉效果：火箭发射动画、烟花效果（带重力）、大字结果展示
@@ -47,6 +48,10 @@ API 使用相对路径 `/api/...`，后端启用了 CORS，前后端分开启动
 - `/oj/judge/:id` 查看提交评测（独立路由，刷新不重复评测）
 - `/oj/records/:id` 某题提交记录
 - `/oj/submissions` 我的提交
+- `/discussions` 讨论列表
+- `/discussions/create` 发起讨论
+- `/discussions/:id` 帖子详情
+- `/discussions/:id/edit` 编辑帖子
 
 ## 主要 API（摘要）
 账号
@@ -77,6 +82,16 @@ OJ
 - `POST /api/admin/users/:id/ban`
 - `DELETE /api/admin/users/:id`
 
+讨论
+- `GET /api/discussions`
+- `GET /api/discussions/:id`
+- `POST /api/discussions`
+- `PUT /api/discussions/:id`
+- `DELETE /api/discussions/:id`
+- `POST /api/discussions/:id/comments`
+- `DELETE /api/discussions/comments/:id`
+- `POST /api/discussions/like`
+
 ## 目录结构（关键）
 - `src/App.tsx` 核心前端逻辑（页面、路由、IDE、评测页）
 - `src/App.css` 全站样式（星空、布局、OJ、动画、后台）
@@ -85,6 +100,63 @@ OJ
 - `server/db.js` 数据库初始化
 
 ## 更新日志
+
+### 2026-02-09 - 讨论大厅功能
+
+#### 1. 讨论大厅（Discussion Hall）
+**功能：** 全站讨论系统，支持发帖、评论、点赞
+
+**核心特性：**
+- 帖子列表：搜索、按最新/最热排序、分页
+- 帖子可选关联某道题目
+- 楼中楼嵌套回复（帖子 → 评论 → 回复）
+- 帖子和评论的点赞/取消点赞
+- 基于 contentEditable 的轻量富文本编辑器（粗体、斜体、代码、代码块、链接、列表）
+- 作者或管理员可编辑/删除帖子和评论
+
+**安全措施：**
+- HTML 白名单过滤防 XSS（仅允许 p, br, strong, em, code, pre, a, ul, ol, li 等安全标签）
+- 同一用户 10 秒内不能重复发帖
+- 内容长度限制：标题 ≤200 字符，帖子 ≤50000 字符，评论 ≤10000 字符
+
+**浏览量统计：**
+- 基于唯一用户计数，同一用户多次打开不重复计数
+- 使用 `discussion_views` 表记录用户浏览记录
+
+**数据库新增表：**
+- `discussion_posts` — 帖子表
+- `discussion_comments` — 评论表（支持楼中楼）
+- `discussion_likes` — 点赞表
+- `discussion_views` — 浏览记录表（唯一用户计数）
+
+**新增 API：**
+- `GET /api/discussions` — 帖子列表（分页、排序、搜索）
+- `GET /api/discussions/:id` — 帖子详情 + 评论树
+- `POST /api/discussions` — 创建帖子
+- `PUT /api/discussions/:id` — 编辑帖子
+- `DELETE /api/discussions/:id` — 删除帖子
+- `POST /api/discussions/:id/comments` — 发表评论/回复
+- `DELETE /api/discussions/comments/:id` — 删除评论
+- `POST /api/discussions/like` — 点赞/取消点赞
+
+**新增路由：**
+- `/discussions` — 讨论列表
+- `/discussions/create` — 发起讨论
+- `/discussions/:id` — 帖子详情
+- `/discussions/:id/edit` — 编辑帖子
+
+**UI 优化：**
+- 讨论页面覆盖整个可用空间，深空主题风格
+- 用户头像显示在帖子列表、帖子详情、评论区的用户名左侧
+- 无头像用户显示首字母渐变色圆形占位符
+
+**修改文件：**
+- `server/db.js` — 新增 4 张表及索引
+- `server/index.js` — 新增 8 个 API 路由、HTML 过滤、频率限制
+- `src/App.tsx` — 新增类型定义、4 个页面组件、富文本编辑器、路由、侧边栏导航
+- `src/App.css` — 新增讨论相关全部样式
+
+---
 
 ### 2026-02-05 - 分数系统与搜索增强
 

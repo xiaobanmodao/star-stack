@@ -3665,3 +3665,727 @@ button.danger:hover {
     width: 100%;
   }
 }
+
+/* =============================================
+   Discussion Hall Styles
+   ============================================= */
+
+.discussion-list-page,
+.discussion-detail-page,
+.discussion-create-page {
+  min-height: calc(100vh - var(--topbar-offset) - 64px);
+  margin: -32px;
+  padding: 32px 40px;
+  width: calc(100% + 64px);
+  background: rgba(5, 8, 14, 0.4);
+  border-radius: 0;
+}
+
+.discussion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.discussion-header h2 {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.discussion-loading,
+.discussion-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 48px 0;
+  font-size: 15px;
+}
+
+.discussion-error {
+  background: rgba(255, 80, 80, 0.12);
+  border: 1px solid rgba(255, 80, 80, 0.3);
+  color: #ff6b6b;
+  padding: 10px 16px;
+  border-radius: 10px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+/* Discussion Toolbar */
+.discussion-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.discussion-search {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.discussion-search input {
+  flex: 1;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.discussion-search input:focus {
+  border-color: rgba(79, 195, 247, 0.5);
+}
+
+.discussion-sort {
+  display: flex;
+  gap: 4px;
+}
+
+.sort-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sort-btn:hover {
+  color: var(--text);
+  border-color: rgba(79, 195, 247, 0.3);
+}
+
+.sort-btn.active {
+  color: var(--text);
+  background: rgba(79, 195, 247, 0.12);
+  border-color: rgba(79, 195, 247, 0.4);
+}
+
+/* Discussion Post Cards */
+.discussion-post-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.discussion-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  gap: 16px;
+}
+
+.discussion-card:hover {
+  background: rgba(79, 195, 247, 0.06);
+  border-color: rgba(79, 195, 247, 0.3);
+  box-shadow: 0 0 16px rgba(79, 195, 247, 0.08);
+}
+
+.discussion-card-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.discussion-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.discussion-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+
+.discussion-card-problem {
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.discussion-card-problem:hover {
+  text-decoration: underline;
+}
+
+.discussion-card-stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.stat-item:hover {
+  color: var(--text);
+}
+
+.stat-item svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+.stat-item svg.liked {
+  fill: #ff6b8a;
+  stroke: #ff6b8a;
+}
+
+/* Discussion Pagination */
+.discussion-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 24px;
+  padding: 16px 0;
+}
+
+.discussion-pagination button {
+  padding: 6px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.discussion-pagination button:hover:not(:disabled) {
+  background: rgba(79, 195, 247, 0.1);
+  border-color: rgba(79, 195, 247, 0.4);
+}
+
+.discussion-pagination button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.discussion-pagination span {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Discussion Detail Page */
+.back-btn {
+  margin-bottom: 16px;
+}
+
+.discussion-post-detail {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.post-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 12px 0;
+}
+
+.post-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.post-problem {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.post-problem:hover {
+  text-decoration: underline;
+}
+
+.post-content {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text);
+  margin-bottom: 20px;
+  word-break: break-word;
+}
+
+.post-content p {
+  margin: 0 0 10px 0;
+}
+
+.post-content pre {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  margin: 10px 0;
+}
+
+.post-content code {
+  background: rgba(79, 195, 247, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.post-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.post-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Like Button */
+.like-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.like-btn:hover {
+  color: #ff6b8a;
+  border-color: rgba(255, 107, 138, 0.3);
+}
+
+.like-btn.liked {
+  color: #ff6b8a;
+  border-color: rgba(255, 107, 138, 0.4);
+  background: rgba(255, 107, 138, 0.08);
+}
+
+.like-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  transition: all 0.2s;
+}
+
+.like-btn.liked svg {
+  fill: #ff6b8a;
+  stroke: #ff6b8a;
+}
+
+/* Comments Section */
+.discussion-comments-section {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 24px;
+}
+
+.discussion-comments-section h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 16px 0;
+}
+
+.comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.discussion-comment {
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.discussion-comment:last-child {
+  border-bottom: none;
+}
+
+.discussion-comment.nested {
+  margin-left: 24px;
+  padding-left: 14px;
+  border-left: 2px solid rgba(79, 195, 247, 0.2);
+  border-bottom: none;
+}
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.comment-author {
+  font-weight: 600;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.discussion-card-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.post-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.discussion-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.discussion-avatar.fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--accent), #7c4dff);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.discussion-avatar.small {
+  width: 20px;
+  height: 20px;
+  font-size: 10px;
+}
+
+.comment-reply-to {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.comment-time {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.comment-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  margin-bottom: 8px;
+  word-break: break-word;
+}
+
+.comment-body code {
+  background: rgba(79, 195, 247, 0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.comment-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reply-btn,
+.delete-btn {
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.reply-btn:hover {
+  color: var(--accent);
+  background: rgba(79, 195, 247, 0.08);
+}
+
+.delete-btn:hover {
+  color: #ff6b6b;
+  background: rgba(255, 80, 80, 0.08);
+}
+
+.comment-replies {
+  margin-top: 4px;
+}
+
+/* Comment Input Area */
+.comment-input-area {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.reply-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.reply-hint button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+}
+
+.comment-input-area textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+  margin-bottom: 10px;
+}
+
+.comment-input-area textarea:focus {
+  border-color: rgba(79, 195, 247, 0.5);
+}
+
+/* Discussion Create/Edit Page */
+.discussion-create-page h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 20px 0;
+}
+
+.discussion-create-page .form-group {
+  margin-bottom: 18px;
+}
+
+.discussion-create-page .form-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.discussion-create-page .form-group input[type="text"] {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.discussion-create-page .form-group input[type="text"]:focus {
+  border-color: rgba(79, 195, 247, 0.5);
+}
+
+/* Problem Selector */
+.problem-selector {
+  position: relative;
+}
+
+.selected-problem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(79, 195, 247, 0.3);
+  background: rgba(79, 195, 247, 0.06);
+  color: var(--accent);
+  font-size: 14px;
+}
+
+.selected-problem button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+  margin-left: auto;
+}
+
+.problem-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(15, 20, 30, 0.98);
+  backdrop-filter: blur(10px);
+  z-index: 100;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.problem-option {
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.problem-option:hover {
+  background: rgba(79, 195, 247, 0.1);
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+/* Rich Text Editor */
+.rich-editor-wrap {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.rich-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.rich-editor-toolbar button {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1.4;
+}
+
+.rich-editor-toolbar button:hover {
+  color: var(--text);
+  background: rgba(79, 195, 247, 0.1);
+}
+
+.rich-editor-content {
+  min-height: 200px;
+  max-height: 500px;
+  overflow-y: auto;
+  padding: 14px 16px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+  outline: none;
+}
+
+.rich-editor-content:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.rich-editor-content p {
+  margin: 0 0 8px 0;
+}
+
+.rich-editor-content code {
+  background: rgba(79, 195, 247, 0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.rich-editor-content pre {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.rich-editor-content pre code {
+  background: none;
+  padding: 0;
+}

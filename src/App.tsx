@@ -164,6 +164,28 @@ type AchievementsResponse = Achievement[]
 
 type LeaderboardResponse = LeaderboardEntry[]
 
+type DiscussionPost = {
+  id: number; userId: string; userName: string; userAvatar?: string
+  title: string; content?: string
+  problemId?: number; problemTitle?: string
+  viewCount: number; likeCount: number; commentCount: number
+  liked?: boolean; createdAt: string; updatedAt: string
+}
+
+type DiscussionComment = {
+  id: number; postId: number; userId: string; userName: string; userAvatar?: string
+  content: string; parentId?: number; likeCount: number; liked?: boolean
+  createdAt: string; replies?: DiscussionComment[]; replyToName?: string
+}
+
+type DiscussionListResponse = {
+  posts: DiscussionPost[]; total: number; page: number; pageSize: number
+}
+
+type DiscussionDetailResponse = {
+  post: DiscussionPost; comments: DiscussionComment[]
+}
+
 const TOKEN_KEY = 'starstack_token'
 
 const LANGUAGE_OPTIONS = [
@@ -4033,6 +4055,616 @@ function App() {
     )
   }
 
+  // === Discussion List Page ===
+  const DiscussionListPage = () => {
+    const [posts, setPosts] = useState<DiscussionPost[]>([])
+    const [total, setTotal] = useState(0)
+    const [page, setPage] = useState(1)
+    const [sort, setSort] = useState<'latest' | 'hot'>('latest')
+    const [search, setSearch] = useState('')
+    const [searchInput, setSearchInput] = useState('')
+    const [loading, setLoading] = useState(true)
+    const pageSize = 20
+
+    const loadPosts = useCallback(async () => {
+      setLoading(true)
+      try {
+        const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), sort })
+        if (search) params.set('search', search)
+        const { response, data } = await fetchJson<DiscussionListResponse>(`/api/discussions?${params}`)
+        if (response.ok && data) {
+          setPosts(data.posts || [])
+          setTotal(data.total || 0)
+        }
+      } catch (e) { console.error(e) }
+      finally { setLoading(false) }
+    }, [page, sort, search])
+
+    useEffect(() => { loadPosts() }, [loadPosts])
+
+    const totalPages = Math.ceil(total / pageSize)
+
+    const handleSearch = () => {
+      setSearch(searchInput.trim())
+      setPage(1)
+    }
+
+    const handleLike = async (postId: number) => {
+      if (!currentUser) { navigate('/auth'); return }
+      const { response, data } = await fetchJson<{ liked: boolean; likeCount: number }>('/api/discussions/like', {
+        method: 'POST', body: JSON.stringify({ targetType: 'post', targetId: postId })
+      })
+      if (response.ok && data) {
+        setPosts(prev => prev.map(p => p.id === postId ? { ...p, liked: data.liked, likeCount: data.likeCount } : p))
+      }
+    }
+
+    return (
+      <section className="discussion-list-page">
+        <div className="discussion-header">
+          <h2>讨论大厅</h2>
+          {currentUser && (
+            <button className="primary" onClick={() => navigate('/discussions/create')}>发起讨论</button>
+          )}
+        </div>
+
+        <div className="discussion-toolbar">
+          <div className="discussion-search">
+            <input
+              type="text" placeholder="搜索帖子标题..."
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            />
+            <button className="ghost small" onClick={handleSearch}>搜索</button>
+          </div>
+          <div className="discussion-sort">
+            <button className={`sort-btn ${sort === 'latest' ? 'active' : ''}`} onClick={() => { setSort('latest'); setPage(1) }}>最新</button>
+            <button className={`sort-btn ${sort === 'hot' ? 'active' : ''}`} onClick={() => { setSort('hot'); setPage(1) }}>最热</button>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="discussion-loading">加载中...</div>
+        ) : posts.length === 0 ? (
+          <div className="discussion-empty">暂无讨论帖子</div>
+        ) : (
+          <div className="discussion-post-list">
+            {posts.map(post => (
+              <div key={post.id} className="discussion-card" onClick={() => navigate(`/discussions/${post.id}`)}>
+                <div className="discussion-card-main">
+                  <div className="discussion-card-title">{post.title}</div>
+                  <div className="discussion-card-meta">
+                    <span className="discussion-card-author">
+                      {post.userAvatar ? (
+                        <img className="discussion-avatar" src={post.userAvatar} alt="" />
+                      ) : (
+                        <span className="discussion-avatar fallback">{post.userName?.charAt(0) || '?'}</span>
+                      )}
+                      {post.userName}
+                    </span>
+                    <span className="discussion-card-time">{formatTime(post.createdAt)}</span>
+                    {post.problemTitle && (
+                      <span className="discussion-card-problem" onClick={e => { e.stopPropagation(); navigate(`/oj/p${post.problemId}`) }}>
+                        P{post.problemId} {post.problemTitle}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="discussion-card-stats">
+                  <span className="stat-item" onClick={e => { e.stopPropagation(); handleLike(post.id) }}>
+                    <svg viewBox="0 0 24 24" className={post.liked ? 'liked' : ''}><path d="M12 21C12 21 3 13.5 3 8.5C3 5.42 5.42 3 8.5 3C10.24 3 11.91 3.81 12 5C12.09 3.81 13.76 3 15.5 3C18.58 3 21 5.42 21 8.5C21 13.5 12 21 12 21Z" /></svg>
+                    {post.likeCount}
+                  </span>
+                  <span className="stat-item">
+                    <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                    {post.commentCount}
+                  </span>
+                  <span className="stat-item">
+                    <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                    {post.viewCount}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {totalPages > 1 && (
+          <div className="discussion-pagination">
+            <button disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</button>
+            <span>{page} / {totalPages}</span>
+            <button disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>下一页</button>
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  // === Discussion Detail Page ===
+  const DiscussionDetailPage = () => {
+    const { id } = useParams<{ id: string }>()
+    const [post, setPost] = useState<DiscussionPost | null>(null)
+    const [comments, setComments] = useState<DiscussionComment[]>([])
+    const [loading, setLoading] = useState(true)
+    const [commentText, setCommentText] = useState('')
+    const [replyTo, setReplyTo] = useState<{ id: number; name: string } | null>(null)
+    const [submitting, setSubmitting] = useState(false)
+
+    const loadDetail = useCallback(async () => {
+      if (!id) return
+      setLoading(true)
+      try {
+        const { response, data } = await fetchJson<DiscussionDetailResponse>(`/api/discussions/${id}`)
+        if (response.ok && data) {
+          setPost(data.post)
+          setComments(data.comments || [])
+        }
+      } catch (e) { console.error(e) }
+      finally { setLoading(false) }
+    }, [id])
+
+    useEffect(() => { loadDetail() }, [loadDetail])
+
+    const handleLikePost = async () => {
+      if (!currentUser || !post) { navigate('/auth'); return }
+      const { response, data } = await fetchJson<{ liked: boolean; likeCount: number }>('/api/discussions/like', {
+        method: 'POST', body: JSON.stringify({ targetType: 'post', targetId: post.id })
+      })
+      if (response.ok && data) {
+        setPost(prev => prev ? { ...prev, liked: data.liked, likeCount: data.likeCount } : prev)
+      }
+    }
+
+    const handleLikeComment = async (commentId: number) => {
+      if (!currentUser) { navigate('/auth'); return }
+      const { response, data } = await fetchJson<{ liked: boolean; likeCount: number }>('/api/discussions/like', {
+        method: 'POST', body: JSON.stringify({ targetType: 'comment', targetId: commentId })
+      })
+      if (response.ok && data) {
+        const updateLike = (list: DiscussionComment[]): DiscussionComment[] =>
+          list.map(c => ({
+            ...c,
+            liked: c.id === commentId ? data.liked : c.liked,
+            likeCount: c.id === commentId ? data.likeCount : c.likeCount,
+            replies: c.replies ? updateLike(c.replies) : c.replies,
+          }))
+        setComments(prev => updateLike(prev))
+      }
+    }
+
+    const handleSubmitComment = async () => {
+      if (!currentUser) { navigate('/auth'); return }
+      if (!commentText.trim()) return
+      setSubmitting(true)
+      try {
+        const { response, data } = await fetchJson<{ comment: DiscussionComment }>(`/api/discussions/${id}/comments`, {
+          method: 'POST',
+          body: JSON.stringify({ content: commentText, parentId: replyTo?.id || null })
+        })
+        if (response.ok && data?.comment) {
+          if (replyTo) {
+            const addReply = (list: DiscussionComment[]): DiscussionComment[] =>
+              list.map(c => c.id === replyTo.id
+                ? { ...c, replies: [...(c.replies || []), { ...data.comment, replyToName: replyTo.name }] }
+                : { ...c, replies: c.replies ? addReply(c.replies) : c.replies })
+            setComments(prev => addReply(prev))
+          } else {
+            setComments(prev => [...prev, data.comment])
+          }
+          setCommentText('')
+          setReplyTo(null)
+          if (post) setPost({ ...post, commentCount: post.commentCount + 1 })
+        }
+      } catch (e) { console.error(e) }
+      finally { setSubmitting(false) }
+    }
+
+    const handleDeletePost = async () => {
+      if (!post || !confirm('确定要删除这篇帖子吗？')) return
+      const { response } = await fetchJson(`/api/discussions/${post.id}`, { method: 'DELETE' })
+      if (response.ok) navigate('/discussions')
+    }
+
+    const handleDeleteComment = async (commentId: number) => {
+      if (!confirm('确定要删除这条评论吗？')) return
+      const { response } = await fetchJson(`/api/discussions/comments/${commentId}`, { method: 'DELETE' })
+      if (response.ok) loadDetail()
+    }
+
+    // Render a single comment with nested replies
+    const renderComment = (comment: DiscussionComment, depth: number = 0) => (
+      <div key={comment.id} className={`discussion-comment ${depth > 0 ? 'nested' : ''}`}>
+        <div className="comment-header">
+          <span className="comment-author">
+            {comment.userAvatar ? (
+              <img className="discussion-avatar small" src={comment.userAvatar} alt="" />
+            ) : (
+              <span className="discussion-avatar fallback small">{comment.userName?.charAt(0) || '?'}</span>
+            )}
+            {comment.userName}
+          </span>
+          {comment.replyToName && <span className="comment-reply-to">回复 {comment.replyToName}</span>}
+          <span className="comment-time">{formatTime(comment.createdAt)}</span>
+        </div>
+        <div className="comment-body" dangerouslySetInnerHTML={{ __html: comment.content }} />
+        <div className="comment-actions">
+          <button className={`like-btn ${comment.liked ? 'liked' : ''}`} onClick={() => handleLikeComment(comment.id)}>
+            <svg viewBox="0 0 24 24"><path d="M12 21C12 21 3 13.5 3 8.5C3 5.42 5.42 3 8.5 3C10.24 3 11.91 3.81 12 5C12.09 3.81 13.76 3 15.5 3C18.58 3 21 5.42 21 8.5C21 13.5 12 21 12 21Z" /></svg>
+            {comment.likeCount}
+          </button>
+          <button className="reply-btn" onClick={() => setReplyTo({ id: comment.id, name: comment.userName })}>回复</button>
+          {currentUser && (currentUser.id === comment.userId || currentUser.isAdmin) && (
+            <button className="delete-btn" onClick={() => handleDeleteComment(comment.id)}>删除</button>
+          )}
+        </div>
+        {comment.replies && comment.replies.length > 0 && (
+          <div className="comment-replies">
+            {comment.replies.map(r => renderComment(r, depth + 1))}
+          </div>
+        )}
+      </div>
+    )
+
+    if (loading) return <section className="discussion-detail-page"><div className="discussion-loading">加载中...</div></section>
+    if (!post) return <section className="discussion-detail-page"><div className="discussion-empty">帖子不存在</div></section>
+
+    return (
+      <section className="discussion-detail-page">
+        <button className="ghost small back-btn" onClick={() => navigate('/discussions')}>← 返回列表</button>
+
+        <article className="discussion-post-detail">
+          <h1 className="post-title">{post.title}</h1>
+          <div className="post-meta">
+            <span className="post-author">
+              {post.userAvatar ? (
+                <img className="discussion-avatar" src={post.userAvatar} alt="" />
+              ) : (
+                <span className="discussion-avatar fallback">{post.userName?.charAt(0) || '?'}</span>
+              )}
+              {post.userName}
+            </span>
+            <span className="post-time">{formatTime(post.createdAt)}</span>
+            {post.problemTitle && (
+              <span className="post-problem" onClick={() => navigate(`/oj/p${post.problemId}`)}>
+                P{post.problemId} {post.problemTitle}
+              </span>
+            )}
+            <span className="post-views">浏览 {post.viewCount}</span>
+          </div>
+          <div className="post-content" dangerouslySetInnerHTML={{ __html: post.content || '' }} />
+          <div className="post-actions">
+            <button className={`like-btn ${post.liked ? 'liked' : ''}`} onClick={handleLikePost}>
+              <svg viewBox="0 0 24 24"><path d="M12 21C12 21 3 13.5 3 8.5C3 5.42 5.42 3 8.5 3C10.24 3 11.91 3.81 12 5C12.09 3.81 13.76 3 15.5 3C18.58 3 21 5.42 21 8.5C21 13.5 12 21 12 21Z" /></svg>
+              {post.likeCount}
+            </button>
+            {currentUser && (currentUser.id === post.userId || currentUser.isAdmin) && (
+              <>
+                <button className="ghost small" onClick={() => navigate(`/discussions/${post.id}/edit`)}>编辑</button>
+                <button className="ghost small danger" onClick={handleDeletePost}>删除</button>
+              </>
+            )}
+          </div>
+        </article>
+
+        <div className="discussion-comments-section">
+          <h3>评论 ({post.commentCount})</h3>
+          {comments.length === 0 ? (
+            <div className="discussion-empty">暂无评论，来发表第一条评论吧</div>
+          ) : (
+            <div className="comments-list">
+              {comments.map(c => renderComment(c))}
+            </div>
+          )}
+
+          {currentUser && (
+            <div className="comment-input-area">
+              {replyTo && (
+                <div className="reply-hint">
+                  回复 {replyTo.name}
+                  <button onClick={() => setReplyTo(null)}>✕</button>
+                </div>
+              )}
+              <textarea
+                placeholder={replyTo ? `回复 ${replyTo.name}...` : '写下你的评论...'}
+                value={commentText}
+                onChange={e => setCommentText(e.target.value)}
+                rows={3}
+              />
+              <button className="primary small" disabled={submitting || !commentText.trim()} onClick={handleSubmitComment}>
+                {submitting ? '提交中...' : '发表评论'}
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+    )
+  }
+
+  // === Discussion Create Page ===
+  const DiscussionCreatePage = () => {
+    const [title, setTitle] = useState('')
+    const [content, setContent] = useState('')
+    const [problemId, setProblemId] = useState<number | null>(null)
+    const [problemSearch, setProblemSearch] = useState('')
+    const [problemResults, setProblemResults] = useState<OjProblemSummary[]>([])
+    const [showProblemDropdown, setShowProblemDropdown] = useState(false)
+    const [selectedProblemTitle, setSelectedProblemTitle] = useState('')
+    const [submitting, setSubmitting] = useState(false)
+    const [error, setError] = useState('')
+
+    const searchProblems = useCallback(async (q: string) => {
+      if (!q.trim()) { setProblemResults([]); return }
+      const { response, data } = await fetchJson<ProblemsResponse>(`/api/oj/problems?search=${encodeURIComponent(q)}&pageSize=5`)
+      if (response.ok && data) setProblemResults(data.problems || [])
+    }, [])
+
+    useEffect(() => {
+      const timer = setTimeout(() => searchProblems(problemSearch), 300)
+      return () => clearTimeout(timer)
+    }, [problemSearch, searchProblems])
+
+    const handleSubmit = async () => {
+      if (!currentUser) { navigate('/auth'); return }
+      if (!title.trim()) { setError('请输入标题'); return }
+      if (!content.trim()) { setError('请输入内容'); return }
+      setSubmitting(true)
+      setError('')
+      try {
+        const { response, data } = await fetchJson<{ postId: number }>('/api/discussions', {
+          method: 'POST',
+          body: JSON.stringify({ title: title.trim(), content, problemId })
+        })
+        if (response.ok && data?.postId) {
+          navigate(`/discussions/${data.postId}`)
+        } else {
+          setError((data as any)?.message || '发帖失败')
+        }
+      } catch (e) { setError('发帖失败') }
+      finally { setSubmitting(false) }
+    }
+
+    if (!currentUser) return <Navigate to="/auth" replace />
+
+    return (
+      <section className="discussion-create-page">
+        <h2>发起讨论</h2>
+        {error && <div className="discussion-error">{error}</div>}
+
+        <div className="form-group">
+          <label>标题</label>
+          <input type="text" maxLength={200} placeholder="输入帖子标题..." value={title} onChange={e => setTitle(e.target.value)} />
+        </div>
+
+        <div className="form-group">
+          <label>关联题目（可选）</label>
+          <div className="problem-selector">
+            {selectedProblemTitle ? (
+              <div className="selected-problem">
+                <span>P{problemId} {selectedProblemTitle}</span>
+                <button type="button" onClick={() => { setProblemId(null); setSelectedProblemTitle(''); setProblemSearch('') }}>✕</button>
+              </div>
+            ) : (
+              <input
+                type="text" placeholder="搜索题目编号或标题..."
+                value={problemSearch}
+                onChange={e => { setProblemSearch(e.target.value); setShowProblemDropdown(true) }}
+                onFocus={() => setShowProblemDropdown(true)}
+                onBlur={() => setTimeout(() => setShowProblemDropdown(false), 200)}
+              />
+            )}
+            {showProblemDropdown && problemResults.length > 0 && (
+              <div className="problem-dropdown">
+                {problemResults.map(p => (
+                  <div key={p.id} className="problem-option" onMouseDown={() => {
+                    setProblemId(p.id); setSelectedProblemTitle(p.title)
+                    setProblemSearch(''); setShowProblemDropdown(false)
+                  }}>
+                    P{p.id} {p.title}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label>内容</label>
+          <RichTextEditor value={content} onChange={setContent} placeholder="输入帖子内容..." />
+        </div>
+
+        <div className="form-actions">
+          <button className="ghost" onClick={() => navigate('/discussions')}>取消</button>
+          <button className="primary" disabled={submitting} onClick={handleSubmit}>
+            {submitting ? '发布中...' : '发布'}
+          </button>
+        </div>
+      </section>
+    )
+  }
+
+  // === Discussion Edit Page ===
+  const DiscussionEditPage = () => {
+    const { id } = useParams<{ id: string }>()
+    const [title, setTitle] = useState('')
+    const [content, setContent] = useState('')
+    const [problemId, setProblemId] = useState<number | null>(null)
+    const [problemSearch, setProblemSearch] = useState('')
+    const [problemResults, setProblemResults] = useState<OjProblemSummary[]>([])
+    const [showProblemDropdown, setShowProblemDropdown] = useState(false)
+    const [selectedProblemTitle, setSelectedProblemTitle] = useState('')
+    const [submitting, setSubmitting] = useState(false)
+    const [error, setError] = useState('')
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+      if (!id) return
+      const load = async () => {
+        const { response, data } = await fetchJson<DiscussionDetailResponse>(`/api/discussions/${id}`)
+        if (response.ok && data?.post) {
+          setTitle(data.post.title)
+          setContent(data.post.content || '')
+          if (data.post.problemId) {
+            setProblemId(data.post.problemId)
+            setSelectedProblemTitle(data.post.problemTitle || '')
+          }
+        }
+        setLoading(false)
+      }
+      load()
+    }, [id])
+
+    const searchProblems = useCallback(async (q: string) => {
+      if (!q.trim()) { setProblemResults([]); return }
+      const { response, data } = await fetchJson<ProblemsResponse>(`/api/oj/problems?search=${encodeURIComponent(q)}&pageSize=5`)
+      if (response.ok && data) setProblemResults(data.problems || [])
+    }, [])
+
+    useEffect(() => {
+      const timer = setTimeout(() => searchProblems(problemSearch), 300)
+      return () => clearTimeout(timer)
+    }, [problemSearch, searchProblems])
+
+    const handleSubmit = async () => {
+      if (!title.trim()) { setError('请输入标题'); return }
+      if (!content.trim()) { setError('请输入内容'); return }
+      setSubmitting(true)
+      setError('')
+      try {
+        const { response, data } = await fetchJson<{ message: string }>(`/api/discussions/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ title: title.trim(), content, problemId })
+        })
+        if (response.ok) {
+          navigate(`/discussions/${id}`)
+        } else {
+          setError((data as any)?.message || '编辑失败')
+        }
+      } catch (e) { setError('编辑失败') }
+      finally { setSubmitting(false) }
+    }
+
+    if (!currentUser) return <Navigate to="/auth" replace />
+    if (loading) return <section className="discussion-create-page"><div className="discussion-loading">加载中...</div></section>
+
+    return (
+      <section className="discussion-create-page">
+        <h2>编辑帖子</h2>
+        {error && <div className="discussion-error">{error}</div>}
+
+        <div className="form-group">
+          <label>标题</label>
+          <input type="text" maxLength={200} value={title} onChange={e => setTitle(e.target.value)} />
+        </div>
+
+        <div className="form-group">
+          <label>关联题目（可选）</label>
+          <div className="problem-selector">
+            {selectedProblemTitle ? (
+              <div className="selected-problem">
+                <span>P{problemId} {selectedProblemTitle}</span>
+                <button type="button" onClick={() => { setProblemId(null); setSelectedProblemTitle(''); setProblemSearch('') }}>✕</button>
+              </div>
+            ) : (
+              <input
+                type="text" placeholder="搜索题目编号或标题..."
+                value={problemSearch}
+                onChange={e => { setProblemSearch(e.target.value); setShowProblemDropdown(true) }}
+                onFocus={() => setShowProblemDropdown(true)}
+                onBlur={() => setTimeout(() => setShowProblemDropdown(false), 200)}
+              />
+            )}
+            {showProblemDropdown && problemResults.length > 0 && (
+              <div className="problem-dropdown">
+                {problemResults.map(p => (
+                  <div key={p.id} className="problem-option" onMouseDown={() => {
+                    setProblemId(p.id); setSelectedProblemTitle(p.title)
+                    setProblemSearch(''); setShowProblemDropdown(false)
+                  }}>
+                    P{p.id} {p.title}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label>内容</label>
+          <RichTextEditor value={content} onChange={setContent} />
+        </div>
+
+        <div className="form-actions">
+          <button className="ghost" onClick={() => navigate(`/discussions/${id}`)}>取消</button>
+          <button className="primary" disabled={submitting} onClick={handleSubmit}>
+            {submitting ? '保存中...' : '保存'}
+          </button>
+        </div>
+      </section>
+    )
+  }
+
+  // === Rich Text Editor Component ===
+  const RichTextEditor = ({ value, onChange, placeholder }: { value: string; onChange: (html: string) => void; placeholder?: string }) => {
+    const editorRef = useRef<HTMLDivElement>(null)
+    const isInternalChange = useRef(false)
+
+    useEffect(() => {
+      if (editorRef.current && !isInternalChange.current) {
+        if (editorRef.current.innerHTML !== value) {
+          editorRef.current.innerHTML = value
+        }
+      }
+      isInternalChange.current = false
+    }, [value])
+
+    const execCmd = (cmd: string, val?: string) => {
+      editorRef.current?.focus()
+      document.execCommand(cmd, false, val)
+      isInternalChange.current = true
+      onChange(editorRef.current?.innerHTML || '')
+    }
+
+    const handleInput = () => {
+      isInternalChange.current = true
+      onChange(editorRef.current?.innerHTML || '')
+    }
+
+    const insertCodeBlock = () => {
+      editorRef.current?.focus()
+      document.execCommand('insertHTML', false, '<pre><code>code here</code></pre><p><br></p>')
+      isInternalChange.current = true
+      onChange(editorRef.current?.innerHTML || '')
+    }
+
+    const insertLink = () => {
+      const url = prompt('输入链接地址：', 'https://')
+      if (url) execCmd('createLink', url)
+    }
+
+    return (
+      <div className="rich-editor-wrap">
+        <div className="rich-editor-toolbar">
+          <button type="button" title="粗体" onMouseDown={e => { e.preventDefault(); execCmd('bold') }}><strong>B</strong></button>
+          <button type="button" title="斜体" onMouseDown={e => { e.preventDefault(); execCmd('italic') }}><em>I</em></button>
+          <button type="button" title="行内代码" onMouseDown={e => { e.preventDefault(); execCmd('insertHTML', '<code>code</code>') }}>&lt;/&gt;</button>
+          <button type="button" title="代码块" onMouseDown={e => { e.preventDefault(); insertCodeBlock() }}>{'{ }'}</button>
+          <button type="button" title="链接" onMouseDown={e => { e.preventDefault(); insertLink() }}>🔗</button>
+          <button type="button" title="无序列表" onMouseDown={e => { e.preventDefault(); execCmd('insertUnorderedList') }}>• list</button>
+          <button type="button" title="有序列表" onMouseDown={e => { e.preventDefault(); execCmd('insertOrderedList') }}>1. list</button>
+        </div>
+        <div
+          ref={editorRef}
+          className="rich-editor-content"
+          contentEditable
+          onInput={handleInput}
+          data-placeholder={placeholder || '输入内容...'}
+          suppressContentEditableWarning
+        />
+      </div>
+    )
+  }
+
   return (
     <>
       <canvas ref={canvasRef} className="starfield" />
@@ -4133,6 +4765,17 @@ function App() {
                   <span className="nav-label">排行榜</span>
                 </button>
                 <button
+                  className={`nav-link ${location.pathname.startsWith('/discussions') ? 'active' : ''}`}
+                  onClick={() => navigate('/discussions')}
+                >
+                  <span className="nav-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                    </svg>
+                  </span>
+                  <span className="nav-label">讨论</span>
+                </button>
+                <button
                   className={`nav-link ${location.pathname.startsWith('/games') ? 'active' : ''}`}
                   onClick={() => navigate('/games')}
                 >
@@ -4176,6 +4819,10 @@ function App() {
                   <Route path="/games" element={<GamesPage />} />
                   <Route path="/account" element={<AccountPage />} />
                   <Route path="/leaderboard" element={<LeaderboardPage />} />
+                  <Route path="/discussions" element={<DiscussionListPage />} />
+                  <Route path="/discussions/create" element={<DiscussionCreatePage />} />
+                  <Route path="/discussions/:id/edit" element={<DiscussionEditPage />} />
+                  <Route path="/discussions/:id" element={<DiscussionDetailPage />} />
                   <Route path="/my-problems" element={<MyProblemsPage />} />
                   <Route path="/create-problem" element={<CreateProblemPage />} />
                   <Route path="/edit-problem/:id" element={<EditProblemPage />} />
