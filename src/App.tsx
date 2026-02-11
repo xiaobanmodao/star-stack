@@ -213,6 +213,110 @@ const LANGUAGE_OPTIONS = [
 
 const DIFFICULTY_OPTIONS = ['入门', '普及-', '普及', '提高-', '提高', '省选', 'noi']
 
+// 预设标签列表（参考洛谷）
+const PRESET_TAGS = [
+  '动态规划',
+  '贪心',
+  '搜索',
+  '深度优先搜索',
+  '广度优先搜索',
+  '图论',
+  '最短路',
+  '最小生成树',
+  '树',
+  '二叉树',
+  '线段树',
+  '树状数组',
+  '并查集',
+  '字符串',
+  '字符串匹配',
+  '前缀和',
+  '差分',
+  '数学',
+  '数论',
+  '组合数学',
+  '概率论',
+  '计算几何',
+  '模拟',
+  '枚举',
+  '递推',
+  '分治',
+  '二分',
+  '排序',
+  '哈希',
+  '栈',
+  '队列',
+  '链表',
+  '堆',
+  '位运算',
+  '高精度',
+  '矩阵',
+  '博弈论',
+  '网络流',
+  '二分图',
+  '拓扑排序',
+  '强连通分量',
+  '欧拉回路',
+  '哈密尔顿回路',
+  '最近公共祖先',
+  '树链剖分',
+  '莫队算法',
+  '单调栈',
+  '单调队列',
+  '滑动窗口',
+  '双指针',
+  '快速幂',
+  '矩阵快速幂',
+  '线性代数',
+  '容斥原理',
+  '逆元',
+  '中国剩余定理',
+  '扩展欧几里得',
+  '筛法',
+  '质数',
+  '因数分解',
+  '最大公约数',
+  '最小公倍数',
+  '斐波那契',
+  '卡特兰数',
+  '斯特林数',
+  '莫比乌斯反演',
+  '生成函数',
+  '多项式',
+  'FFT',
+  'NTT',
+  '后缀数组',
+  '后缀自动机',
+  'AC自动机',
+  'KMP',
+  '马拉车算法',
+  '回文树',
+  '字典树',
+  '平衡树',
+  'Treap',
+  '伸展树',
+  '红黑树',
+  '跳表',
+  '可持久化数据结构',
+  '主席树',
+  '分块',
+  '根号分治',
+  '点分治',
+  '边分治',
+  '虚树',
+  '动态树',
+  'LCT',
+  '线性规划',
+  '网络流24题',
+  '费用流',
+  '上下界网络流',
+  '2-SAT',
+  '构造',
+  '交互题',
+  '提答题',
+  'Special Judge',
+]
+
 const getLanguageConfig = (value: string) =>
   LANGUAGE_OPTIONS.find((item) => item.value === value) ?? LANGUAGE_OPTIONS[0]
 
@@ -809,14 +913,18 @@ function App() {
         meteor.life += 1
         meteor.x += meteor.vx
         meteor.y += meteor.vy
-        ctx.beginPath()
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'
-        ctx.lineWidth = 2
-        ctx.moveTo(meteor.x, meteor.y)
-        ctx.lineTo(meteor.x - meteor.vx * 3, meteor.y - meteor.vy * 3)
-        ctx.stroke()
-        if (meteor.life > meteor.maxLife) {
+
+        // 检查流星是否超出画布边界或生命周期结束
+        if (meteor.life > meteor.maxLife || meteor.x > width + 100 || meteor.y > height + 100) {
           meteor = null
+        } else {
+          // 只在流星还在画布内时绘制
+          ctx.beginPath()
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'
+          ctx.lineWidth = 2
+          ctx.moveTo(meteor.x, meteor.y)
+          ctx.lineTo(meteor.x - meteor.vx * 3, meteor.y - meteor.vy * 3)
+          ctx.stroke()
         }
       }
       animationId = requestAnimationFrame(draw)
@@ -1170,10 +1278,132 @@ function App() {
     )
   }
 
+  // 标签选择器组件
+  const TagSelector = ({
+    selectedTags,
+    onTagsChange
+  }: {
+    selectedTags: string[]
+    onTagsChange: (tags: string[]) => void
+  }) => {
+    const [isOpen, setIsOpen] = useState(false)
+    const [searchQuery, setSearchQuery] = useState('')
+
+    const filteredTags = useMemo(() => {
+      if (!searchQuery.trim()) {
+        return PRESET_TAGS
+      }
+      const query = searchQuery.toLowerCase()
+      return PRESET_TAGS.filter(tag => tag.toLowerCase().includes(query))
+    }, [searchQuery])
+
+    const handleTagClick = (tag: string) => {
+      if (selectedTags.includes(tag)) {
+        onTagsChange(selectedTags.filter(t => t !== tag))
+      } else {
+        onTagsChange([...selectedTags, tag])
+      }
+    }
+
+    const handleRemoveTag = (tag: string, event: React.MouseEvent) => {
+      event.stopPropagation()
+      onTagsChange(selectedTags.filter(t => t !== tag))
+    }
+
+    return (
+      <div className="tag-selector">
+        <div className="tag-selector-input" onClick={() => setIsOpen(true)}>
+          <div className="selected-tags">
+            {selectedTags.length === 0 ? (
+              <span className="tag-placeholder">点击选择标签</span>
+            ) : (
+              selectedTags.map(tag => (
+                <span key={tag} className="selected-tag">
+                  {tag}
+                  <button
+                    className="remove-tag-btn"
+                    onClick={(e) => handleRemoveTag(tag, e)}
+                    type="button"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))
+            )}
+          </div>
+          <button type="button" className="tag-selector-btn">
+            选择标签
+          </button>
+        </div>
+
+        {isOpen && (
+          <div className="tag-selector-modal" onClick={() => setIsOpen(false)}>
+            <div className="tag-selector-content" onClick={(e) => e.stopPropagation()}>
+              <div className="tag-selector-header">
+                <h3>选择标签</h3>
+                <button
+                  className="tag-selector-close"
+                  onClick={() => setIsOpen(false)}
+                  type="button"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="tag-selector-search">
+                <input
+                  type="text"
+                  className="auth-input"
+                  placeholder="搜索标签..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  autoFocus
+                />
+              </div>
+
+              <div className="tag-selector-body">
+                {filteredTags.length === 0 ? (
+                  <div className="tag-selector-empty">未找到匹配的标签</div>
+                ) : (
+                  <div className="tag-selector-grid">
+                    {filteredTags.map(tag => (
+                      <button
+                        key={tag}
+                        type="button"
+                        className={`tag-selector-item ${selectedTags.includes(tag) ? 'selected' : ''}`}
+                        onClick={() => handleTagClick(tag)}
+                      >
+                        {tag}
+                        {selectedTags.includes(tag) && <span className="tag-check">✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="tag-selector-footer">
+                <div className="tag-selector-count">
+                  已选择 {selectedTags.length} 个标签
+                </div>
+                <button
+                  className="primary"
+                  onClick={() => setIsOpen(false)}
+                  type="button"
+                >
+                  完成
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const CreateProblemPage = () => {
     const [title, setTitle] = useState('')
     const [difficulty, setDifficulty] = useState('入门')
-    const [tags, setTags] = useState('')
+    const [tags, setTags] = useState<string[]>([])
     const [statement, setStatement] = useState('')
     const [inputDesc, setInputDesc] = useState('')
     const [outputDesc, setOutputDesc] = useState('')
@@ -1264,7 +1494,7 @@ function App() {
       const payload = {
         title: title.trim(),
         difficulty,
-        tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+        tags: tags,
         statement: statement.trim(),
         inputDesc: inputDesc.trim(),
         outputDesc: outputDesc.trim(),
@@ -1338,13 +1568,7 @@ function App() {
 
             <div className="form-section">
               <label className="form-label">标签</label>
-              <input
-                type="text"
-                className="auth-input"
-                placeholder="用逗号分隔，例如：数学,模拟"
-                value={tags}
-                onChange={(e) => setTags(e.target.value)}
-              />
+              <TagSelector selectedTags={tags} onTagsChange={setTags} />
             </div>
           </div>
 
@@ -1497,7 +1721,7 @@ function App() {
     const [loading, setLoading] = useState(true)
     const [title, setTitle] = useState('')
     const [difficulty, setDifficulty] = useState('入门')
-    const [tags, setTags] = useState('')
+    const [tags, setTags] = useState<string[]>([])
     const [statement, setStatement] = useState('')
     const [inputDesc, setInputDesc] = useState('')
     const [outputDesc, setOutputDesc] = useState('')
@@ -1532,7 +1756,7 @@ function App() {
       const problem = data?.problem
       setTitle(problem.title)
       setDifficulty(problem.difficulty)
-      setTags(problem.tags.join(','))
+      setTags(problem.tags || [])
       setStatement(problem.statement)
       setInputDesc(problem.inputDesc || '')
       setOutputDesc(problem.outputDesc || '')
@@ -1613,7 +1837,7 @@ function App() {
       const payload = {
         title: title.trim(),
         difficulty,
-        tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+        tags: tags,
         statement: statement.trim(),
         inputDesc: inputDesc.trim(),
         outputDesc: outputDesc.trim(),
@@ -1696,13 +1920,7 @@ function App() {
 
             <div className="form-section">
               <label className="form-label">标签</label>
-              <input
-                type="text"
-                className="auth-input"
-                placeholder="用逗号分隔，例如：数学,模拟"
-                value={tags}
-                onChange={(e) => setTags(e.target.value)}
-              />
+              <TagSelector selectedTags={tags} onTagsChange={setTags} />
             </div>
           </div>
 
@@ -2176,12 +2394,13 @@ function App() {
     const [loading, setLoading] = useState(true)
     const [leaderboardPage, setLeaderboardPage] = useState(1)
     const [leaderboardPageInput, setLeaderboardPageInput] = useState('1')
+    const [leaderboardType, setLeaderboardType] = useState<'total' | 'weekly' | 'monthly'>('total')
     const leaderboardPerPage = 20
 
     const loadLeaderboard = useCallback(async () => {
       setLoading(true)
       try {
-        const { response, data } = await fetchJson<{ leaderboard: LeaderboardResponse; currentUser?: any }>(`/api/leaderboard?limit=100`)
+        const { response, data } = await fetchJson<{ leaderboard: LeaderboardResponse; currentUser?: any; type: string }>(`/api/leaderboard?limit=100&type=${leaderboardType}`)
         if (response.ok && data) {
           setLeaderboard(data.leaderboard || [])
           setCurrentUserRank(data.currentUser)
@@ -2191,7 +2410,7 @@ function App() {
       } finally {
         setLoading(false)
       }
-    }, [])
+    }, [leaderboardType])
 
     useEffect(() => {
       loadLeaderboard()
@@ -2202,6 +2421,13 @@ function App() {
       if (rank === 2) return '🥈'
       if (rank === 3) return '🥉'
       return rank
+    }
+
+    const getRankChange = (rankChange: number | null) => {
+      if (rankChange === null) return <span className="rank-change new">NEW</span>
+      if (rankChange === 0) return <span className="rank-change stable">-</span>
+      if (rankChange > 0) return <span className="rank-change down">↓{Math.abs(rankChange)}</span>
+      return <span className="rank-change up">↑{Math.abs(rankChange)}</span>
     }
 
     const leaderboardTotalPages = Math.ceil(leaderboard.length / leaderboardPerPage)
@@ -2257,9 +2483,38 @@ function App() {
         </div>
 
         <div className="leaderboard-filters">
-          <button className="filter-tab active">
+          <button
+            className={`filter-tab ${leaderboardType === 'total' ? 'active' : ''}`}
+            onClick={() => {
+              setLeaderboardType('total')
+              setLeaderboardPage(1)
+              setLeaderboardPageInput('1')
+            }}
+          >
             <span className="filter-icon">🏆</span>
-            <span>等级分排行</span>
+            <span>总榜</span>
+          </button>
+          <button
+            className={`filter-tab ${leaderboardType === 'weekly' ? 'active' : ''}`}
+            onClick={() => {
+              setLeaderboardType('weekly')
+              setLeaderboardPage(1)
+              setLeaderboardPageInput('1')
+            }}
+          >
+            <span className="filter-icon">📈</span>
+            <span>周榜</span>
+          </button>
+          <button
+            className={`filter-tab ${leaderboardType === 'monthly' ? 'active' : ''}`}
+            onClick={() => {
+              setLeaderboardType('monthly')
+              setLeaderboardPage(1)
+              setLeaderboardPageInput('1')
+            }}
+          >
+            <span className="filter-icon">📊</span>
+            <span>月榜</span>
           </button>
         </div>
 
@@ -2274,8 +2529,10 @@ function App() {
                 <tr>
                   <th style={{ width: '80px' }}>排名</th>
                   <th>用户</th>
-                  <th style={{ textAlign: 'right' }}>等级分</th>
-                  <th style={{ textAlign: 'right' }}>解决题目</th>
+                  <th style={{ textAlign: 'right' }}>
+                    {leaderboardType === 'total' ? '等级分' : '通过题目'}
+                  </th>
+                  <th style={{ textAlign: 'center', width: '100px' }}>变化</th>
                 </tr>
               </thead>
               <tbody>
@@ -2315,8 +2572,12 @@ function App() {
                         </div>
                       </div>
                     </td>
-                    <td style={{ textAlign: 'right', fontWeight: 600, color: '#4fc3f7' }}>{user.rating.toFixed(1)}</td>
-                    <td style={{ textAlign: 'right' }}>{user.solvedProblems}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 600, color: '#4fc3f7' }}>
+                      {leaderboardType === 'total' ? (user as any).value?.toFixed(1) : (user as any).value}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      {getRankChange((user as any).rankChange)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -2758,6 +3019,107 @@ function App() {
 
   const OjHomePage = () => {
     const [quickJumpId, setQuickJumpId] = useState('')
+    const [recommendations, setRecommendations] = useState<OjProblemSummary[]>([])
+    const [hotProblems, setHotProblems] = useState<Array<{
+      id: number
+      slug?: string
+      title: string
+      difficulty: string
+      submission_count: number
+    }>>([])
+    const [recentAC, setRecentAC] = useState<Array<{
+      created_at: string
+      user_name: string
+      avatar?: string
+      problem_id: number
+      problem_title: string
+    }>>([])
+    const [weeklyStats, setWeeklyStats] = useState<Array<{
+      date: string
+      submissions: number
+      accepted: number
+    }>>([])
+    const [chartTooltip, setChartTooltip] = useState<{
+      visible: boolean
+      x: number
+      y: number
+      date: string
+      submissions: number
+      accepted: number
+    } | null>(null)
+    const [randomDifficulty, setRandomDifficulty] = useState('')
+    const [loading, setLoading] = useState(true)
+
+    // 加载所有数据
+    useEffect(() => {
+      loadAllData()
+    }, [])
+
+    const loadAllData = async () => {
+      setLoading(true)
+      await Promise.all([
+        loadRecommendations(),
+        loadHotProblems(),
+        loadRecentAC(),
+        loadWeeklyStats()
+      ])
+      setLoading(false)
+    }
+
+    const loadWeeklyStats = async () => {
+      if (!currentUser?.id) {
+        // 未登录用户显示空数据
+        setWeeklyStats([])
+        return
+      }
+      const { data } = await fetchJson<{
+        weeklyStats: Array<{
+          date: string
+          submissions: number
+          accepted: number
+        }>
+      }>(`/api/user/weekly-stats/${currentUser.id}`)
+      if (data?.weeklyStats) {
+        setWeeklyStats(data.weeklyStats)
+      }
+    }
+
+    const loadRecommendations = async () => {
+      const { data } = await fetchJson<{ recommendations: OjProblemSummary[] }>('/api/oj/recommendations')
+      if (data?.recommendations) {
+        setRecommendations(data.recommendations)
+      }
+    }
+
+    const loadHotProblems = async () => {
+      const { data } = await fetchJson<{
+        hotProblems: Array<{
+          id: number
+          slug?: string
+          title: string
+          difficulty: string
+          submission_count: number
+        }>
+      }>('/api/oj/hot-problems')
+      if (data?.hotProblems) {
+        setHotProblems(data.hotProblems)
+      }
+    }
+
+    const loadRecentAC = async () => {
+      const { data } = await fetchJson<{
+        recentAC: Array<{
+          created_at: string
+          user_name: string
+          avatar?: string
+          problem_id: number
+          problem_title: string
+        }>
+      }>('/api/oj/recent-ac')
+      if (data?.recentAC) {
+        setRecentAC(data.recentAC)
+      }
+    }
 
     const handleQuickJump = useCallback(() => {
       const value = quickJumpId.trim().toLowerCase()
@@ -2767,6 +3129,25 @@ function App() {
       const numericId = match[0]
       navigate(`/oj/p${numericId}`)
     }, [quickJumpId])
+
+    const handleRandomProblem = async () => {
+      const params = randomDifficulty ? `?difficulty=${randomDifficulty}` : ''
+      const { data } = await fetchJson<{ problem: OjProblemSummary }>(`/api/oj/random-problem${params}`)
+      if (data?.problem) {
+        navigate(`/oj/p${data.problem.id}`)
+      }
+    }
+
+    const formatTimeAgo = (dateString: string) => {
+      const now = new Date()
+      const date = new Date(dateString)
+      const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+      if (seconds < 60) return '刚刚'
+      if (seconds < 3600) return `${Math.floor(seconds / 60)}分钟前`
+      if (seconds < 86400) return `${Math.floor(seconds / 3600)}小时前`
+      return `${Math.floor(seconds / 86400)}天前`
+    }
 
     return (
       <div className="oj-page">
@@ -2784,71 +3165,431 @@ function App() {
             </button>
           </div>
         </div>
-        <div className="oj-bottom-section">
-          <div className="oj-quick-jump-panel">
-            <div className="oj-quick-jump-label">题目跳转</div>
-            <div className="oj-quick-jump">
-              <input
-                className="auth-input"
-                placeholder="题号，例如 1001"
-                value={quickJumpId}
-                onChange={(event) => setQuickJumpId(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    handleQuickJump()
-                  }
-                }}
-              />
-              <button className="ghost" type="button" onClick={handleQuickJump}>
-                跳转
-              </button>
-            </div>
-          </div>
-          <div className="problem-plan-panel">
-            <div className="problem-plan-header">
-              <span>做题计划 ({problemPlan.filter(p => !p.completed).length})</span>
-              <span className="problem-plan-toggle" onClick={() => setPlanOpen(!planOpen)}>
-                {planOpen ? '收起' : '展开'}
-              </span>
-            </div>
-            <div className={`problem-plan-content ${planOpen ? '' : 'collapsed'}`}>
-              {problemPlan.length === 0 ? (
-                <div className="problem-plan-empty">暂无计划，去题库添加吧！</div>
-              ) : (
-                <div className="problem-plan-list">
-                  {problemPlan.map(plan => (
-                    <div key={plan.id} className={`problem-plan-item ${plan.completed ? 'completed' : ''}`}>
-                      <div className="problem-plan-item-header">
-                        <input
-                          type="checkbox"
-                          checked={!!plan.completed}
-                          onChange={(e) => togglePlanComplete(plan.id, e.target.checked)}
-                        />
-                        <span
-                          className="problem-plan-item-title"
-                          onClick={() => navigate(`/oj/p${plan.problem_id}`)}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          {plan.title}
-                        </span>
+
+        {loading ? (
+          <div className="oj-loading">加载中...</div>
+        ) : (
+          <div className="oj-home-content">
+            <div className="oj-home-main">
+              {/* 顶部工具栏 */}
+              <div className="oj-home-toolbar">
+                {/* 题目跳转 */}
+                <div className="oj-quick-jump">
+                  <div className="oj-quick-jump-title">题目跳转</div>
+                  <input
+                    className="auth-input small"
+                    placeholder="输入题号，例如 1001"
+                    value={quickJumpId}
+                    onChange={(e) => setQuickJumpId(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleQuickJump()
+                      }
+                    }}
+                  />
+                  <div className="oj-quick-jump-buttons">
+                    <button className="primary small" onClick={handleQuickJump}>
+                      跳转
+                    </button>
+                    <button className="ghost small" onClick={handleRandomProblem}>
+                      随机一题
+                    </button>
+                  </div>
+                </div>
+
+                {/* 7天统计图表 */}
+                <div className="oj-weekly-chart">
+                  <div className="oj-weekly-chart-title">近10天做题统计</div>
+                  <div className="oj-weekly-chart-container">
+                    <svg
+                      width="100%"
+                      height="90"
+                      viewBox="0 0 600 90"
+                      preserveAspectRatio="xMidYMid meet"
+                      onMouseMove={(e) => {
+                        if (weeklyStats.length === 0) return
+
+                        const svgRect = e.currentTarget.getBoundingClientRect()
+                        const mouseX = e.clientX - svgRect.left
+
+                        // 转换为SVG坐标
+                        const svgX = (mouseX / svgRect.width) * 600
+
+                        // 计算参数
+                        const barWidth = 22
+                        const spacing = 52
+                        const startX = 50
+
+                        // 找到最近的日期索引
+                        let closestIndex = 0
+                        let minDistance = Infinity
+
+                        weeklyStats.forEach((stat, index) => {
+                          const barCenterX = startX + index * spacing + barWidth / 2
+                          const distance = Math.abs(svgX - barCenterX)
+                          if (distance < minDistance) {
+                            minDistance = distance
+                            closestIndex = index
+                          }
+                        })
+
+                        const stat = weeklyStats[closestIndex]
+                        const date = new Date(stat.date)
+                        const dateLabel = `${date.getMonth() + 1}月${date.getDate()}日`
+
+                        setChartTooltip({
+                          visible: true,
+                          x: e.clientX,
+                          y: e.clientY - 10,
+                          date: dateLabel,
+                          submissions: stat.submissions,
+                          accepted: stat.accepted
+                        })
+                      }}
+                      onMouseLeave={() => setChartTooltip(null)}
+                    >
+                      {/* 网格线 */}
+                      <line x1="50" y1="10" x2="50" y2="57" stroke="rgba(255,255,255,0.08)" strokeWidth="1" />
+                      <line x1="50" y1="57" x2="570" y2="57" stroke="rgba(255,255,255,0.15)" strokeWidth="2" />
+
+                      {/* Y轴刻度线 */}
+                      <line x1="50" y1="10" x2="570" y2="10" stroke="rgba(255,255,255,0.05)" strokeWidth="1" strokeDasharray="3,3" />
+                      <line x1="50" y1="22" x2="570" y2="22" stroke="rgba(255,255,255,0.05)" strokeWidth="1" strokeDasharray="3,3" />
+                      <line x1="50" y1="34" x2="570" y2="34" stroke="rgba(255,255,255,0.05)" strokeWidth="1" strokeDasharray="3,3" />
+                      <line x1="50" y1="46" x2="570" y2="46" stroke="rgba(255,255,255,0.05)" strokeWidth="1" strokeDasharray="3,3" />
+
+                      {weeklyStats.length > 0 ? (
+                        <>
+                          {/* 计算最大值用于缩放 */}
+                          {(() => {
+                            const maxSubmissions = Math.max(...weeklyStats.map(d => d.submissions), 1)
+                            const maxAccepted = Math.max(...weeklyStats.map(d => d.accepted), 1)
+                            const maxValue = Math.max(maxSubmissions, maxAccepted, 3)
+                            const barWidth = 22
+                            const spacing = 52
+
+                            // 生成折线图路径
+                            const linePoints = weeklyStats.map((stat, index) => {
+                              const x = 61 + index * spacing
+                              const y = 57 - (stat.accepted / maxValue) * 45
+                              return { x, y, stat, index }
+                            })
+
+                            const linePath = linePoints.map((p, i) =>
+                              `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`
+                            ).join(' ')
+
+                            return (
+                              <>
+                                {/* 柱形图 - 提交数 */}
+                                {weeklyStats.map((stat, index) => {
+                                  const height = (stat.submissions / maxValue) * 45
+                                  const x = 50 + index * spacing
+                                  const y = 57 - height
+                                  const date = new Date(stat.date)
+                                  const dateLabel = `${date.getMonth() + 1}月${date.getDate()}日`
+
+                                  return (
+                                    <g key={`bar-${index}`}>
+                                      <rect
+                                        x={x}
+                                        y={y}
+                                        width={barWidth}
+                                        height={Math.max(height, 2)}
+                                        fill="rgba(79, 195, 247, 0.85)"
+                                        rx="3"
+                                        style={{ cursor: 'pointer', transition: 'opacity 0.2s' }}
+                                        className="chart-bar"
+                                      />
+                                    </g>
+                                  )
+                                })}
+
+                                {/* 折线图 - 通过数 */}
+                                {linePoints.length > 1 && (
+                                  <path
+                                    d={linePath}
+                                    fill="none"
+                                    stroke="rgba(76, 209, 55, 1)"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                )}
+
+                                {/* 折线图的点 */}
+                                {linePoints.map(({ x, y, stat, index }) => {
+                                  const date = new Date(stat.date)
+                                  const dateLabel = `${date.getMonth() + 1}月${date.getDate()}日`
+
+                                  return (
+                                    <g key={`point-${index}`}>
+                                      {/* 主圆点 */}
+                                      <circle
+                                        cx={x}
+                                        cy={y}
+                                        r="3.5"
+                                        fill="rgba(76, 209, 55, 1)"
+                                        stroke="rgba(255, 255, 255, 1)"
+                                        strokeWidth="1.5"
+                                        className="chart-point"
+                                      />
+                                      {/* 外圈光晕 - 用于扩大交互区域 */}
+                                      <circle
+                                        cx={x}
+                                        cy={y}
+                                        r="10"
+                                        fill="transparent"
+                                        style={{ cursor: 'pointer' }}
+                                      />
+                                    </g>
+                                  )
+                                })}
+
+                                {/* X轴标签（日期） */}
+                                {weeklyStats.map((stat, index) => {
+                                  const x = 61 + index * spacing
+                                  const date = new Date(stat.date)
+                                  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+                                  const weekday = weekdays[date.getDay()]
+                                  const label = `${date.getMonth() + 1}/${date.getDate()}`
+
+                                  return (
+                                    <g key={`label-${index}`}>
+                                      <text
+                                        x={x}
+                                        y="66"
+                                        fill="rgba(255, 255, 255, 0.6)"
+                                        fontSize="9"
+                                        fontWeight="500"
+                                        textAnchor="middle"
+                                      >
+                                        {label}
+                                      </text>
+                                      <text
+                                        x={x}
+                                        y="73"
+                                        fill="rgba(255, 255, 255, 0.4)"
+                                        fontSize="7"
+                                        textAnchor="middle"
+                                      >
+                                        {weekday}
+                                      </text>
+                                    </g>
+                                  )
+                                })}
+
+                                {/* Y轴刻度标签 */}
+                                <text x="42" y="12" fill="rgba(255, 255, 255, 0.4)" fontSize="8" textAnchor="end">{maxValue}</text>
+                                <text x="42" y="35" fill="rgba(255, 255, 255, 0.4)" fontSize="8" textAnchor="end">{Math.ceil(maxValue / 2)}</text>
+                                <text x="42" y="59" fill="rgba(255, 255, 255, 0.4)" fontSize="8" textAnchor="end">0</text>
+                              </>
+                            )
+                          })()}
+                        </>
+                      ) : (
+                        <text x="300" y="40" fill="rgba(255, 255, 255, 0.3)" fontSize="11" textAnchor="middle">
+                          {currentUser ? '暂无数据' : '登录后查看'}
+                        </text>
+                      )}
+
+                      {/* 图例 */}
+                      <g transform="translate(220, 81)">
+                        <rect x="0" y="-3" width="10" height="7" fill="rgba(79, 195, 247, 0.85)" rx="1.5" />
+                        <text x="13" y="2" fill="rgba(255, 255, 255, 0.7)" fontSize="9">提交数</text>
+
+                        <line x1="68" y1="0.5" x2="82" y2="0.5" stroke="rgba(76, 209, 55, 1)" strokeWidth="2" strokeLinecap="round" />
+                        <circle cx="75" cy="0.5" r="3" fill="rgba(76, 209, 55, 1)" stroke="rgba(255, 255, 255, 1)" strokeWidth="1.5" />
+                        <text x="85" y="2" fill="rgba(255, 255, 255, 0.7)" fontSize="9">通过数</text>
+                      </g>
+                    </svg>
+                  </div>
+
+                  {/* Tooltip - 渲染在外层 */}
+                  {chartTooltip && (
+                    <div
+                      className="chart-tooltip"
+                      style={{
+                        left: `${chartTooltip.x}px`,
+                        top: `${chartTooltip.y}px`,
+                        position: 'fixed'
+                      }}
+                    >
+                      <div className="chart-tooltip-date">{chartTooltip.date}</div>
+                      <div className="chart-tooltip-item">
+                        <span className="chart-tooltip-dot submissions"></span>
+                        <span className="chart-tooltip-label">提交</span>
+                        <span className="chart-tooltip-value">{chartTooltip.submissions}</span>
                       </div>
-                      <div className="problem-plan-item-meta">
-                        <span className={`difficulty-tag ${plan.difficulty}`}>{plan.difficulty}</span>
-                        <button
-                          className="problem-plan-remove"
-                          onClick={() => removeFromPlan(plan.id)}
-                        >
-                          ×
-                        </button>
+                      <div className="chart-tooltip-item">
+                        <span className="chart-tooltip-dot accepted"></span>
+                        <span className="chart-tooltip-label">通过</span>
+                        <span className="chart-tooltip-value">{chartTooltip.accepted}</span>
                       </div>
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
+              </div>
+
+              {/* 每日推荐 */}
+              <section className="oj-home-section">
+                <div className="oj-home-section-header">
+                  <h3>🎯 为你推荐</h3>
+                  <button className="ghost small" onClick={loadRecommendations}>
+                    换一批
+                  </button>
+                </div>
+                {recommendations.length > 0 ? (
+                  <>
+                    <div className="oj-recommendations">
+                      {recommendations.map((problem) => (
+                        <div
+                          key={problem.id}
+                          className="oj-recommendation-card"
+                          onClick={() => navigate(`/oj/p${problem.id}`)}
+                        >
+                          <div className="oj-recommendation-header">
+                            <span className="oj-code-label">P{problem.id}</span>
+                            <span className={`oj-badge ${problem.difficulty}`}>
+                              {problem.difficulty}
+                            </span>
+                          </div>
+                          <div className="oj-recommendation-title">{problem.title}</div>
+                          <div className="oj-recommendation-tags">
+                            {problem.tags.slice(0, 3).map((tag) => (
+                              <span key={tag} className="oj-tag-small">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                          <div className="oj-recommendation-footer">
+                            <span className="oj-pass-rate">
+                              通过率 {(problem as any).passRate || 0}%
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="oj-recommendation-hint">
+                      基于你最近做过的标签推荐
+                    </div>
+                  </>
+                ) : (
+                  <div className="oj-empty-state">暂无推荐，去做几道题吧！</div>
+                )}
+              </section>
+
+              {/* 实时动态 */}
+              <section className="oj-home-section">
+                <h3>🌊 实时动态</h3>
+                {recentAC.length > 0 ? (
+                  <div className="oj-recent-ac-list">
+                    {recentAC.map((ac, index) => (
+                      <div key={index} className="oj-recent-ac-item">
+                        <div className="oj-recent-ac-avatar">
+                          {ac.avatar ? (
+                            <img src={ac.avatar} alt={ac.user_name} />
+                          ) : (
+                            <div className="oj-recent-ac-avatar-placeholder">
+                              {ac.user_name.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                        </div>
+                        <div className="oj-recent-ac-content">
+                          <span className="oj-recent-ac-user">{ac.user_name}</span>
+                          <span className="oj-recent-ac-text">通过了</span>
+                          <span
+                            className="oj-recent-ac-problem"
+                            onClick={() => navigate(`/oj/p${ac.problem_id}`)}
+                          >
+                            {ac.problem_title}
+                          </span>
+                        </div>
+                        <div className="oj-recent-ac-time">
+                          {formatTimeAgo(ac.created_at)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="oj-empty-state">暂无动态</div>
+                )}
+              </section>
+            </div>
+
+            <div className="oj-home-sidebar">
+              {/* 做题计划 */}
+              <section className="oj-home-section">
+                <h3>📝 做题计划 ({problemPlan.filter(p => !p.completed).length})</h3>
+                {problemPlan.length === 0 ? (
+                  <div className="problem-plan-empty">暂无计划，去题库添加吧！</div>
+                ) : (
+                  <div className="problem-plan-list">
+                    {problemPlan.map(plan => (
+                      <div key={plan.id} className={`problem-plan-item ${plan.completed ? 'completed' : ''}`}>
+                        <div className="problem-plan-item-header">
+                          <input
+                            type="checkbox"
+                            checked={!!plan.completed}
+                            onChange={(e) => togglePlanComplete(plan.id, e.target.checked)}
+                          />
+                          <span
+                            className="problem-plan-item-title"
+                            onClick={() => navigate(`/oj/p${plan.problem_id}`)}
+                            style={{ cursor: 'pointer' }}
+                          >
+                            {plan.title}
+                          </span>
+                        </div>
+                        <div className="problem-plan-item-meta">
+                          <span className={`difficulty-tag ${plan.difficulty}`}>{plan.difficulty}</span>
+                          <button
+                            className="problem-plan-remove"
+                            onClick={() => removeFromPlan(plan.id)}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              {/* 热门题目 */}
+              <section className="oj-home-section">
+                <h3>🔥 热门题目</h3>
+                {hotProblems.length > 0 ? (
+                  <div className="oj-hot-problems">
+                    {hotProblems.map((problem, index) => (
+                      <div
+                        key={problem.id}
+                        className="oj-hot-problem-item"
+                        onClick={() => navigate(`/oj/p${problem.id}`)}
+                      >
+                        <div className="oj-hot-problem-rank">{index + 1}</div>
+                        <div className="oj-hot-problem-content">
+                          <div className="oj-hot-problem-title">{problem.title}</div>
+                          <div className="oj-hot-problem-meta">
+                            <span className={`oj-badge ${problem.difficulty}`}>
+                              {problem.difficulty}
+                            </span>
+                            <span className="oj-hot-problem-count">
+                              {problem.submission_count} 次提交
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="oj-empty-state">暂无数据</div>
+                )}
+              </section>
             </div>
           </div>
-        </div>
+        )}
       </div>
     )
   }
@@ -2856,7 +3597,7 @@ function App() {
   const OjProblemListPage = () => {
     const [search, setSearch] = useState('')
     const [difficulty, setDifficulty] = useState('')
-    const [tag, setTag] = useState('')
+    const [tag, setTag] = useState<string[]>([])
     const [problemList, setProblemList] = useState<OjProblemSummary[]>([])
     const [problemLoading, setProblemLoading] = useState(false)
     const [problemError, setProblemError] = useState('')
@@ -2870,7 +3611,7 @@ function App() {
       const params = new URLSearchParams()
       if (search.trim()) params.set('search', search.trim())
       if (difficulty) params.set('difficulty', difficulty)
-      if (tag.trim()) params.set('tag', tag.trim())
+      if (tag.length > 0) params.set('tag', tag.join(','))
       const { response, data } = await fetchJson<ProblemsResponse>(`/api/oj/problems?${params.toString()}`)
       if (!response.ok) {
         setProblemError(data?.message || '无法加载题目')
@@ -2967,12 +3708,10 @@ function App() {
             搜索
           </button>
         </div>
-        <input
-          className="auth-input"
-          placeholder="标签过滤"
-          value={tag}
-          onChange={(event) => setTag(event.target.value)}
-        />
+        <div className="oj-tag-filter">
+          <label className="filter-label">标签过滤</label>
+          <TagSelector selectedTags={tag} onTagsChange={setTag} />
+        </div>
 
         {problemError && <div className="auth-error">{problemError}</div>}
 
@@ -4749,7 +5488,7 @@ function App() {
                       <path d="M10 17l4-10" />
                     </svg>
                   </span>
-                  <span className="nav-label">题库</span>
+                  <span className="nav-label">算法测评</span>
                 </button>
                 <button
                   className={`nav-link ${location.pathname.startsWith('/leaderboard') ? 'active' : ''}`}

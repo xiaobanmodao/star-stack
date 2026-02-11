@@ -356,8 +356,14 @@ app.get('/api/oj/problems', async (req, res) => {
     }
   }
   if (tag) {
-    where.push(`tags LIKE ?`)
-    params.push(`%${tag}%`)
+    // 支持多标签过滤，用逗号分隔
+    const tags = tag.split(',').map(t => t.trim()).filter(Boolean)
+    if (tags.length > 0) {
+      // 每个标签都要匹配
+      const tagConditions = tags.map(() => `tags LIKE ?`).join(' AND ')
+      where.push(`(${tagConditions})`)
+      tags.forEach(t => params.push(`%${t}%`))
+    }
   }
   if (difficulty) {
     where.push(`difficulty = ?`)
@@ -1466,6 +1472,67 @@ app.get('/api/user/heatmap/:userId', async (req, res) => {
   }
 })
 
+// 获取最近10天的做题统计
+app.get('/api/user/weekly-stats/:userId', async (req, res) => {
+  try {
+    const db = await getDb()
+    const userId = req.params.userId
+
+    // Check if user exists
+    const user = await db.get(`SELECT id FROM users WHERE id = ?`, userId)
+    if (!user) {
+      return res.status(404).json({ message: '用户不存在' })
+    }
+
+    // 获取最近10天的日期范围
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const tenDaysAgo = new Date(today)
+    tenDaysAgo.setDate(tenDaysAgo.getDate() - 9)
+
+    const startDate = tenDaysAgo.toISOString().split('T')[0]
+    const endDate = today.toISOString().split('T')[0]
+
+    // 查询最近10天的活动数据
+    const activities = await db.all(
+      `SELECT activity_date, submission_count, accepted_count
+       FROM daily_activity
+       WHERE user_id = ? AND activity_date >= ? AND activity_date <= ?
+       ORDER BY activity_date ASC`,
+      [userId, startDate, endDate]
+    )
+
+    // 创建活动映射
+    const activityMap = new Map()
+    activities.forEach(a => {
+      activityMap.set(a.activity_date, {
+        submissions: a.submission_count,
+        accepted: a.accepted_count
+      })
+    })
+
+    // 填充完整的10天数据
+    const weeklyStats = []
+    for (let i = 0; i < 10; i++) {
+      const date = new Date(tenDaysAgo)
+      date.setDate(date.getDate() + i)
+      const dateStr = date.toISOString().split('T')[0]
+      const activity = activityMap.get(dateStr)
+
+      weeklyStats.push({
+        date: dateStr,
+        submissions: activity?.submissions || 0,
+        accepted: activity?.accepted || 0
+      })
+    }
+
+    return res.json({ weeklyStats })
+  } catch (error) {
+    console.error('Failed to get weekly stats:', error)
+    return res.status(500).json({ message: '获取周统计数据失败' })
+  }
+})
+
 app.get('/api/user/achievements/:userId', async (req, res) => {
   try {
     const db = await getDb()
@@ -1506,55 +1573,207 @@ app.get('/api/leaderboard', async (req, res) => {
     const db = await getDb()
     const limit = Math.min(Number(req.query.limit) || 100, 500)
     const offset = Number(req.query.offset) || 0
+    const type = req.query.type || 'total' // total, weekly, monthly
 
-    // Get leaderboard data sorted by rating
-    const leaderboard = await db.all(
-      `SELECT
-        ROW_NUMBER() OVER (ORDER BY u.rating DESC, us.solved_problems DESC) as rank,
-        us.user_id,
-        u.name as user_name,
-        u.avatar,
-        u.rating,
-        us.solved_problems
-       FROM user_stats us
-       JOIN users u ON us.user_id = u.id
-       WHERE us.total_submissions > 0
-       ORDER BY u.rating DESC, us.solved_problems DESC
-       LIMIT ? OFFSET ?`,
-      limit,
-      offset
-    )
-
-    // Get current user rank if authenticated
+    let leaderboard = []
     let currentUser = null
     const token = getAuthToken(req)
-    if (token) {
-      const user = await getUserByToken(db, token)
+    const user = token ? await getUserByToken(db, token) : null
+
+    if (type === 'total') {
+      // 总榜：按等级分排序
+      leaderboard = await db.all(
+        `SELECT
+          ROW_NUMBER() OVER (ORDER BY u.rating DESC) as rank,
+          us.user_id,
+          u.name as user_name,
+          u.avatar,
+          u.rating as value
+         FROM user_stats us
+         JOIN users u ON us.user_id = u.id
+         WHERE us.total_submissions > 0
+         ORDER BY u.rating DESC
+         LIMIT ? OFFSET ?`,
+        limit,
+        offset
+      )
+
+      // 获取历史排名（上一次记录的排名）
+      const previousPeriodKey = getPreviousPeriodKey('total')
+      for (const entry of leaderboard) {
+        const history = await db.get(
+          `SELECT rank FROM leaderboard_history
+           WHERE user_id = ? AND period_type = 'total' AND period_key = ?`,
+          [entry.user_id, previousPeriodKey]
+        )
+        entry.previousRank = history?.rank || null
+        entry.rankChange = history ? entry.rank - history.rank : null
+      }
+
+      // 当前用户排名
       if (user) {
-        const userStats = await db.get(
+        const userRank = await db.get(
           `SELECT
             (SELECT COUNT(*) + 1 FROM users u2
              JOIN user_stats us2 ON u2.id = us2.user_id
-             WHERE us2.total_submissions > 0
-             AND (u2.rating > u.rating OR (u2.rating = u.rating AND us2.solved_problems > us.solved_problems))) as rank,
-            us.user_id,
-            u.name as user_name,
-            u.avatar,
-            u.rating,
-            us.solved_problems
-           FROM user_stats us
-           JOIN users u ON us.user_id = u.id
-           WHERE us.user_id = ?`,
+             WHERE us2.total_submissions > 0 AND u2.rating > u.rating) as rank,
+            u.rating as value
+           FROM users u
+           WHERE u.id = ?`,
           user.id
         )
-        if (userStats) {
+        if (userRank) {
+          const history = await db.get(
+            `SELECT rank FROM leaderboard_history
+             WHERE user_id = ? AND period_type = 'total' AND period_key = ?`,
+            [user.id, previousPeriodKey]
+          )
           currentUser = {
-            rank: userStats.rank,
-            userId: userStats.user_id,
-            userName: userStats.user_name,
-            avatar: userStats.avatar,
-            rating: userStats.rating,
-            solvedProblems: userStats.solved_problems
+            rank: userRank.rank,
+            userId: user.id,
+            userName: user.name,
+            avatar: user.avatar,
+            value: userRank.value,
+            previousRank: history?.rank || null,
+            rankChange: history ? userRank.rank - history.rank : null
+          }
+        }
+      }
+    } else if (type === 'weekly') {
+      // 周榜：本周通过题目数
+      const { startDate, endDate } = getWeekRange()
+
+      leaderboard = await db.all(
+        `SELECT
+          ROW_NUMBER() OVER (ORDER BY COUNT(DISTINCT sp.problem_id) DESC) as rank,
+          sp.user_id,
+          u.name as user_name,
+          u.avatar,
+          COUNT(DISTINCT sp.problem_id) as value
+         FROM solved_problems sp
+         JOIN users u ON sp.user_id = u.id
+         WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ?
+         GROUP BY sp.user_id
+         HAVING COUNT(DISTINCT sp.problem_id) > 0
+         ORDER BY value DESC
+         LIMIT ? OFFSET ?`,
+        startDate, endDate, limit, offset
+      )
+
+      // 获取上周排名
+      const previousPeriodKey = getPreviousPeriodKey('weekly')
+      for (const entry of leaderboard) {
+        const history = await db.get(
+          `SELECT rank FROM leaderboard_history
+           WHERE user_id = ? AND period_type = 'weekly' AND period_key = ?`,
+          [entry.user_id, previousPeriodKey]
+        )
+        entry.previousRank = history?.rank || null
+        entry.rankChange = history ? entry.rank - history.rank : null
+      }
+
+      // 当前用户排名
+      if (user) {
+        const userStats = await db.get(
+          `SELECT COUNT(DISTINCT problem_id) as value
+           FROM solved_problems
+           WHERE user_id = ? AND first_solved_at >= ? AND first_solved_at < ?`,
+          user.id, startDate, endDate
+        )
+        if (userStats && userStats.value > 0) {
+          const userRank = await db.get(
+            `SELECT COUNT(*) + 1 as rank
+             FROM (
+               SELECT user_id, COUNT(DISTINCT problem_id) as cnt
+               FROM solved_problems
+               WHERE first_solved_at >= ? AND first_solved_at < ?
+               GROUP BY user_id
+               HAVING cnt > ?
+             )`,
+            startDate, endDate, userStats.value
+          )
+          const history = await db.get(
+            `SELECT rank FROM leaderboard_history
+             WHERE user_id = ? AND period_type = 'weekly' AND period_key = ?`,
+            [user.id, previousPeriodKey]
+          )
+          currentUser = {
+            rank: userRank.rank,
+            userId: user.id,
+            userName: user.name,
+            avatar: user.avatar,
+            value: userStats.value,
+            previousRank: history?.rank || null,
+            rankChange: history ? userRank.rank - history.rank : null
+          }
+        }
+      }
+    } else if (type === 'monthly') {
+      // 月榜：本月通过题目数
+      const { startDate, endDate } = getMonthRange()
+
+      leaderboard = await db.all(
+        `SELECT
+          ROW_NUMBER() OVER (ORDER BY COUNT(DISTINCT sp.problem_id) DESC) as rank,
+          sp.user_id,
+          u.name as user_name,
+          u.avatar,
+          COUNT(DISTINCT sp.problem_id) as value
+         FROM solved_problems sp
+         JOIN users u ON sp.user_id = u.id
+         WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ?
+         GROUP BY sp.user_id
+         HAVING COUNT(DISTINCT sp.problem_id) > 0
+         ORDER BY value DESC
+         LIMIT ? OFFSET ?`,
+        startDate, endDate, limit, offset
+      )
+
+      // 获取上月排名
+      const previousPeriodKey = getPreviousPeriodKey('monthly')
+      for (const entry of leaderboard) {
+        const history = await db.get(
+          `SELECT rank FROM leaderboard_history
+           WHERE user_id = ? AND period_type = 'monthly' AND period_key = ?`,
+          [entry.user_id, previousPeriodKey]
+        )
+        entry.previousRank = history?.rank || null
+        entry.rankChange = history ? entry.rank - history.rank : null
+      }
+
+      // 当前用户排名
+      if (user) {
+        const userStats = await db.get(
+          `SELECT COUNT(DISTINCT problem_id) as value
+           FROM solved_problems
+           WHERE user_id = ? AND first_solved_at >= ? AND first_solved_at < ?`,
+          user.id, startDate, endDate
+        )
+        if (userStats && userStats.value > 0) {
+          const userRank = await db.get(
+            `SELECT COUNT(*) + 1 as rank
+             FROM (
+               SELECT user_id, COUNT(DISTINCT problem_id) as cnt
+               FROM solved_problems
+               WHERE first_solved_at >= ? AND first_solved_at < ?
+               GROUP BY user_id
+               HAVING cnt > ?
+             )`,
+            startDate, endDate, userStats.value
+          )
+          const history = await db.get(
+            `SELECT rank FROM leaderboard_history
+             WHERE user_id = ? AND period_type = 'monthly' AND period_key = ?`,
+            [user.id, previousPeriodKey]
+          )
+          currentUser = {
+            rank: userRank.rank,
+            userId: user.id,
+            userName: user.name,
+            avatar: user.avatar,
+            value: userStats.value,
+            previousRank: history?.rank || null,
+            rankChange: history ? userRank.rank - history.rank : null
           }
         }
       }
@@ -1566,16 +1785,73 @@ app.get('/api/leaderboard', async (req, res) => {
         userId: row.user_id,
         userName: row.user_name,
         avatar: row.avatar,
-        rating: row.rating,
-        solvedProblems: row.solved_problems
+        value: row.value,
+        previousRank: row.previousRank,
+        rankChange: row.rankChange
       })),
-      currentUser
+      currentUser,
+      type
     })
   } catch (error) {
     console.error('Failed to get leaderboard:', error)
     return res.status(500).json({ message: '获取排行榜失败' })
   }
 })
+
+// Helper functions for date ranges
+function getWeekRange() {
+  const now = new Date()
+  const dayOfWeek = now.getDay() // 0 = Sunday, 1 = Monday, ...
+  const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1 // Monday = 0
+
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - diff)
+  monday.setHours(0, 0, 0, 0)
+
+  const nextMonday = new Date(monday)
+  nextMonday.setDate(monday.getDate() + 7)
+
+  return {
+    startDate: monday.toISOString(),
+    endDate: nextMonday.toISOString()
+  }
+}
+
+function getMonthRange() {
+  const now = new Date()
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
+  firstDay.setHours(0, 0, 0, 0)
+
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  nextMonth.setHours(0, 0, 0, 0)
+
+  return {
+    startDate: firstDay.toISOString(),
+    endDate: nextMonth.toISOString()
+  }
+}
+
+function getPreviousPeriodKey(type) {
+  const now = new Date()
+  if (type === 'total') {
+    // 总榜使用日期作为key，获取昨天
+    const yesterday = new Date(now)
+    yesterday.setDate(now.getDate() - 1)
+    return yesterday.toISOString().split('T')[0]
+  } else if (type === 'weekly') {
+    // 获取上周的周一日期
+    const dayOfWeek = now.getDay()
+    const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+    const lastMonday = new Date(now)
+    lastMonday.setDate(now.getDate() - diff - 7)
+    return lastMonday.toISOString().split('T')[0]
+  } else if (type === 'monthly') {
+    // 获取上月第一天
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    return lastMonth.toISOString().split('T')[0]
+  }
+  return null
+}
 
 // Problem Plan endpoints
 app.get('/api/problem-plan', async (req, res) => {
@@ -2182,11 +2458,460 @@ app.post('/api/discussions/like', async (req, res) => {
   }
 })
 
+// OJ 主页数据 API
+// 1. 获取每日推荐题目（基于用户最近做题的标签和难度）
+app.get('/api/oj/recommendations', async (req, res) => {
+  try {
+    const db = await getDb()
+    const token = req.headers.authorization?.replace('Bearer ', '')
+    let userId = null
+
+    if (token) {
+      const session = await db.get(`SELECT user_id FROM sessions WHERE token = ?`, token)
+      userId = session?.user_id
+    }
+
+    let recommendations = []
+
+    if (userId) {
+      // 获取用户最近 AC 的题目（最近 10 题）
+      const recentAC = await db.all(
+        `SELECT DISTINCT p.id, p.tags, p.difficulty
+         FROM submissions s
+         JOIN problems p ON s.problem_id = p.id
+         WHERE s.user_id = ? AND s.status = 'AC' AND p.status = 'published'
+         ORDER BY s.created_at DESC
+         LIMIT 10`,
+        userId
+      )
+
+      if (recentAC.length > 0) {
+        // 提取所有标签
+        const allTags = []
+        const difficulties = []
+        recentAC.forEach(p => {
+          if (p.tags) {
+            const tags = p.tags.split(',').map(t => t.trim()).filter(Boolean)
+            allTags.push(...tags)
+          }
+          difficulties.push(p.difficulty)
+        })
+
+        // 统计标签频率
+        const tagFreq = {}
+        allTags.forEach(tag => {
+          tagFreq[tag] = (tagFreq[tag] || 0) + 1
+        })
+
+        // 获取最常见的标签（前5个）
+        const topTags = Object.entries(tagFreq)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([tag]) => tag)
+
+        // 计算平均难度
+        const difficultyOrder = ['入门', '普及-', '普及', '提高-', '提高', '省选', 'noi']
+        const avgDifficultyIndex = Math.round(
+          difficulties.reduce((sum, d) => sum + difficultyOrder.indexOf(d), 0) / difficulties.length
+        )
+        const targetDifficulties = [
+          difficultyOrder[Math.max(0, avgDifficultyIndex - 1)],
+          difficultyOrder[avgDifficultyIndex],
+          difficultyOrder[Math.min(difficultyOrder.length - 1, avgDifficultyIndex + 1)]
+        ].filter(Boolean)
+
+        // 获取用户已 AC 的题目 ID
+        const acProblemIds = await db.all(
+          `SELECT DISTINCT problem_id FROM submissions WHERE user_id = ? AND status = 'AC'`,
+          userId
+        )
+        const acIds = acProblemIds.map(row => row.problem_id)
+
+        // 查找候选题目（包含这些标签之一，难度相近，未AC）
+        const placeholders = topTags.map(() => 'tags LIKE ?').join(' OR ')
+        const diffPlaceholders = targetDifficulties.map(() => '?').join(',')
+        const excludePlaceholders = acIds.map(() => '?').join(',')
+
+        let query = `
+          SELECT id, slug, title, difficulty, tags,
+                 (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id AND status = 'AC') as ac_count,
+                 (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id) as total_count
+          FROM problems
+          WHERE status = 'published'
+            AND (${placeholders})
+            AND difficulty IN (${diffPlaceholders})
+        `
+
+        const params = [
+          ...topTags.map(tag => `%${tag}%`),
+          ...targetDifficulties
+        ]
+
+        if (acIds.length > 0) {
+          query += ` AND id NOT IN (${excludePlaceholders})`
+          params.push(...acIds)
+        }
+
+        query += ` ORDER BY RANDOM() LIMIT 20`
+
+        const candidates = await db.all(query, ...params)
+
+        // 计算相似度分数并排序
+        const scored = candidates.map(p => {
+          const pTags = p.tags ? p.tags.split(',').map(t => t.trim()).filter(Boolean) : []
+          const matchCount = pTags.filter(tag => topTags.includes(tag)).length
+          return {
+            ...p,
+            score: matchCount
+          }
+        })
+
+        // 取前 15 个，随机选 4 个
+        const top15 = scored.sort((a, b) => b.score - a.score).slice(0, 15)
+        const shuffled = top15.sort(() => Math.random() - 0.5)
+        recommendations = shuffled.slice(0, 4)
+      }
+    }
+
+    // 如果没有推荐结果（新用户或没有AC记录），推荐热门入门题
+    if (recommendations.length === 0) {
+      recommendations = await db.all(
+        `SELECT p.id, p.slug, p.title, p.difficulty, p.tags,
+                (SELECT COUNT(*) FROM submissions WHERE problem_id = p.id AND status = 'AC') as ac_count,
+                (SELECT COUNT(*) FROM submissions WHERE problem_id = p.id) as total_count
+         FROM problems p
+         WHERE p.status = 'published' AND p.difficulty = '入门'
+         ORDER BY (SELECT COUNT(*) FROM submissions WHERE problem_id = p.id) DESC
+         LIMIT 4`
+      )
+    }
+
+    // 格式化返回数据
+    const formatted = recommendations.map(p => ({
+      id: p.id,
+      slug: p.slug,
+      title: p.title,
+      difficulty: p.difficulty,
+      tags: p.tags ? p.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      passRate: p.total_count > 0 ? Math.round((p.ac_count / p.total_count) * 100) : 0
+    }))
+
+    return res.json({ recommendations: formatted })
+  } catch (error) {
+    console.error('Failed to get recommendations:', error)
+    return res.status(500).json({ message: '获取推荐失败' })
+  }
+})
+
+// 2. 获取题库概览数据
+app.get('/api/oj/overview', async (req, res) => {
+  try {
+    const db = await getDb()
+
+    // 题库总数
+    const totalResult = await db.get(
+      `SELECT COUNT(*) as total FROM problems WHERE status = 'published'`
+    )
+    const total = totalResult?.total || 0
+
+    // 各难度题目数量
+    const difficultyStats = await db.all(
+      `SELECT difficulty, COUNT(*) as count
+       FROM problems
+       WHERE status = 'published'
+       GROUP BY difficulty`
+    )
+
+    const difficulties = {}
+    difficultyStats.forEach(row => {
+      difficulties[row.difficulty] = row.count
+    })
+
+    // 标签热度 Top 10
+    const allProblems = await db.all(
+      `SELECT tags FROM problems WHERE status = 'published' AND tags IS NOT NULL AND tags != ''`
+    )
+
+    const tagFreq = {}
+    allProblems.forEach(p => {
+      if (p.tags) {
+        const tags = p.tags.split(',').map(t => t.trim()).filter(Boolean)
+        tags.forEach(tag => {
+          tagFreq[tag] = (tagFreq[tag] || 0) + 1
+        })
+      }
+    })
+
+    const topTags = Object.entries(tagFreq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([tag, count]) => ({ tag, count }))
+
+    return res.json({
+      total,
+      difficulties,
+      topTags
+    })
+  } catch (error) {
+    console.error('Failed to get overview:', error)
+    return res.status(500).json({ message: '获取概览失败' })
+  }
+})
+
+// 3. 获取热门题目 Top 5（24小时内提交最多）
+app.get('/api/oj/hot-problems', async (req, res) => {
+  try {
+    const db = await getDb()
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
+    const hotProblems = await db.all(
+      `SELECT p.id, p.slug, p.title, p.difficulty,
+              COUNT(s.id) as submission_count
+       FROM problems p
+       JOIN submissions s ON p.id = s.problem_id
+       WHERE p.status = 'published' AND s.created_at > ?
+       GROUP BY p.id
+       ORDER BY submission_count DESC
+       LIMIT 5`,
+      oneDayAgo
+    )
+
+    return res.json({ hotProblems })
+  } catch (error) {
+    console.error('Failed to get hot problems:', error)
+    return res.status(500).json({ message: '获取热门题目失败' })
+  }
+})
+
+// 4. 获取实时动态（最近10条AC记录）
+app.get('/api/oj/recent-ac', async (req, res) => {
+  try {
+    const db = await getDb()
+
+    const recentAC = await db.all(
+      `SELECT s.created_at, u.name as user_name, u.avatar, p.id as problem_id, p.title as problem_title
+       FROM submissions s
+       JOIN users u ON s.user_id = u.id
+       JOIN problems p ON s.problem_id = p.id
+       WHERE s.status = 'AC' AND p.status = 'published'
+       ORDER BY s.created_at DESC
+       LIMIT 10`
+    )
+
+    return res.json({ recentAC })
+  } catch (error) {
+    console.error('Failed to get recent AC:', error)
+    return res.status(500).json({ message: '获取动态失败' })
+  }
+})
+
+// 5. 获取用户最近未AC的题目（继续上次）
+app.get('/api/oj/continue-last', async (req, res) => {
+  try {
+    const db = await getDb()
+    const token = req.headers.authorization?.replace('Bearer ', '')
+
+    if (!token) {
+      return res.json({ problem: null })
+    }
+
+    const session = await db.get(`SELECT user_id FROM sessions WHERE token = ?`, token)
+    if (!session) {
+      return res.json({ problem: null })
+    }
+
+    // 获取用户最近提交但未AC的题目
+    const lastProblem = await db.get(
+      `SELECT DISTINCT p.id, p.slug, p.title, p.difficulty, p.tags
+       FROM submissions s
+       JOIN problems p ON s.problem_id = p.id
+       WHERE s.user_id = ?
+         AND p.status = 'published'
+         AND p.id NOT IN (
+           SELECT DISTINCT problem_id
+           FROM submissions
+           WHERE user_id = ? AND status = 'AC'
+         )
+       ORDER BY s.created_at DESC
+       LIMIT 1`,
+      session.user_id,
+      session.user_id
+    )
+
+    if (lastProblem) {
+      return res.json({
+        problem: {
+          id: lastProblem.id,
+          slug: lastProblem.slug,
+          title: lastProblem.title,
+          difficulty: lastProblem.difficulty,
+          tags: lastProblem.tags ? lastProblem.tags.split(',').map(t => t.trim()).filter(Boolean) : []
+        }
+      })
+    }
+
+    return res.json({ problem: null })
+  } catch (error) {
+    console.error('Failed to get continue last:', error)
+    return res.status(500).json({ message: '获取失败' })
+  }
+})
+
+// 6. 随机获取一题（按难度）
+app.get('/api/oj/random-problem', async (req, res) => {
+  try {
+    const db = await getDb()
+    const { difficulty } = req.query
+
+    let query = `SELECT id, slug, title, difficulty, tags FROM problems WHERE status = 'published'`
+    const params = []
+
+    if (difficulty) {
+      query += ` AND difficulty = ?`
+      params.push(difficulty)
+    }
+
+    query += ` ORDER BY RANDOM() LIMIT 1`
+
+    const problem = await db.get(query, ...params)
+
+    if (!problem) {
+      return res.status(404).json({ message: '没有找到题目' })
+    }
+
+    return res.json({
+      problem: {
+        id: problem.id,
+        slug: problem.slug,
+        title: problem.title,
+        difficulty: problem.difficulty,
+        tags: problem.tags ? problem.tags.split(',').map(t => t.trim()).filter(Boolean) : []
+      }
+    })
+  } catch (error) {
+    console.error('Failed to get random problem:', error)
+    return res.status(500).json({ message: '获取失败' })
+  }
+})
+
+// Save leaderboard history for tracking rank changes
+async function saveLeaderboardHistory() {
+  try {
+    const db = await getDb()
+    const now = new Date()
+    const today = now.toISOString().split('T')[0]
+
+    // Save total leaderboard (daily)
+    const totalLeaderboard = await db.all(
+      `SELECT
+        ROW_NUMBER() OVER (ORDER BY u.rating DESC) as rank,
+        us.user_id,
+        u.rating as value
+       FROM user_stats us
+       JOIN users u ON us.user_id = u.id
+       WHERE us.total_submissions > 0
+       ORDER BY u.rating DESC
+       LIMIT 100`
+    )
+
+    for (const entry of totalLeaderboard) {
+      await db.run(
+        `INSERT OR REPLACE INTO leaderboard_history (user_id, period_type, period_key, rank, value, recorded_at)
+         VALUES (?, 'total', ?, ?, ?, ?)`,
+        [entry.user_id, today, entry.rank, entry.value, now.toISOString()]
+      )
+    }
+
+    // Save weekly leaderboard (on Monday)
+    const dayOfWeek = now.getDay()
+    if (dayOfWeek === 1) { // Monday
+      const { startDate, endDate } = getWeekRange()
+      const weekKey = startDate.split('T')[0]
+
+      const weeklyLeaderboard = await db.all(
+        `SELECT
+          ROW_NUMBER() OVER (ORDER BY COUNT(DISTINCT sp.problem_id) DESC) as rank,
+          sp.user_id,
+          COUNT(DISTINCT sp.problem_id) as value
+         FROM solved_problems sp
+         WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ?
+         GROUP BY sp.user_id
+         HAVING COUNT(DISTINCT sp.problem_id) > 0
+         ORDER BY value DESC
+         LIMIT 100`,
+        startDate, endDate
+      )
+
+      for (const entry of weeklyLeaderboard) {
+        await db.run(
+          `INSERT OR REPLACE INTO leaderboard_history (user_id, period_type, period_key, rank, value, recorded_at)
+           VALUES (?, 'weekly', ?, ?, ?, ?)`,
+          [entry.user_id, weekKey, entry.rank, entry.value, now.toISOString()]
+        )
+      }
+    }
+
+    // Save monthly leaderboard (on 1st of month)
+    if (now.getDate() === 1) {
+      const { startDate, endDate } = getMonthRange()
+      const monthKey = startDate.split('T')[0]
+
+      const monthlyLeaderboard = await db.all(
+        `SELECT
+          ROW_NUMBER() OVER (ORDER BY COUNT(DISTINCT sp.problem_id) DESC) as rank,
+          sp.user_id,
+          COUNT(DISTINCT sp.problem_id) as value
+         FROM solved_problems sp
+         WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ?
+         GROUP BY sp.user_id
+         HAVING COUNT(DISTINCT sp.problem_id) > 0
+         ORDER BY value DESC
+         LIMIT 100`,
+        startDate, endDate
+      )
+
+      for (const entry of monthlyLeaderboard) {
+        await db.run(
+          `INSERT OR REPLACE INTO leaderboard_history (user_id, period_type, period_key, rank, value, recorded_at)
+           VALUES (?, 'monthly', ?, ?, ?, ?)`,
+          [entry.user_id, monthKey, entry.rank, entry.value, now.toISOString()]
+        )
+      }
+    }
+
+    console.log('Leaderboard history saved successfully')
+  } catch (error) {
+    console.error('Failed to save leaderboard history:', error)
+  }
+}
+
+// Schedule leaderboard history save (daily at midnight)
+function scheduleLeaderboardHistory() {
+  const now = new Date()
+  const tomorrow = new Date(now)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  tomorrow.setHours(0, 0, 0, 0)
+
+  const timeUntilMidnight = tomorrow - now
+
+  setTimeout(() => {
+    saveLeaderboardHistory()
+    // Run daily
+    setInterval(saveLeaderboardHistory, 24 * 60 * 60 * 1000)
+  }, timeUntilMidnight)
+
+  console.log('Leaderboard history scheduler initialized')
+}
+
 const PORT = Number(process.env.PORT) || 5174
 initDb()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`StarStack API running at http://localhost:${PORT}`)
+      // Initialize leaderboard history scheduler
+      scheduleLeaderboardHistory()
+      // Save initial history
+      saveLeaderboardHistory()
     })
   })
   .catch((error) => {

@@ -375,6 +375,21 @@ export const initDb = async () => {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_discussion_views_post ON discussion_views(post_id);
+
+    -- Leaderboard history table for tracking rank changes
+    CREATE TABLE IF NOT EXISTS leaderboard_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      period_type TEXT NOT NULL,
+      period_key TEXT NOT NULL,
+      rank INTEGER NOT NULL,
+      value REAL NOT NULL,
+      recorded_at TEXT NOT NULL,
+      UNIQUE(user_id, period_type, period_key),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_leaderboard_history_period ON leaderboard_history(period_type, period_key);
+    CREATE INDEX IF NOT EXISTS idx_leaderboard_history_user ON leaderboard_history(user_id);
   `)
 
   // Initialize user_stats for existing users
