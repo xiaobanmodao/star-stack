@@ -3197,7 +3197,7 @@ function App() {
       submissions: number
       accepted: number
     } | null>(null)
-    const [_randomDifficulty, _setRandomDifficulty] = useState('')
+    const [randomDifficulty, _setRandomDifficulty] = useState('')
     const [loading, setLoading] = useState(true)
 
     // 加载所有数据
@@ -3437,7 +3437,6 @@ function App() {
                                   const height = (stat.submissions / maxValue) * 45
                                   const x = 50 + index * spacing
                                   const y = 57 - height
-                                  const date = new Date(stat.date)
 
                                   return (
                                     <g key={`bar-${index}`}>
@@ -3468,8 +3467,7 @@ function App() {
                                 )}
 
                                 {/* 折线图的点 */}
-                                {linePoints.map(({ x, y, stat, index }) => {
-                                  const date = new Date(stat.date)
+                                {linePoints.map(({ x, y, stat: _stat, index }) => {
 
                                   return (
                                     <g key={`point-${index}`}>
