@@ -637,7 +637,7 @@ function App() {
   const [authFrom, setAuthFrom] = useState('/')
 
   const [problemPlan, setProblemPlan] = useState<ProblemPlan[]>([])
-  const [planOpen, setPlanOpen] = useState(false)
+  const [_planOpen, _setPlanOpen] = useState(false)
 
   const [unreadMessageCount, setUnreadMessageCount] = useState(0)
 
@@ -3197,7 +3197,7 @@ function App() {
       submissions: number
       accepted: number
     } | null>(null)
-    const [randomDifficulty, setRandomDifficulty] = useState('')
+    const [_randomDifficulty, _setRandomDifficulty] = useState('')
     const [loading, setLoading] = useState(true)
 
     // 加载所有数据
@@ -3375,7 +3375,7 @@ function App() {
                         let closestIndex = 0
                         let minDistance = Infinity
 
-                        weeklyStats.forEach((stat, index) => {
+                        weeklyStats.forEach((_stat, index) => {
                           const barCenterX = startX + index * spacing + barWidth / 2
                           const distance = Math.abs(svgX - barCenterX)
                           if (distance < minDistance) {
@@ -3438,7 +3438,6 @@ function App() {
                                   const x = 50 + index * spacing
                                   const y = 57 - height
                                   const date = new Date(stat.date)
-                                  const dateLabel = `${date.getMonth() + 1}月${date.getDate()}日`
 
                                   return (
                                     <g key={`bar-${index}`}>
@@ -3471,7 +3470,6 @@ function App() {
                                 {/* 折线图的点 */}
                                 {linePoints.map(({ x, y, stat, index }) => {
                                   const date = new Date(stat.date)
-                                  const dateLabel = `${date.getMonth() + 1}月${date.getDate()}日`
 
                                   return (
                                     <g key={`point-${index}`}>
