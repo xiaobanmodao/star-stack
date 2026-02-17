@@ -100,12 +100,15 @@ type LeaderboardEntry = {
   userId: string
   userName: string
   avatar?: string
-  rating: number
-  solvedCount: number
-  solvedProblems: number
-  totalSubmissions: number
-  acceptanceRate: number
+  rating?: number
+  solvedCount?: number
+  solvedProblems?: number
+  totalSubmissions?: number
+  acceptanceRate?: number
   rank: number
+  value: number
+  rankChange: number | null
+  previousRank?: number | null
 }
 
 // API Response Types
@@ -184,6 +187,57 @@ type DiscussionListResponse = {
 
 type DiscussionDetailResponse = {
   post: DiscussionPost; comments: DiscussionComment[]
+}
+
+type Message = {
+  id: number
+  senderId: string
+  senderName: string
+  senderAvatar?: string
+  content: string
+  isRead: boolean
+  createdAt: string
+}
+
+type Conversation = {
+  conversationId: number
+  otherUser: {
+    id: string
+    name: string
+    avatar?: string
+  }
+  lastMessage: {
+    id: number
+    senderId: string
+    content: string
+    createdAt: string
+  } | null
+  unreadCount: number
+  lastMessageAt: string
+}
+
+type ConversationsResponse = {
+  conversations: Conversation[]
+}
+
+type MessagesResponse = {
+  messages: Message[]
+  otherUser: {
+    id: string
+    name: string
+    avatar?: string
+    isBanned: boolean
+  }
+  pagination: {
+    page: number
+    pageSize: number
+    total: number
+    totalPages: number
+  }
+}
+
+type UnreadCountResponse = {
+  unreadCount: number
 }
 
 const TOKEN_KEY = 'starstack_token'
@@ -585,6 +639,8 @@ function App() {
   const [problemPlan, setProblemPlan] = useState<ProblemPlan[]>([])
   const [planOpen, setPlanOpen] = useState(false)
 
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0)
+
   const [formId, setFormId] = useState('')
   const [formName, setFormName] = useState('')
   const [formPassword, setFormPassword] = useState('')
@@ -621,6 +677,31 @@ function App() {
   useEffect(() => {
     loadCurrentUser()
   }, [loadCurrentUser])
+
+  // Poll unread message count every 15 seconds
+  const fetchUnreadCount = useCallback(async () => {
+    if (!currentUser) return
+    try {
+      const { response, data } = await fetchJson<UnreadCountResponse>('/api/messages/unread-count')
+      if (response.ok && data) {
+        setUnreadMessageCount(data.unreadCount)
+      }
+    } catch {
+      // Silently ignore fetch errors
+    }
+  }, [currentUser])
+
+  useEffect(() => {
+    if (!currentUser) {
+      setUnreadMessageCount(0)
+      return
+    }
+
+    fetchUnreadCount()
+    const interval = setInterval(fetchUnreadCount, 15000)
+
+    return () => clearInterval(interval)
+  }, [currentUser, fetchUnreadCount])
 
   useEffect(() => {
     if (isAuthPage) return
@@ -2395,22 +2476,30 @@ function App() {
     const [leaderboardPage, setLeaderboardPage] = useState(1)
     const [leaderboardPageInput, setLeaderboardPageInput] = useState('1')
     const [leaderboardType, setLeaderboardType] = useState<'total' | 'weekly' | 'monthly'>('total')
+    const [leaderboardTotalPages, setLeaderboardTotalPages] = useState(1)
+    const [leaderboardTotal, setLeaderboardTotal] = useState(0)
+    const [periodStart, setPeriodStart] = useState<string | null>(null)
+    const [periodEnd, setPeriodEnd] = useState<string | null>(null)
     const leaderboardPerPage = 20
 
     const loadLeaderboard = useCallback(async () => {
       setLoading(true)
       try {
-        const { response, data } = await fetchJson<{ leaderboard: LeaderboardResponse; currentUser?: any; type: string }>(`/api/leaderboard?limit=100&type=${leaderboardType}`)
+        const { response, data } = await fetchJson<{ leaderboard: LeaderboardResponse; currentUser?: any; type: string; totalPages?: number; total?: number; periodStart?: string; periodEnd?: string }>(`/api/leaderboard?page=${leaderboardPage}&perPage=${leaderboardPerPage}&type=${leaderboardType}`)
         if (response.ok && data) {
           setLeaderboard(data.leaderboard || [])
           setCurrentUserRank(data.currentUser)
+          setLeaderboardTotalPages(data.totalPages || 1)
+          setLeaderboardTotal(data.total || 0)
+          setPeriodStart(data.periodStart || null)
+          setPeriodEnd(data.periodEnd || null)
         }
       } catch (error) {
         console.error('Failed to load leaderboard:', error)
       } finally {
         setLoading(false)
       }
-    }, [leaderboardType])
+    }, [leaderboardType, leaderboardPage])
 
     useEffect(() => {
       loadLeaderboard()
@@ -2430,10 +2519,27 @@ function App() {
       return <span className="rank-change up">↑{Math.abs(rankChange)}</span>
     }
 
-    const leaderboardTotalPages = Math.ceil(leaderboard.length / leaderboardPerPage)
-    const leaderboardStartIndex = (leaderboardPage - 1) * leaderboardPerPage
-    const leaderboardEndIndex = leaderboardStartIndex + leaderboardPerPage
-    const currentLeaderboard = leaderboard.slice(leaderboardStartIndex, leaderboardEndIndex)
+    const formatPeriodLabel = () => {
+      if (leaderboardType === 'total') return null
+      if (!periodStart || !periodEnd) return null
+      const start = new Date(periodStart)
+      const end = new Date(periodEnd)
+      end.setDate(end.getDate() - 1) // endDate 是开区间，显示时减一天
+      if (leaderboardType === 'weekly') {
+        const fmt = (d: Date) => `${d.getMonth() + 1}.${d.getDate()}`
+        return `${fmt(start)} — ${fmt(end)}`
+      }
+      if (leaderboardType === 'monthly') {
+        return `${start.getFullYear()} 年 ${start.getMonth() + 1} 月`
+      }
+      return null
+    }
+
+    const getEmptyMessage = () => {
+      if (leaderboardType === 'weekly') return '本周还没有人做题，快来争第一吧'
+      if (leaderboardType === 'monthly') return '本月还没有人做题，快来争第一吧'
+      return '暂无数据'
+    }
 
     const handleLeaderboardPageChange = (page: number) => {
       if (page >= 1 && page <= leaderboardTotalPages) {
@@ -2475,6 +2581,8 @@ function App() {
       }
       return pages
     }
+
+    const periodLabel = formatPeriodLabel()
 
     return (
       <section className="section">
@@ -2518,71 +2626,106 @@ function App() {
           </button>
         </div>
 
+        {periodLabel && (
+          <div className="leaderboard-period">
+            {periodLabel}
+          </div>
+        )}
+
         {loading ? (
           <p>加载中...</p>
         ) : leaderboard.length === 0 ? (
-          <p>暂无数据</p>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="leaderboard-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '80px' }}>排名</th>
-                  <th>用户</th>
-                  <th style={{ textAlign: 'right' }}>
-                    {leaderboardType === 'total' ? '等级分' : '通过题目'}
-                  </th>
-                  <th style={{ textAlign: 'center', width: '100px' }}>变化</th>
-                </tr>
-              </thead>
-              <tbody>
-                {currentLeaderboard.map((user) => (
-                  <tr
-                    key={user.userId}
-                    className={`leaderboard-row ${currentUserRank?.userId === user.userId ? 'current-user' : ''}`}
-                  >
-                    <td>
-                      <span className="rank-medal">{getRankMedal(user.rank)}</span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: '50%',
-                            background: user.avatar ? 'transparent' : 'rgba(79, 195, 247, 0.25)',
-                            display: 'grid',
-                            placeItems: 'center',
-                            fontSize: '14px',
-                            fontWeight: 600,
-                            color: '#d8f2ff',
-                            overflow: 'hidden'
-                          }}
-                        >
-                          {user.avatar ? (
-                            <img src={user.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : (
-                            user.userName.charAt(0).toUpperCase()
-                          )}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 500 }}>{user.userName}</div>
-                          <div style={{ fontSize: '12px', color: 'var(--muted)' }}>@{user.userId}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ textAlign: 'right', fontWeight: 600, color: '#4fc3f7' }}>
-                      {leaderboardType === 'total' ? (user as any).value?.toFixed(1) : (user as any).value}
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      {getRankChange((user as any).rankChange)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="leaderboard-empty">
+            <div className="leaderboard-empty-icon">{leaderboardType === 'total' ? '🏆' : leaderboardType === 'weekly' ? '📈' : '📊'}</div>
+            <p>{getEmptyMessage()}</p>
           </div>
+        ) : (
+          <>
+            <div className="leaderboard-meta">
+              共 {leaderboardTotal} 人参与{leaderboardType === 'weekly' ? '本周' : leaderboardType === 'monthly' ? '本月' : ''}排名
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="leaderboard-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '80px' }}>排名</th>
+                    <th>用户</th>
+                    {leaderboardType === 'total' ? (
+                      <>
+                        <th style={{ textAlign: 'right' }}>等级分</th>
+                        <th style={{ textAlign: 'right' }}>解题数</th>
+                      </>
+                    ) : (
+                      <th style={{ textAlign: 'right' }}>通过题目</th>
+                    )}
+                    <th style={{ textAlign: 'center', width: '100px' }}>变化</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leaderboard.map((user) => (
+                    <tr
+                      key={user.userId}
+                      className={`leaderboard-row ${currentUserRank?.userId === user.userId ? 'current-user' : ''} ${user.rank <= 3 ? `top-${user.rank}` : ''}`}
+                    >
+                      <td>
+                        <span className="rank-medal">{getRankMedal(user.rank)}</span>
+                      </td>
+                      <td>
+                        <div
+                          className="leaderboard-user-cell"
+                          style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+                          onClick={() => navigate(`/account?user=${user.userId}`)}
+                        >
+                          <div
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '50%',
+                              background: user.avatar ? 'transparent' : 'rgba(79, 195, 247, 0.25)',
+                              display: 'grid',
+                              placeItems: 'center',
+                              fontSize: '14px',
+                              fontWeight: 600,
+                              color: '#d8f2ff',
+                              overflow: 'hidden',
+                              flexShrink: 0
+                            }}
+                          >
+                            {user.avatar ? (
+                              <img src={user.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              user.userName.charAt(0).toUpperCase()
+                            )}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 500 }}>{user.userName}</div>
+                            <div style={{ fontSize: '12px', color: 'var(--muted)' }}>@{user.userId}</div>
+                          </div>
+                        </div>
+                      </td>
+                      {leaderboardType === 'total' ? (
+                        <>
+                          <td style={{ textAlign: 'right', fontWeight: 600, color: '#4fc3f7' }}>
+                            {user.value?.toFixed(1)}
+                          </td>
+                          <td style={{ textAlign: 'right', color: 'var(--muted)' }}>
+                            {(user as any).solvedCount ?? '-'}
+                          </td>
+                        </>
+                      ) : (
+                        <td style={{ textAlign: 'right', fontWeight: 600, color: '#4fc3f7' }}>
+                          {user.value}
+                        </td>
+                      )}
+                      <td style={{ textAlign: 'center' }}>
+                        {getRankChange(user.rankChange)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
 
         {leaderboardTotalPages > 1 && (
@@ -2638,12 +2781,19 @@ function App() {
         )}
 
         {currentUserRank && (
-          <div style={{ marginTop: '24px', padding: '16px', background: 'rgba(79, 195, 247, 0.1)', borderRadius: '12px', border: '1px solid rgba(79, 195, 247, 0.3)' }}>
+          <div className="leaderboard-my-rank">
             <div style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '8px' }}>你的排名</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <div style={{ fontSize: '24px', fontWeight: 700 }}>#{currentUserRank.rank}</div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '14px' }}>等级分 {currentUserRank.rating.toFixed(1)} · 解决 {currentUserRank.solvedProblems} 题</div>
+                <div style={{ fontSize: '14px' }}>
+                  {leaderboardType === 'total' ? `等级分 ${currentUserRank.value.toFixed(1)}` : `解决 ${currentUserRank.value} 题`}
+                  {currentUserRank.rankChange !== null && (
+                    <span style={{ marginLeft: '8px', color: currentUserRank.rankChange < 0 ? '#4caf50' : currentUserRank.rankChange > 0 ? '#f44336' : '#999' }}>
+                      {currentUserRank.rankChange < 0 ? `↑${Math.abs(currentUserRank.rankChange)}` : currentUserRank.rankChange > 0 ? `↓${currentUserRank.rankChange}` : '—'}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -4794,6 +4944,482 @@ function App() {
     )
   }
 
+  // === Message List Page ===
+  const MessageListPage = () => {
+    const [conversations, setConversations] = useState<Conversation[]>([])
+    const [loading, setLoading] = useState(true)
+    const [showNewChat, setShowNewChat] = useState(false)
+    const [searchQuery, setSearchQuery] = useState('')
+    const [searchResults, setSearchResults] = useState<{ id: string; name: string; avatar?: string }[]>([])
+    const [searching, setSearching] = useState(false)
+
+    const loadConversations = useCallback(async () => {
+      try {
+        const { response, data } = await fetchJson<ConversationsResponse>('/api/messages/conversations')
+        if (response.ok && data) {
+          setConversations(data.conversations || [])
+        }
+      } catch (error) {
+        console.error('Failed to load conversations:', error)
+      } finally {
+        setLoading(false)
+      }
+    }, [])
+
+    useEffect(() => {
+      setLoading(true)
+      loadConversations()
+    }, [loadConversations])
+
+    // Poll conversation list every 10 seconds
+    useEffect(() => {
+      const interval = setInterval(loadConversations, 10000)
+      return () => clearInterval(interval)
+    }, [loadConversations])
+
+    // Search users for new conversation
+    useEffect(() => {
+      if (!searchQuery.trim()) {
+        setSearchResults([])
+        return
+      }
+      const timer = setTimeout(async () => {
+        setSearching(true)
+        try {
+          const { response, data } = await fetchJson<{ users: { id: string; name: string; avatar?: string }[] }>(
+            `/api/users/search?q=${encodeURIComponent(searchQuery.trim())}`
+          )
+          if (response.ok && data) {
+            setSearchResults(data.users || [])
+          }
+        } catch {
+          // ignore
+        } finally {
+          setSearching(false)
+        }
+      }, 300)
+      return () => clearTimeout(timer)
+    }, [searchQuery])
+
+    const formatTime = (isoString: string) => {
+      const date = new Date(isoString)
+      const now = new Date()
+      const diff = now.getTime() - date.getTime()
+      const minutes = Math.floor(diff / 60000)
+      const hours = Math.floor(diff / 3600000)
+      const days = Math.floor(diff / 86400000)
+
+      if (minutes < 1) return '刚刚'
+      if (minutes < 60) return `${minutes}分钟前`
+      if (hours < 24) return `${hours}小时前`
+      if (days < 7) return `${days}天前`
+      return date.toLocaleDateString('zh-CN')
+    }
+
+    const stripHtml = (html: string) => {
+      const div = document.createElement('div')
+      div.innerHTML = html
+      return div.textContent || div.innerText || ''
+    }
+
+    return (
+      <section className="message-list-page">
+        <div className="message-list-header">
+          <h1>私信</h1>
+          <button className="primary new-chat-btn" onClick={() => { setShowNewChat(true); setSearchQuery(''); setSearchResults([]) }}>
+            <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 5v14M5 12h14" /></svg>
+            发起私信
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="loading-state">加载中...</div>
+        ) : conversations.length === 0 ? (
+          <div className="empty-state">
+            <svg viewBox="0 0 24 24" width="48" height="48" className="empty-icon">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+              <polyline points="22,6 12,13 2,6" />
+            </svg>
+            <p>还没有私信记录</p>
+            <p className="empty-hint">点击上方「发起私信」搜索用户开始聊天，或在讨论区点击用户头像旁的私信按钮。</p>
+          </div>
+        ) : (
+          <div className="conversation-list">
+            {conversations.map((conv) => (
+              <div
+                key={conv.conversationId}
+                className="conversation-card"
+                onClick={() => navigate(`/messages/${conv.otherUser.id}`)}
+              >
+                <div className="conversation-avatar">
+                  {conv.otherUser.avatar ? (
+                    <img src={conv.otherUser.avatar} alt={conv.otherUser.name} />
+                  ) : (
+                    <span>{conv.otherUser.name.charAt(0).toUpperCase()}</span>
+                  )}
+                </div>
+                <div className="conversation-content">
+                  <div className="conversation-header">
+                    <span className="conversation-name">{conv.otherUser.name}</span>
+                    <span className="conversation-time">{formatTime(conv.lastMessageAt)}</span>
+                  </div>
+                  {conv.lastMessage && (
+                    <div className="conversation-preview">
+                      {stripHtml(conv.lastMessage.content).substring(0, 50)}
+                      {stripHtml(conv.lastMessage.content).length > 50 ? '...' : ''}
+                    </div>
+                  )}
+                </div>
+                {conv.unreadCount > 0 && (
+                  <div className="conversation-unread">{conv.unreadCount > 99 ? '99+' : conv.unreadCount}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {showNewChat && (
+          <div className="confirm-backdrop" role="dialog" aria-modal="true" onClick={() => setShowNewChat(false)}>
+            <div className="confirm-panel new-chat-modal" onClick={e => e.stopPropagation()}>
+              <div className="confirm-title">发起私信</div>
+              <input
+                className="new-chat-search"
+                type="text"
+                placeholder="搜索用户名或 ID..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                autoFocus
+              />
+              <div className="new-chat-results">
+                {searching ? (
+                  <div className="new-chat-hint">搜索中...</div>
+                ) : searchQuery.trim() && searchResults.length === 0 ? (
+                  <div className="new-chat-hint">未找到用户</div>
+                ) : (
+                  searchResults.map(u => (
+                    <div key={u.id} className="new-chat-user" onClick={() => { setShowNewChat(false); navigate(`/messages/${u.id}`) }}>
+                      <div className="conversation-avatar" style={{ width: 36, height: 36, fontSize: 16 }}>
+                        {u.avatar ? <img src={u.avatar} alt={u.name} /> : <span>{u.name.charAt(0).toUpperCase()}</span>}
+                      </div>
+                      <div>
+                        <div className="new-chat-user-name">{u.name}</div>
+                        <div className="new-chat-user-id">{u.id}</div>
+                      </div>
+                    </div>
+                  ))
+                )}
+                {!searchQuery.trim() && <div className="new-chat-hint">输入用户名或 ID 开始搜索</div>}
+              </div>
+              <div className="confirm-actions">
+                <button className="ghost" type="button" onClick={() => setShowNewChat(false)}>取消</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  // === Chat Page ===
+  const ChatPage = () => {
+    const { userId: otherUserId } = useParams<{ userId: string }>()
+    const [messages, setMessages] = useState<Message[]>([])
+    const [otherUser, setOtherUser] = useState<{ id: string; name: string; avatar?: string; isBanned: boolean } | null>(null)
+    const [messageContent, setMessageContent] = useState('')
+    const [loading, setLoading] = useState(true)
+    const [sending, setSending] = useState(false)
+    const [page, setPage] = useState(1)
+    const [hasMore, setHasMore] = useState(false)
+    const [deleteTarget, setDeleteTarget] = useState<number | null>(null)
+    const messagesEndRef = useRef<HTMLDivElement>(null)
+    const pageSize = 30
+
+    const loadMessages = useCallback(async (pageNum: number) => {
+      if (!otherUserId) return
+      setLoading(true)
+      try {
+        const { response, data } = await fetchJson<MessagesResponse>(
+          `/api/messages/conversations/${otherUserId}?page=${pageNum}&pageSize=${pageSize}`
+        )
+        if (response.ok && data) {
+          if (pageNum === 1) {
+            setMessages(data.messages || [])
+          } else {
+            setMessages((prev) => [...(data.messages || []), ...prev])
+          }
+          setOtherUser(data.otherUser)
+          setHasMore(data.pagination.page < data.pagination.totalPages)
+          // Backend marks messages as read on fetch, refresh topbar badge
+          fetchUnreadCount()
+        }
+      } catch (error) {
+        console.error('Failed to load messages:', error)
+      } finally {
+        setLoading(false)
+      }
+    }, [otherUserId, fetchUnreadCount])
+
+    useEffect(() => {
+      loadMessages(1)
+    }, [loadMessages])
+
+    // Poll for new messages every 5 seconds
+    useEffect(() => {
+      if (!otherUserId) return
+      const poll = async () => {
+        try {
+          const { response, data } = await fetchJson<MessagesResponse>(
+            `/api/messages/conversations/${otherUserId}?page=1&pageSize=${pageSize}`
+          )
+          if (response.ok && data) {
+            setMessages(prev => {
+              const newMsgs = data.messages || []
+              if (newMsgs.length === 0) return prev
+              const lastOldId = prev.length > 0 ? prev[prev.length - 1].id : 0
+              const lastNewId = newMsgs[newMsgs.length - 1].id
+              if (lastNewId > lastOldId) {
+                const newOnly = newMsgs.filter(m => m.id > lastOldId)
+                return [...prev, ...newOnly]
+              }
+              return prev
+            })
+            // Backend marks as read on fetch, refresh topbar badge
+            fetchUnreadCount()
+          }
+        } catch {
+          // Silently ignore polling errors
+        }
+      }
+      const interval = setInterval(poll, 5000)
+      return () => clearInterval(interval)
+    }, [otherUserId, fetchUnreadCount])
+
+    useEffect(() => {
+      if (page === 1) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' })
+      }
+    }, [messages, page])
+
+    const handleSendMessage = async () => {
+      if (!messageContent.trim() || sending || !otherUserId) return
+      if (otherUser?.isBanned) {
+        alert('无法向被封禁用户发送消息')
+        return
+      }
+
+      setSending(true)
+      try {
+        const { response, data } = await fetchJson<{ message: Message }>(`/api/messages/conversations/${otherUserId}`, {
+          method: 'POST',
+          body: JSON.stringify({ content: messageContent }),
+        })
+
+        if (response.ok && data?.message) {
+          setMessages((prev) => [...prev, data.message])
+          setMessageContent('')
+          setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+          }, 100)
+        } else {
+          const errorData = data as any
+          alert(errorData?.message || '发送失败')
+        }
+      } catch (error) {
+        console.error('Failed to send message:', error)
+        alert('发送失败')
+      } finally {
+        setSending(false)
+      }
+    }
+
+    const confirmDeleteMessage = async () => {
+      if (deleteTarget === null) return
+      try {
+        const { response } = await fetchJson(`/api/messages/${deleteTarget}`, { method: 'DELETE' })
+        if (response.ok) {
+          setMessages((prev) => prev.filter((m) => m.id !== deleteTarget))
+        }
+      } catch (error) {
+        console.error('Failed to delete message:', error)
+      }
+      setDeleteTarget(null)
+    }
+
+    const handleLoadMore = () => {
+      if (!hasMore || loading) return
+      setPage((prev) => prev + 1)
+      loadMessages(page + 1)
+    }
+
+    const formatTime = (isoString: string) => {
+      const date = new Date(isoString)
+      const now = new Date()
+      const isToday = date.toDateString() === now.toDateString()
+
+      if (isToday) {
+        return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+      }
+      return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    }
+
+    const getDateLabel = (isoString: string) => {
+      const date = new Date(isoString)
+      const now = new Date()
+      const yesterday = new Date(now)
+      yesterday.setDate(yesterday.getDate() - 1)
+
+      if (date.toDateString() === now.toDateString()) return '今天'
+      if (date.toDateString() === yesterday.toDateString()) return '昨天'
+      return date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })
+    }
+
+    const canDelete = (message: Message) => {
+      const messageTime = new Date(message.createdAt).getTime()
+      const now = Date.now()
+      const twoMinutes = 2 * 60 * 1000
+      return message.senderId === currentUser?.id && (now - messageTime <= twoMinutes)
+    }
+
+    // Handle Enter key to send in chat input
+    const handleChatKeyDown = useCallback((e: KeyboardEvent) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        const el = (e.target as HTMLElement)
+        if (el.classList.contains('rich-editor-content') || el.closest('.chat-input-area')) {
+          e.preventDefault()
+          handleSendMessage()
+        }
+      }
+    }, [messageContent, sending, otherUserId, otherUser])
+
+    useEffect(() => {
+      const inputArea = document.querySelector('.chat-input-area')
+      if (!inputArea) return
+      const handler = (e: Event) => handleChatKeyDown(e as KeyboardEvent)
+      inputArea.addEventListener('keydown', handler)
+      return () => inputArea.removeEventListener('keydown', handler)
+    }, [handleChatKeyDown])
+
+    if (loading && page === 1) {
+      return <div className="loading-state">加载中...</div>
+    }
+
+    if (!otherUser) {
+      return <div className="empty-state">用户不存在</div>
+    }
+
+    // Build messages with date separators
+    let lastDateLabel = ''
+    const messagesWithDates: { type: 'date'; label: string; key: string }[] | { type: 'msg'; message: Message }[] = []
+    for (const msg of messages) {
+      const label = getDateLabel(msg.createdAt)
+      if (label !== lastDateLabel) {
+        (messagesWithDates as any[]).push({ type: 'date', label, key: `date-${msg.id}` })
+        lastDateLabel = label
+      }
+      (messagesWithDates as any[]).push({ type: 'msg', message: msg })
+    }
+
+    return (
+      <section className="chat-page">
+        <div className="chat-header">
+          <button className="back-button" onClick={() => navigate('/messages')}>
+            <svg viewBox="0 0 24 24" width="20" height="20">
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <div className="chat-header-user">
+            <div className="chat-avatar">
+              {otherUser.avatar ? (
+                <img src={otherUser.avatar} alt={otherUser.name} />
+              ) : (
+                <span>{otherUser.name.charAt(0).toUpperCase()}</span>
+              )}
+            </div>
+            <span className="chat-user-name">{otherUser.name}</span>
+          </div>
+        </div>
+
+        <div className="chat-messages">
+          {hasMore && (
+            <button className="load-more-button" onClick={handleLoadMore} disabled={loading}>
+              {loading ? '加载中...' : '加载更多'}
+            </button>
+          )}
+          {(messagesWithDates as any[]).map((item: any) => {
+            if (item.type === 'date') {
+              return (
+                <div key={item.key} className="chat-date-separator">
+                  <span>{item.label}</span>
+                </div>
+              )
+            }
+            const message = item.message as Message
+            return (
+              <div
+                key={message.id}
+                className={`chat-message ${message.senderId === currentUser?.id ? 'own' : 'other'}`}
+              >
+                <div className="message-avatar">
+                  {message.senderAvatar ? (
+                    <img src={message.senderAvatar} alt={message.senderName} />
+                  ) : (
+                    <span>{(message.senderName || '?').charAt(0).toUpperCase()}</span>
+                  )}
+                </div>
+                <div className="message-content-wrap">
+                  <div className="message-bubble">
+                    <div className="message-text" dangerouslySetInnerHTML={{ __html: message.content }} />
+                  </div>
+                  <div className="message-meta">
+                    <span className="message-time">{formatTime(message.createdAt)}</span>
+                    {canDelete(message) && (
+                      <button
+                        className="message-delete"
+                        onClick={() => setDeleteTarget(message.id)}
+                        title="删除消息"
+                      >
+                        撤回
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <div className="chat-input-area">
+          <RichTextEditor
+            value={messageContent}
+            onChange={setMessageContent}
+            placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
+          />
+          <button
+            className="send-button primary"
+            onClick={handleSendMessage}
+            disabled={sending || !messageContent.trim() || otherUser.isBanned}
+          >
+            {sending ? '发送中...' : '发送'}
+          </button>
+        </div>
+
+        {deleteTarget !== null && (
+          <div className="confirm-backdrop" role="dialog" aria-modal="true" onClick={() => setDeleteTarget(null)}>
+            <div className="confirm-panel" onClick={e => e.stopPropagation()}>
+              <div className="confirm-title">撤回消息</div>
+              <div className="confirm-desc">确定要撤回这条消息吗？2 分钟内发送的消息将对双方删除。</div>
+              <div className="confirm-actions">
+                <button className="ghost" type="button" onClick={() => setDeleteTarget(null)}>取消</button>
+                <button className="primary" type="button" onClick={confirmDeleteMessage}>确认撤回</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+    )
+  }
+
   // === Discussion List Page ===
   const DiscussionListPage = () => {
     const [posts, setPosts] = useState<DiscussionPost[]>([])
@@ -5023,6 +5649,18 @@ function App() {
             )}
             {comment.userName}
           </span>
+          {currentUser && currentUser.id !== comment.userId && (
+            <button
+              className="send-message-btn small"
+              onClick={() => navigate(`/messages/${comment.userId}`)}
+              title="发送私信"
+            >
+              <svg viewBox="0 0 24 24" width="12" height="12">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                <polyline points="22,6 12,13 2,6" />
+              </svg>
+            </button>
+          )}
           {comment.replyToName && <span className="comment-reply-to">回复 {comment.replyToName}</span>}
           <span className="comment-time">{formatTime(comment.createdAt)}</span>
         </div>
@@ -5063,6 +5701,18 @@ function App() {
               )}
               {post.userName}
             </span>
+            {currentUser && currentUser.id !== post.userId && (
+              <button
+                className="send-message-btn"
+                onClick={() => navigate(`/messages/${post.userId}`)}
+                title="发送私信"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                  <polyline points="22,6 12,13 2,6" />
+                </svg>
+              </button>
+            )}
             <span className="post-time">{formatTime(post.createdAt)}</span>
             {post.problemTitle && (
               <span className="post-problem" onClick={() => navigate(`/oj/p${post.problemId}`)}>
@@ -5450,13 +6100,26 @@ function App() {
                 </div>
               )}
               {currentUser ? (
-                <UserMenu
-                  currentUser={currentUser}
-                  initial={initial}
-                  navigate={navigate}
-                  location={location}
-                  openLogoutConfirm={openLogoutConfirm}
-                />
+                <>
+                  <button
+                    className="topbar-message-btn"
+                    onClick={() => navigate('/messages')}
+                    title={unreadMessageCount > 0 ? `${unreadMessageCount} 条未读消息` : '私信'}
+                  >
+                    <svg viewBox="0 0 24 24" width="20" height="20">
+                      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                      <polyline points="22,6 12,13 2,6" />
+                    </svg>
+                    {unreadMessageCount > 0 && <span className="topbar-message-dot" />}
+                  </button>
+                  <UserMenu
+                    currentUser={currentUser}
+                    initial={initial}
+                    navigate={navigate}
+                    location={location}
+                    openLogoutConfirm={openLogoutConfirm}
+                  />
+                </>
               ) : (
                 <button className="primary" onClick={() => openAuth('login')}>
                   登录
@@ -5562,6 +6225,8 @@ function App() {
                   <Route path="/discussions/create" element={<DiscussionCreatePage />} />
                   <Route path="/discussions/:id/edit" element={<DiscussionEditPage />} />
                   <Route path="/discussions/:id" element={<DiscussionDetailPage />} />
+                  <Route path="/messages" element={<MessageListPage />} />
+                  <Route path="/messages/:userId" element={<ChatPage />} />
                   <Route path="/my-problems" element={<MyProblemsPage />} />
                   <Route path="/create-problem" element={<CreateProblemPage />} />
                   <Route path="/edit-problem/:id" element={<EditProblemPage />} />

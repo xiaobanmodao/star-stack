@@ -308,20 +308,33 @@ async function checkAndUnlockAchievements(db, userId, submission) {
  * Update global rankings
  */
 async function updateRankings(db) {
-  // Rank by solved problems (primary), then by acceptance rate (secondary)
+  // Rank by rating (与排行榜总榜一致), DENSE_RANK 同分并列，过滤封禁用户
   const users = await db.all(
-    `SELECT user_id, solved_problems, acceptance_rate
-     FROM user_stats
-     ORDER BY solved_problems DESC, acceptance_rate DESC`
+    `SELECT us.user_id, u.rating
+     FROM user_stats us
+     JOIN users u ON us.user_id = u.id
+     WHERE u.is_banned = 0 AND us.total_submissions > 0
+     ORDER BY u.rating DESC`
   )
 
+  let currentRank = 1
   for (let i = 0; i < users.length; i++) {
+    // DENSE_RANK: 同 rating 的用户排名相同
+    if (i > 0 && users[i].rating < users[i - 1].rating) {
+      currentRank = i + 1
+    }
     await db.run(
       `UPDATE user_stats SET rank = ? WHERE user_id = ?`,
-      i + 1,
+      currentRank,
       users[i].user_id
     )
   }
+
+  // 被封禁用户排名清零
+  await db.run(
+    `UPDATE user_stats SET rank = 0
+     WHERE user_id IN (SELECT id FROM users WHERE is_banned = 1)`
+  )
 }
 
 /**

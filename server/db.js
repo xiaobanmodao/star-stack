@@ -390,6 +390,48 @@ export const initDb = async () => {
     );
     CREATE INDEX IF NOT EXISTS idx_leaderboard_history_period ON leaderboard_history(period_type, period_key);
     CREATE INDEX IF NOT EXISTS idx_leaderboard_history_user ON leaderboard_history(user_id);
+
+    -- Private messaging tables
+    CREATE TABLE IF NOT EXISTS conversations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user1_id TEXT NOT NULL,
+      user2_id TEXT NOT NULL,
+      last_message_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(user1_id, user2_id),
+      FOREIGN KEY (user1_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (user2_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id INTEGER NOT NULL,
+      sender_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      is_read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+      FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS message_deletions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      deleted_at TEXT NOT NULL,
+      UNIQUE(message_id, user_id),
+      FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_conversations_user1 ON conversations(user1_id);
+    CREATE INDEX IF NOT EXISTS idx_conversations_user2 ON conversations(user2_id);
+    CREATE INDEX IF NOT EXISTS idx_conversations_last_message ON conversations(last_message_at);
+    CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
+    CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
+    CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
+    CREATE INDEX IF NOT EXISTS idx_message_deletions_message ON message_deletions(message_id);
+    CREATE INDEX IF NOT EXISTS idx_message_deletions_user ON message_deletions(user_id);
   `)
 
   // Initialize user_stats for existing users

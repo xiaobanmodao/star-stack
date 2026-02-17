@@ -1002,6 +1002,10 @@ app.post('/api/oj/submissions', async (req, res) => {
     })
     // Update rankings periodically (could be optimized with a background job)
     await updateRankings(db)
+    // AC 后实时更新排行榜快照，让排名变化立即可见
+    if (status === 'Accepted') {
+      saveLeaderboardHistory().catch(err => console.error('Failed to save leaderboard history after AC:', err))
+    }
   } catch (error) {
     console.error('Failed to update stats:', error)
   }
@@ -1571,35 +1575,52 @@ app.get('/api/user/achievements/:userId', async (req, res) => {
 app.get('/api/leaderboard', async (req, res) => {
   try {
     const db = await getDb()
-    const limit = Math.min(Number(req.query.limit) || 100, 500)
-    const offset = Number(req.query.offset) || 0
+    const page = Math.max(Number(req.query.page) || 1, 1)
+    const perPage = Math.min(Math.max(Number(req.query.perPage) || 20, 1), 100)
+    const offset = (page - 1) * perPage
     const type = req.query.type || 'total' // total, weekly, monthly
 
     let leaderboard = []
+    let total = 0
     let currentUser = null
+    let periodStart = null
+    let periodEnd = null
     const token = getAuthToken(req)
     const user = token ? await getUserByToken(db, token) : null
 
+    // 获取当前周期的 period_key（用于查找上一次快照）
+    const previousPeriodKey = getPreviousPeriodKey(type)
+
     if (type === 'total') {
-      // 总榜：按等级分排序
-      leaderboard = await db.all(
-        `SELECT
-          ROW_NUMBER() OVER (ORDER BY u.rating DESC) as rank,
-          us.user_id,
-          u.name as user_name,
-          u.avatar,
-          u.rating as value
+      // 总榜：按等级分排序，过滤封禁用户，DENSE_RANK 同分并列
+      const totalResult = await db.get(
+        `SELECT COUNT(*) as count
          FROM user_stats us
          JOIN users u ON us.user_id = u.id
-         WHERE us.total_submissions > 0
-         ORDER BY u.rating DESC
+         WHERE us.total_submissions > 0 AND u.is_banned = 0`
+      )
+      total = totalResult.count
+
+      leaderboard = await db.all(
+        `SELECT * FROM (
+          SELECT
+            DENSE_RANK() OVER (ORDER BY u.rating DESC) as rank,
+            us.user_id,
+            u.name as user_name,
+            u.avatar,
+            u.rating as value,
+            us.solved_problems
+           FROM user_stats us
+           JOIN users u ON us.user_id = u.id
+           WHERE us.total_submissions > 0 AND u.is_banned = 0
+         ) ranked
+         ORDER BY rank ASC, user_id ASC
          LIMIT ? OFFSET ?`,
-        limit,
+        perPage,
         offset
       )
 
-      // 获取历史排名（上一次记录的排名）
-      const previousPeriodKey = getPreviousPeriodKey('total')
+      // 批量获取历史排名
       for (const entry of leaderboard) {
         const history = await db.get(
           `SELECT rank FROM leaderboard_history
@@ -1614,15 +1635,16 @@ app.get('/api/leaderboard', async (req, res) => {
       if (user) {
         const userRank = await db.get(
           `SELECT
-            (SELECT COUNT(*) + 1 FROM users u2
+            (SELECT COUNT(DISTINCT u2.rating) + 1 FROM users u2
              JOIN user_stats us2 ON u2.id = us2.user_id
-             WHERE us2.total_submissions > 0 AND u2.rating > u.rating) as rank,
+             WHERE us2.total_submissions > 0 AND u2.is_banned = 0 AND u2.rating > u.rating) as rank,
             u.rating as value
            FROM users u
-           WHERE u.id = ?`,
+           JOIN user_stats us ON u.id = us.user_id
+           WHERE u.id = ? AND us.total_submissions > 0`,
           user.id
         )
-        if (userRank) {
+        if (userRank && userRank.rank) {
           const history = await db.get(
             `SELECT rank FROM leaderboard_history
              WHERE user_id = ? AND period_type = 'total' AND period_key = ?`,
@@ -1642,26 +1664,42 @@ app.get('/api/leaderboard', async (req, res) => {
     } else if (type === 'weekly') {
       // 周榜：本周通过题目数
       const { startDate, endDate } = getWeekRange()
+      periodStart = startDate
+      periodEnd = endDate
+
+      const totalResult = await db.get(
+        `SELECT COUNT(*) as count FROM (
+          SELECT sp.user_id
+          FROM solved_problems sp
+          JOIN users u ON sp.user_id = u.id
+          WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ? AND u.is_banned = 0
+          GROUP BY sp.user_id
+          HAVING COUNT(DISTINCT sp.problem_id) > 0
+        )`,
+        startDate, endDate
+      )
+      total = totalResult.count
 
       leaderboard = await db.all(
-        `SELECT
-          ROW_NUMBER() OVER (ORDER BY COUNT(DISTINCT sp.problem_id) DESC) as rank,
-          sp.user_id,
-          u.name as user_name,
-          u.avatar,
-          COUNT(DISTINCT sp.problem_id) as value
-         FROM solved_problems sp
-         JOIN users u ON sp.user_id = u.id
-         WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ?
-         GROUP BY sp.user_id
-         HAVING COUNT(DISTINCT sp.problem_id) > 0
-         ORDER BY value DESC
+        `SELECT * FROM (
+          SELECT
+            DENSE_RANK() OVER (ORDER BY COUNT(DISTINCT sp.problem_id) DESC) as rank,
+            sp.user_id,
+            u.name as user_name,
+            u.avatar,
+            COUNT(DISTINCT sp.problem_id) as value
+           FROM solved_problems sp
+           JOIN users u ON sp.user_id = u.id
+           WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ? AND u.is_banned = 0
+           GROUP BY sp.user_id
+           HAVING COUNT(DISTINCT sp.problem_id) > 0
+         ) ranked
+         ORDER BY rank ASC, user_id ASC
          LIMIT ? OFFSET ?`,
-        startDate, endDate, limit, offset
+        startDate, endDate, perPage, offset
       )
 
       // 获取上周排名
-      const previousPeriodKey = getPreviousPeriodKey('weekly')
       for (const entry of leaderboard) {
         const history = await db.get(
           `SELECT rank FROM leaderboard_history
@@ -1685,9 +1723,10 @@ app.get('/api/leaderboard', async (req, res) => {
             `SELECT COUNT(*) + 1 as rank
              FROM (
                SELECT user_id, COUNT(DISTINCT problem_id) as cnt
-               FROM solved_problems
-               WHERE first_solved_at >= ? AND first_solved_at < ?
-               GROUP BY user_id
+               FROM solved_problems sp
+               JOIN users u ON sp.user_id = u.id
+               WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ? AND u.is_banned = 0
+               GROUP BY sp.user_id
                HAVING cnt > ?
              )`,
             startDate, endDate, userStats.value
@@ -1711,26 +1750,42 @@ app.get('/api/leaderboard', async (req, res) => {
     } else if (type === 'monthly') {
       // 月榜：本月通过题目数
       const { startDate, endDate } = getMonthRange()
+      periodStart = startDate
+      periodEnd = endDate
+
+      const totalResult = await db.get(
+        `SELECT COUNT(*) as count FROM (
+          SELECT sp.user_id
+          FROM solved_problems sp
+          JOIN users u ON sp.user_id = u.id
+          WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ? AND u.is_banned = 0
+          GROUP BY sp.user_id
+          HAVING COUNT(DISTINCT sp.problem_id) > 0
+        )`,
+        startDate, endDate
+      )
+      total = totalResult.count
 
       leaderboard = await db.all(
-        `SELECT
-          ROW_NUMBER() OVER (ORDER BY COUNT(DISTINCT sp.problem_id) DESC) as rank,
-          sp.user_id,
-          u.name as user_name,
-          u.avatar,
-          COUNT(DISTINCT sp.problem_id) as value
-         FROM solved_problems sp
-         JOIN users u ON sp.user_id = u.id
-         WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ?
-         GROUP BY sp.user_id
-         HAVING COUNT(DISTINCT sp.problem_id) > 0
-         ORDER BY value DESC
+        `SELECT * FROM (
+          SELECT
+            DENSE_RANK() OVER (ORDER BY COUNT(DISTINCT sp.problem_id) DESC) as rank,
+            sp.user_id,
+            u.name as user_name,
+            u.avatar,
+            COUNT(DISTINCT sp.problem_id) as value
+           FROM solved_problems sp
+           JOIN users u ON sp.user_id = u.id
+           WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ? AND u.is_banned = 0
+           GROUP BY sp.user_id
+           HAVING COUNT(DISTINCT sp.problem_id) > 0
+         ) ranked
+         ORDER BY rank ASC, user_id ASC
          LIMIT ? OFFSET ?`,
-        startDate, endDate, limit, offset
+        startDate, endDate, perPage, offset
       )
 
       // 获取上月排名
-      const previousPeriodKey = getPreviousPeriodKey('monthly')
       for (const entry of leaderboard) {
         const history = await db.get(
           `SELECT rank FROM leaderboard_history
@@ -1754,9 +1809,10 @@ app.get('/api/leaderboard', async (req, res) => {
             `SELECT COUNT(*) + 1 as rank
              FROM (
                SELECT user_id, COUNT(DISTINCT problem_id) as cnt
-               FROM solved_problems
-               WHERE first_solved_at >= ? AND first_solved_at < ?
-               GROUP BY user_id
+               FROM solved_problems sp
+               JOIN users u ON sp.user_id = u.id
+               WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ? AND u.is_banned = 0
+               GROUP BY sp.user_id
                HAVING cnt > ?
              )`,
             startDate, endDate, userStats.value
@@ -1779,6 +1835,8 @@ app.get('/api/leaderboard', async (req, res) => {
       }
     }
 
+    const totalPages = Math.ceil(total / perPage)
+
     return res.json({
       leaderboard: leaderboard.map(row => ({
         rank: row.rank,
@@ -1786,15 +1844,437 @@ app.get('/api/leaderboard', async (req, res) => {
         userName: row.user_name,
         avatar: row.avatar,
         value: row.value,
+        solvedCount: row.solved_problems ?? null,
         previousRank: row.previousRank,
         rankChange: row.rankChange
       })),
       currentUser,
-      type
+      type,
+      page,
+      perPage,
+      total,
+      totalPages,
+      periodStart,
+      periodEnd
     })
   } catch (error) {
     console.error('Failed to get leaderboard:', error)
     return res.status(500).json({ message: '获取排行榜失败' })
+  }
+})
+
+// ==================== Private Messaging API ====================
+
+// User search for starting new conversations
+app.get('/api/users/search', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+
+  try {
+    const q = (req.query.q || '').trim()
+    if (!q || q.length < 1) {
+      return res.json({ users: [] })
+    }
+
+    const users = await db.all(
+      `SELECT id, name, avatar FROM users
+       WHERE (id LIKE ? OR name LIKE ?) AND id != ? AND is_banned = 0
+       LIMIT 10`,
+      `%${q}%`, `%${q}%`, user.id
+    )
+
+    res.json({ users })
+  } catch (error) {
+    console.error('Failed to search users:', error)
+    res.status(500).json({ message: '搜索用户失败' })
+  }
+})
+
+// Rate limiting for message sending (3 seconds cooldown)
+const messageRateLimits = new Map()
+
+// Get or create conversation between two users
+const getOrCreateConversation = async (db, userId1, userId2) => {
+  const [user1, user2] = userId1 < userId2 ? [userId1, userId2] : [userId2, userId1]
+
+  let conversation = await db.get(
+    `SELECT * FROM conversations WHERE user1_id = ? AND user2_id = ?`,
+    user1, user2
+  )
+
+  if (!conversation) {
+    const now = new Date().toISOString()
+    const result = await db.run(
+      `INSERT INTO conversations (user1_id, user2_id, last_message_at, created_at)
+       VALUES (?, ?, ?, ?)`,
+      user1, user2, now, now
+    )
+    conversation = {
+      id: result.lastID,
+      user1_id: user1,
+      user2_id: user2,
+      last_message_at: now,
+      created_at: now
+    }
+  }
+
+  return conversation
+}
+
+// Get conversation list with last message and unread count
+app.get('/api/messages/conversations', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+
+  try {
+    const conversations = await db.all(
+      `SELECT
+        c.id,
+        c.last_message_at,
+        CASE WHEN c.user1_id = ? THEN c.user2_id ELSE c.user1_id END as other_user_id,
+        u.name as other_user_name,
+        u.avatar as other_user_avatar,
+        lm.id as last_msg_id,
+        lm.sender_id as last_msg_sender_id,
+        lm.content as last_msg_content,
+        lm.created_at as last_msg_created_at,
+        COALESCE(unread.count, 0) as unread_count
+       FROM conversations c
+       JOIN users u ON u.id = CASE WHEN c.user1_id = ? THEN c.user2_id ELSE c.user1_id END
+       LEFT JOIN (
+         SELECT m1.conversation_id, m1.id, m1.sender_id, m1.content, m1.created_at
+         FROM messages m1
+         LEFT JOIN message_deletions md1 ON m1.id = md1.message_id AND md1.user_id = ?
+         WHERE md1.id IS NULL
+           AND m1.created_at = (
+             SELECT MAX(m2.created_at) FROM messages m2
+             LEFT JOIN message_deletions md2 ON m2.id = md2.message_id AND md2.user_id = ?
+             WHERE m2.conversation_id = m1.conversation_id AND md2.id IS NULL
+           )
+       ) lm ON lm.conversation_id = c.id
+       LEFT JOIN (
+         SELECT m.conversation_id, COUNT(*) as count
+         FROM messages m
+         LEFT JOIN message_deletions md ON m.id = md.message_id AND md.user_id = ?
+         WHERE m.sender_id != ? AND m.is_read = 0 AND md.id IS NULL
+         GROUP BY m.conversation_id
+       ) unread ON unread.conversation_id = c.id
+       WHERE c.user1_id = ? OR c.user2_id = ?
+       ORDER BY c.last_message_at DESC`,
+      user.id, user.id, user.id, user.id, user.id, user.id, user.id, user.id
+    )
+
+    const result = conversations.map(conv => ({
+      conversationId: conv.id,
+      otherUser: {
+        id: conv.other_user_id,
+        name: conv.other_user_name,
+        avatar: conv.other_user_avatar
+      },
+      lastMessage: conv.last_msg_id ? {
+        id: conv.last_msg_id,
+        senderId: conv.last_msg_sender_id,
+        content: conv.last_msg_content,
+        createdAt: conv.last_msg_created_at
+      } : null,
+      unreadCount: conv.unread_count,
+      lastMessageAt: conv.last_message_at
+    }))
+
+    res.json({ conversations: result })
+  } catch (error) {
+    console.error('Failed to get conversations:', error)
+    res.status(500).json({ message: '获取会话列表失败' })
+  }
+})
+
+// Get messages with a specific user
+app.get('/api/messages/conversations/:userId', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+
+  try {
+    const { userId: otherUserId } = req.params
+    const page = Math.max(1, Number(req.query.page) || 1)
+    const pageSize = Math.min(50, Number(req.query.pageSize) || 30)
+    const offset = (page - 1) * pageSize
+
+    // Check if other user exists and is not banned
+    const otherUser = await db.get(
+      `SELECT id, name, avatar, is_banned FROM users WHERE id = ?`,
+      otherUserId
+    )
+
+    if (!otherUser) {
+      return res.status(404).json({ message: '用户不存在' })
+    }
+
+    // Get or create conversation
+    const conversation = await getOrCreateConversation(db, user.id, otherUserId)
+
+    // Get messages (excluding deleted ones for current user)
+    const messages = await db.all(
+      `SELECT m.id, m.sender_id, m.content, m.is_read, m.created_at,
+              u.name as sender_name, u.avatar as sender_avatar
+       FROM messages m
+       JOIN users u ON m.sender_id = u.id
+       LEFT JOIN message_deletions md ON m.id = md.message_id AND md.user_id = ?
+       WHERE m.conversation_id = ? AND md.id IS NULL
+       ORDER BY m.created_at DESC
+       LIMIT ? OFFSET ?`,
+      user.id, conversation.id, pageSize, offset
+    )
+
+    // Get total count
+    const totalCount = await db.get(
+      `SELECT COUNT(*) as count
+       FROM messages m
+       LEFT JOIN message_deletions md ON m.id = md.message_id AND md.user_id = ?
+       WHERE m.conversation_id = ? AND md.id IS NULL`,
+      user.id, conversation.id
+    )
+
+    // Mark messages as read
+    await db.run(
+      `UPDATE messages
+       SET is_read = 1
+       WHERE conversation_id = ? AND sender_id = ? AND is_read = 0`,
+      conversation.id, otherUserId
+    )
+
+    res.json({
+      messages: messages.reverse().map(m => ({
+        id: m.id,
+        senderId: m.sender_id,
+        senderName: m.sender_name,
+        senderAvatar: m.sender_avatar,
+        content: m.content,
+        isRead: m.is_read === 1,
+        createdAt: m.created_at
+      })),
+      otherUser: {
+        id: otherUser.id,
+        name: otherUser.name,
+        avatar: otherUser.avatar,
+        isBanned: otherUser.is_banned === 1
+      },
+      pagination: {
+        page,
+        pageSize,
+        total: totalCount.count,
+        totalPages: Math.ceil(totalCount.count / pageSize)
+      }
+    })
+  } catch (error) {
+    console.error('Failed to get messages:', error)
+    res.status(500).json({ message: '获取消息失败' })
+  }
+})
+
+// Send a message
+app.post('/api/messages/conversations/:userId', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+
+  try {
+    const { userId: otherUserId } = req.params
+    const { content } = req.body
+
+    // Validate
+    if (!content || typeof content !== 'string') {
+      return res.status(400).json({ message: '消息内容不能为空' })
+    }
+
+    if (content.length > 2000) {
+      return res.status(400).json({ message: '消息内容不能超过 2000 字符' })
+    }
+
+    if (otherUserId === user.id) {
+      return res.status(400).json({ message: '不能给自己发消息' })
+    }
+
+    // Check rate limit (3 seconds cooldown)
+    const now = Date.now()
+    const lastSent = messageRateLimits.get(user.id) || 0
+    if (now - lastSent < 3000) {
+      const remaining = Math.ceil((3000 - (now - lastSent)) / 1000)
+      return res.status(429).json({ message: `请等待 ${remaining} 秒后再发送` })
+    }
+
+    // Check if other user exists and is not banned
+    const otherUser = await db.get(
+      `SELECT id, is_banned FROM users WHERE id = ?`,
+      otherUserId
+    )
+
+    if (!otherUser) {
+      return res.status(404).json({ message: '用户不存在' })
+    }
+
+    if (otherUser.is_banned) {
+      return res.status(403).json({ message: '无法向被封禁用户发送消息' })
+    }
+
+    // Get or create conversation
+    const conversation = await getOrCreateConversation(db, user.id, otherUserId)
+
+    // Sanitize content
+    const sanitizedContent = sanitizeHtml(content)
+
+    // Insert message
+    const timestamp = new Date().toISOString()
+    const result = await db.run(
+      `INSERT INTO messages (conversation_id, sender_id, content, is_read, created_at)
+       VALUES (?, ?, ?, 0, ?)`,
+      conversation.id, user.id, sanitizedContent, timestamp
+    )
+
+    // Update conversation last_message_at
+    await db.run(
+      `UPDATE conversations SET last_message_at = ? WHERE id = ?`,
+      timestamp, conversation.id
+    )
+
+    // Update rate limit
+    messageRateLimits.set(user.id, now)
+
+    // Clean up old rate limits (older than 10 seconds)
+    for (const [userId, time] of messageRateLimits.entries()) {
+      if (now - time > 10000) {
+        messageRateLimits.delete(userId)
+      }
+    }
+
+    res.json({
+      message: {
+        id: result.lastID,
+        senderId: user.id,
+        senderName: user.name,
+        senderAvatar: user.avatar || null,
+        content: sanitizedContent,
+        isRead: false,
+        createdAt: timestamp
+      }
+    })
+  } catch (error) {
+    console.error('Failed to send message:', error)
+    res.status(500).json({ message: '发送消息失败' })
+  }
+})
+
+// Mark messages as read
+app.post('/api/messages/conversations/:userId/read', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+
+  try {
+    const { userId: otherUserId } = req.params
+
+    // Get conversation
+    const [user1, user2] = user.id < otherUserId ? [user.id, otherUserId] : [otherUserId, user.id]
+    const conversation = await db.get(
+      `SELECT id FROM conversations WHERE user1_id = ? AND user2_id = ?`,
+      user1, user2
+    )
+
+    if (!conversation) {
+      return res.json({ success: true })
+    }
+
+    // Mark as read
+    await db.run(
+      `UPDATE messages
+       SET is_read = 1
+       WHERE conversation_id = ? AND sender_id = ? AND is_read = 0`,
+      conversation.id, otherUserId
+    )
+
+    res.json({ success: true })
+  } catch (error) {
+    console.error('Failed to mark as read:', error)
+    res.status(500).json({ message: '标记已读失败' })
+  }
+})
+
+// Get total unread count
+app.get('/api/messages/unread-count', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+
+  try {
+    const result = await db.get(
+      `SELECT COUNT(*) as count
+       FROM messages m
+       JOIN conversations c ON m.conversation_id = c.id
+       LEFT JOIN message_deletions md ON m.id = md.message_id AND md.user_id = ?
+       WHERE (c.user1_id = ? OR c.user2_id = ?)
+         AND m.sender_id != ?
+         AND m.is_read = 0
+         AND md.id IS NULL`,
+      user.id, user.id, user.id, user.id
+    )
+
+    res.json({ unreadCount: result.count })
+  } catch (error) {
+    console.error('Failed to get unread count:', error)
+    res.status(500).json({ message: '获取未读数失败' })
+  }
+})
+
+// Delete a message
+app.delete('/api/messages/:messageId', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+
+  try {
+    const { messageId } = req.params
+
+    // Get message
+    const message = await db.get(
+      `SELECT m.*, c.user1_id, c.user2_id
+       FROM messages m
+       JOIN conversations c ON m.conversation_id = c.id
+       WHERE m.id = ?`,
+      messageId
+    )
+
+    if (!message) {
+      return res.status(404).json({ message: '消息不存在' })
+    }
+
+    // Check if user is part of the conversation
+    if (message.user1_id !== user.id && message.user2_id !== user.id) {
+      return res.status(403).json({ message: '无权删除此消息' })
+    }
+
+    // Check if message was sent within 2 minutes
+    const messageTime = new Date(message.created_at).getTime()
+    const now = Date.now()
+    const twoMinutes = 2 * 60 * 1000
+
+    if (now - messageTime <= twoMinutes && message.sender_id === user.id) {
+      // Within 2 minutes and sender: delete for both users (hard delete)
+      await db.run(`DELETE FROM messages WHERE id = ?`, messageId)
+      return res.json({ success: true, deletedForBoth: true })
+    } else {
+      // After 2 minutes or not sender: soft delete (only hide for current user)
+      await db.run(
+        `INSERT OR IGNORE INTO message_deletions (message_id, user_id, deleted_at)
+         VALUES (?, ?, ?)`,
+        messageId, user.id, new Date().toISOString()
+      )
+      return res.json({ success: true, deletedForBoth: false })
+    }
+  } catch (error) {
+    console.error('Failed to delete message:', error)
+    res.status(500).json({ message: '删除消息失败' })
   }
 })
 
@@ -1834,19 +2314,21 @@ function getMonthRange() {
 function getPreviousPeriodKey(type) {
   const now = new Date()
   if (type === 'total') {
-    // 总榜使用日期作为key，获取昨天
+    // 总榜：与昨天的快照对比
     const yesterday = new Date(now)
     yesterday.setDate(now.getDate() - 1)
     return yesterday.toISOString().split('T')[0]
   } else if (type === 'weekly') {
-    // 获取上周的周一日期
+    // 周榜：与上周的最终快照对比（上周日保存的 key 是上周一日期）
     const dayOfWeek = now.getDay()
     const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1
-    const lastMonday = new Date(now)
-    lastMonday.setDate(now.getDate() - diff - 7)
+    const thisMonday = new Date(now)
+    thisMonday.setDate(now.getDate() - diff)
+    const lastMonday = new Date(thisMonday)
+    lastMonday.setDate(thisMonday.getDate() - 7)
     return lastMonday.toISOString().split('T')[0]
   } else if (type === 'monthly') {
-    // 获取上月第一天
+    // 月榜：与上月的最终快照对比（上月末保存的 key 是上月1号日期）
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     return lastMonth.toISOString().split('T')[0]
   }
@@ -2804,13 +3286,13 @@ async function saveLeaderboardHistory() {
     // Save total leaderboard (daily)
     const totalLeaderboard = await db.all(
       `SELECT
-        ROW_NUMBER() OVER (ORDER BY u.rating DESC) as rank,
+        DENSE_RANK() OVER (ORDER BY u.rating DESC) as rank,
         us.user_id,
         u.rating as value
        FROM user_stats us
        JOIN users u ON us.user_id = u.id
-       WHERE us.total_submissions > 0
-       ORDER BY u.rating DESC
+       WHERE us.total_submissions > 0 AND u.is_banned = 0
+       ORDER BY rank ASC
        LIMIT 100`
     )
 
@@ -2822,61 +3304,58 @@ async function saveLeaderboardHistory() {
       )
     }
 
-    // Save weekly leaderboard (on Monday)
-    const dayOfWeek = now.getDay()
-    if (dayOfWeek === 1) { // Monday
-      const { startDate, endDate } = getWeekRange()
-      const weekKey = startDate.split('T')[0]
+    // Save weekly leaderboard — 每天都保存当前周的快照，key 为本周一日期
+    const { startDate: weekStart, endDate: weekEnd } = getWeekRange()
+    const weekKey = weekStart.split('T')[0]
 
-      const weeklyLeaderboard = await db.all(
-        `SELECT
-          ROW_NUMBER() OVER (ORDER BY COUNT(DISTINCT sp.problem_id) DESC) as rank,
-          sp.user_id,
-          COUNT(DISTINCT sp.problem_id) as value
-         FROM solved_problems sp
-         WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ?
-         GROUP BY sp.user_id
-         HAVING COUNT(DISTINCT sp.problem_id) > 0
-         ORDER BY value DESC
-         LIMIT 100`,
-        startDate, endDate
+    const weeklyLeaderboard = await db.all(
+      `SELECT
+        DENSE_RANK() OVER (ORDER BY COUNT(DISTINCT sp.problem_id) DESC) as rank,
+        sp.user_id,
+        COUNT(DISTINCT sp.problem_id) as value
+       FROM solved_problems sp
+       JOIN users u ON sp.user_id = u.id
+       WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ? AND u.is_banned = 0
+       GROUP BY sp.user_id
+       HAVING COUNT(DISTINCT sp.problem_id) > 0
+       ORDER BY rank ASC
+       LIMIT 100`,
+      weekStart, weekEnd
+    )
+
+    for (const entry of weeklyLeaderboard) {
+      await db.run(
+        `INSERT OR REPLACE INTO leaderboard_history (user_id, period_type, period_key, rank, value, recorded_at)
+         VALUES (?, 'weekly', ?, ?, ?, ?)`,
+        [entry.user_id, weekKey, entry.rank, entry.value, now.toISOString()]
       )
-
-      for (const entry of weeklyLeaderboard) {
-        await db.run(
-          `INSERT OR REPLACE INTO leaderboard_history (user_id, period_type, period_key, rank, value, recorded_at)
-           VALUES (?, 'weekly', ?, ?, ?, ?)`,
-          [entry.user_id, weekKey, entry.rank, entry.value, now.toISOString()]
-        )
-      }
     }
 
-    // Save monthly leaderboard (on 1st of month)
-    if (now.getDate() === 1) {
-      const { startDate, endDate } = getMonthRange()
-      const monthKey = startDate.split('T')[0]
+    // Save monthly leaderboard — 每天都保存当前月的快照，key 为本月1号日期
+    const { startDate: monthStart, endDate: monthEnd } = getMonthRange()
+    const monthKey = monthStart.split('T')[0]
 
-      const monthlyLeaderboard = await db.all(
-        `SELECT
-          ROW_NUMBER() OVER (ORDER BY COUNT(DISTINCT sp.problem_id) DESC) as rank,
-          sp.user_id,
-          COUNT(DISTINCT sp.problem_id) as value
-         FROM solved_problems sp
-         WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ?
-         GROUP BY sp.user_id
-         HAVING COUNT(DISTINCT sp.problem_id) > 0
-         ORDER BY value DESC
-         LIMIT 100`,
-        startDate, endDate
+    const monthlyLeaderboard = await db.all(
+      `SELECT
+        DENSE_RANK() OVER (ORDER BY COUNT(DISTINCT sp.problem_id) DESC) as rank,
+        sp.user_id,
+        COUNT(DISTINCT sp.problem_id) as value
+       FROM solved_problems sp
+       JOIN users u ON sp.user_id = u.id
+       WHERE sp.first_solved_at >= ? AND sp.first_solved_at < ? AND u.is_banned = 0
+       GROUP BY sp.user_id
+       HAVING COUNT(DISTINCT sp.problem_id) > 0
+       ORDER BY rank ASC
+       LIMIT 100`,
+      monthStart, monthEnd
+    )
+
+    for (const entry of monthlyLeaderboard) {
+      await db.run(
+        `INSERT OR REPLACE INTO leaderboard_history (user_id, period_type, period_key, rank, value, recorded_at)
+         VALUES (?, 'monthly', ?, ?, ?, ?)`,
+        [entry.user_id, monthKey, entry.rank, entry.value, now.toISOString()]
       )
-
-      for (const entry of monthlyLeaderboard) {
-        await db.run(
-          `INSERT OR REPLACE INTO leaderboard_history (user_id, period_type, period_key, rank, value, recorded_at)
-           VALUES (?, 'monthly', ?, ?, ?, ?)`,
-          [entry.user_id, monthKey, entry.rank, entry.value, now.toISOString()]
-        )
-      }
     }
 
     console.log('Leaderboard history saved successfully')
