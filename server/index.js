@@ -89,8 +89,168 @@ const requireUser = async (req, res) => {
   return { db, user }
 }
 
+const translateCache = new Map()
+
+const normalizeTranslateTarget = (targetLang) => {
+  if (targetLang === 'zh' || targetLang === 'zh-CN' || targetLang === 'zh_CN') return 'zh-CN'
+  return 'en'
+}
+
+const parseGoogleTranslatePayload = (payload) => {
+  if (!Array.isArray(payload) || !Array.isArray(payload[0])) return ''
+  return payload[0]
+    .map((segment) => (Array.isArray(segment) ? String(segment[0] || '') : ''))
+    .join('')
+}
+
+const protectSegmentsForTranslation = (text) => {
+  const protectedParts = []
+  let result = text
+  const patterns = [
+    /```[\s\S]*?```/g,        // fenced code
+    /`[^`\n]+`/g,             // inline code
+    /\$\$[\s\S]*?\$\$/g,      // block latex
+    /\$[^$\n]+\$/g,           // inline latex
+    /<[^>]+>/g,               // HTML tags
+  ]
+
+  for (const pattern of patterns) {
+    result = result.replace(pattern, (match) => {
+      const token = `__STARSTACK_T_${protectedParts.length}__`
+      protectedParts.push(match)
+      return token
+    })
+  }
+
+  return { result, protectedParts }
+}
+
+const restoreProtectedSegments = (text, protectedParts) => {
+  let result = text
+  for (let i = 0; i < protectedParts.length; i += 1) {
+    result = result.replaceAll(`__STARSTACK_T_${i}__`, protectedParts[i])
+  }
+  return result
+}
+
+const splitTranslateText = (text, maxLen = 1000) => {
+  if (text.length <= maxLen) return [text]
+  const parts = []
+  let cursor = 0
+  while (cursor < text.length) {
+    let end = Math.min(cursor + maxLen, text.length)
+    if (end < text.length) {
+      const windowText = text.slice(cursor, end)
+      const lastBreak = Math.max(
+        windowText.lastIndexOf('\n'),
+        windowText.lastIndexOf('。'),
+        windowText.lastIndexOf('！'),
+        windowText.lastIndexOf('？'),
+        windowText.lastIndexOf('. '),
+        windowText.lastIndexOf(', '),
+        windowText.lastIndexOf(' ')
+      )
+      if (lastBreak > maxLen * 0.4) {
+        end = cursor + lastBreak + 1
+      }
+    }
+    parts.push(text.slice(cursor, end))
+    cursor = end
+  }
+  return parts
+}
+
+const translateTextWithGoogle = async (text, targetLang, sourceLang = 'auto') => {
+  const normalizedTarget = normalizeTranslateTarget(targetLang)
+  const cacheKey = `${sourceLang}|${normalizedTarget}|${text}`
+  if (translateCache.has(cacheKey)) {
+    return translateCache.get(cacheKey)
+  }
+
+  if (!text || !String(text).trim()) {
+    translateCache.set(cacheKey, text || '')
+    return text || ''
+  }
+
+  const { result: safeText, protectedParts } = protectSegmentsForTranslation(String(text))
+  const chunks = splitTranslateText(safeText, 900)
+  const translatedChunks = []
+
+  for (const chunk of chunks) {
+    const qs = new URLSearchParams({
+      client: 'gtx',
+      sl: sourceLang,
+      tl: normalizedTarget,
+      dt: 't',
+      q: chunk,
+    })
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 8000)
+    try {
+      const response = await fetch(`https://translate.googleapis.com/translate_a/single?${qs.toString()}`, {
+        method: 'GET',
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+        },
+      })
+      if (!response.ok) {
+        throw new Error(`translate_http_${response.status}`)
+      }
+      const payload = await response.json()
+      translatedChunks.push(parseGoogleTranslatePayload(payload))
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  const translated = restoreProtectedSegments(translatedChunks.join(''), protectedParts)
+  translateCache.set(cacheKey, translated)
+  return translated
+}
+
+const translateBatchTexts = async (texts, targetLang, sourceLang = 'auto') => {
+  const results = new Array(texts.length).fill('')
+  const queue = texts.map((text, index) => ({ text, index }))
+  const concurrency = 4
+  const workers = Array.from({ length: concurrency }, async () => {
+    while (queue.length > 0) {
+      const item = queue.shift()
+      if (!item) return
+      const raw = typeof item.text === 'string' ? item.text : ''
+      try {
+        results[item.index] = await translateTextWithGoogle(raw, targetLang, sourceLang)
+      } catch {
+        results[item.index] = raw
+      }
+    }
+  })
+  await Promise.all(workers)
+  return results
+}
+
 app.get('/api/health', (req, res) => {
   res.json({ ok: true })
+})
+
+app.post('/api/translate/batch', async (req, res) => {
+  const { texts, targetLang = 'en', sourceLang = 'auto' } = req.body || {}
+  if (!Array.isArray(texts)) {
+    return res.status(400).json({ message: 'texts 必须是数组' })
+  }
+  if (texts.length > 120) {
+    return res.status(400).json({ message: '单次翻译数量过多' })
+  }
+  const sanitized = texts.map((item) => (typeof item === 'string' ? item : ''))
+  const totalChars = sanitized.reduce((sum, item) => sum + item.length, 0)
+  if (totalChars > 40000) {
+    return res.status(400).json({ message: '单次翻译内容过长' })
+  }
+  const translations = await translateBatchTexts(sanitized, targetLang, sourceLang)
+  return res.json({
+    targetLang: normalizeTranslateTarget(targetLang),
+    translations,
+  })
 })
 
 app.get('/api/stats', async (req, res) => {
@@ -1590,6 +1750,26 @@ app.get('/api/leaderboard', async (req, res) => {
 
     // 获取当前周期的 period_key（用于查找上一次快照）
     const previousPeriodKey = getPreviousPeriodKey(type)
+    const applyHistoryRankChanges = async (entries, periodType) => {
+      if (!Array.isArray(entries) || entries.length === 0 || !previousPeriodKey) return
+      const userIds = [...new Set(entries.map((entry) => entry.user_id).filter(Boolean))]
+      if (userIds.length === 0) return
+      const placeholders = userIds.map(() => '?').join(', ')
+      const rows = await db.all(
+        `SELECT user_id, rank
+         FROM leaderboard_history
+         WHERE period_type = ? AND period_key = ? AND user_id IN (${placeholders})`,
+        periodType,
+        previousPeriodKey,
+        ...userIds
+      )
+      const historyMap = new Map(rows.map((row) => [row.user_id, row.rank]))
+      for (const entry of entries) {
+        const previousRank = historyMap.get(entry.user_id) ?? null
+        entry.previousRank = previousRank
+        entry.rankChange = previousRank === null ? null : entry.rank - previousRank
+      }
+    }
 
     if (type === 'total') {
       // 总榜：按等级分排序，过滤封禁用户，DENSE_RANK 同分并列
@@ -1621,15 +1801,7 @@ app.get('/api/leaderboard', async (req, res) => {
       )
 
       // 批量获取历史排名
-      for (const entry of leaderboard) {
-        const history = await db.get(
-          `SELECT rank FROM leaderboard_history
-           WHERE user_id = ? AND period_type = 'total' AND period_key = ?`,
-          [entry.user_id, previousPeriodKey]
-        )
-        entry.previousRank = history?.rank || null
-        entry.rankChange = history ? entry.rank - history.rank : null
-      }
+      await applyHistoryRankChanges(leaderboard, 'total')
 
       // 当前用户排名
       if (user) {
@@ -1700,15 +1872,7 @@ app.get('/api/leaderboard', async (req, res) => {
       )
 
       // 获取上周排名
-      for (const entry of leaderboard) {
-        const history = await db.get(
-          `SELECT rank FROM leaderboard_history
-           WHERE user_id = ? AND period_type = 'weekly' AND period_key = ?`,
-          [entry.user_id, previousPeriodKey]
-        )
-        entry.previousRank = history?.rank || null
-        entry.rankChange = history ? entry.rank - history.rank : null
-      }
+      await applyHistoryRankChanges(leaderboard, 'weekly')
 
       // 当前用户排名
       if (user) {
@@ -1786,15 +1950,7 @@ app.get('/api/leaderboard', async (req, res) => {
       )
 
       // 获取上月排名
-      for (const entry of leaderboard) {
-        const history = await db.get(
-          `SELECT rank FROM leaderboard_history
-           WHERE user_id = ? AND period_type = 'monthly' AND period_key = ?`,
-          [entry.user_id, previousPeriodKey]
-        )
-        entry.previousRank = history?.rank || null
-        entry.rankChange = history ? entry.rank - history.rank : null
-      }
+      await applyHistoryRankChanges(leaderboard, 'monthly')
 
       // 当前用户排名
       if (user) {
@@ -2961,7 +3117,7 @@ app.get('/api/oj/recommendations', async (req, res) => {
         `SELECT DISTINCT p.id, p.tags, p.difficulty
          FROM submissions s
          JOIN problems p ON s.problem_id = p.id
-         WHERE s.user_id = ? AND s.status = 'AC' AND p.status = 'published'
+         WHERE s.user_id = ? AND s.status = 'Accepted' AND p.status = 'published'
          ORDER BY s.created_at DESC
          LIMIT 10`,
         userId
@@ -3004,7 +3160,7 @@ app.get('/api/oj/recommendations', async (req, res) => {
 
         // 获取用户已 AC 的题目 ID
         const acProblemIds = await db.all(
-          `SELECT DISTINCT problem_id FROM submissions WHERE user_id = ? AND status = 'AC'`,
+          `SELECT DISTINCT problem_id FROM submissions WHERE user_id = ? AND status = 'Accepted'`,
           userId
         )
         const acIds = acProblemIds.map(row => row.problem_id)
@@ -3016,7 +3172,7 @@ app.get('/api/oj/recommendations', async (req, res) => {
 
         let query = `
           SELECT id, slug, title, difficulty, tags,
-                 (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id AND status = 'AC') as ac_count,
+                 (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id AND status = 'Accepted') as ac_count,
                  (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id) as total_count
           FROM problems
           WHERE status = 'published'
@@ -3059,7 +3215,7 @@ app.get('/api/oj/recommendations', async (req, res) => {
     if (recommendations.length === 0) {
       recommendations = await db.all(
         `SELECT p.id, p.slug, p.title, p.difficulty, p.tags,
-                (SELECT COUNT(*) FROM submissions WHERE problem_id = p.id AND status = 'AC') as ac_count,
+                (SELECT COUNT(*) FROM submissions WHERE problem_id = p.id AND status = 'Accepted') as ac_count,
                 (SELECT COUNT(*) FROM submissions WHERE problem_id = p.id) as total_count
          FROM problems p
          WHERE p.status = 'published' AND p.difficulty = '入门'
@@ -3175,7 +3331,7 @@ app.get('/api/oj/recent-ac', async (req, res) => {
        FROM submissions s
        JOIN users u ON s.user_id = u.id
        JOIN problems p ON s.problem_id = p.id
-       WHERE s.status = 'AC' AND p.status = 'published'
+       WHERE s.status = 'Accepted' AND p.status = 'published'
        ORDER BY s.created_at DESC
        LIMIT 10`
     )
@@ -3212,7 +3368,7 @@ app.get('/api/oj/continue-last', async (req, res) => {
          AND p.id NOT IN (
            SELECT DISTINCT problem_id
            FROM submissions
-           WHERE user_id = ? AND status = 'AC'
+           WHERE user_id = ? AND status = 'Accepted'
          )
        ORDER BY s.created_at DESC
        LIMIT 1`,

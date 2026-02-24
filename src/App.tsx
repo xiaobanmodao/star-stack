@@ -1,9 +1,26 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import Editor from '@monaco-editor/react'
 import katex from 'katex'
 import './App.css'
 import 'katex/dist/katex.min.css'
+import { AutoTranslateScope, type UiLanguage } from './components/AutoTranslateScope'
+import { StarBotGettingStartedView, StarBotPageView } from './components/StarBotPages'
+
+const LazyOjIdePanel = lazy(() => import('./components/OjIdePanel'))
+
+let ojIdeAssetsPreloadPromise: Promise<unknown> | null = null
+const preloadOjIdeAssets = () => {
+  if (!ojIdeAssetsPreloadPromise) {
+    ojIdeAssetsPreloadPromise = Promise.allSettled([
+      import('./components/OjIdePanel'),
+      import('@monaco-editor/react'),
+    ])
+  }
+  return ojIdeAssetsPreloadPromise
+}
+
+const isPollingPageVisible = () =>
+  typeof document === 'undefined' || document.visibilityState === 'visible'
 
 type UserRecord = {
   id: string
@@ -241,6 +258,34 @@ type UnreadCountResponse = {
 }
 
 const TOKEN_KEY = 'starstack_token'
+const UI_LANGUAGE_KEY = 'starstack_ui_lang'
+const TRANSLATION_WARMUP_TEXTS = [
+  '首页',
+  '算法测评',
+  '排行榜',
+  '讨论',
+  'StarBot',
+  '后台',
+  '登录',
+  '退出',
+  '进入评测系统',
+  '进入 StarBot',
+  '核心模块',
+  '模块矩阵',
+  '题目描述',
+  '输入格式',
+  '输出格式',
+  '输入输出样例',
+  '数据范围',
+  '提交',
+  '运行此样例',
+  '提交记录',
+  '加载中',
+  '题目不存在',
+  '个人中心',
+  '私信',
+  '做题计划',
+] as const
 
 const LANGUAGE_OPTIONS = [
   {
@@ -619,14 +664,34 @@ const UserMenu = ({ currentUser, initial, navigate, location, openLogoutConfirm 
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const translateRootRef = useRef<HTMLDivElement | null>(null)
   const appRef = useRef<HTMLDivElement | null>(null)
   const topbarRef = useRef<HTMLElement | null>(null)
+  const langSwitchRef = useRef<HTMLDivElement | null>(null)
   const navigate = useNavigate()
   const location = useLocation()
   const isAuthPage = location.pathname === '/auth'
   const isOjDetailOrJudgePage = location.pathname.match(/^\/oj\/(p\d+|judge)/)
+  const isOjProblemDetailPage = /^\/oj\/p\/?\d+$/.test(location.pathname)
   const [homeEnter, setHomeEnter] = useState(false)
   const homeEnteredRef = useRef(false)
+  const translateBusyRef = useRef(false)
+  const translationWarmupDoneRef = useRef<Set<UiLanguage>>(new Set(['zh']))
+  const translationRevealWindowUntilRef = useRef(0)
+
+  useEffect(() => {
+    if (!location.pathname.startsWith('/oj')) return
+    void preloadOjIdeAssets().catch(() => undefined)
+  }, [location.pathname])
+
+  const [uiLanguage, setUiLanguage] = useState<UiLanguage>(() => {
+    const saved = localStorage.getItem(UI_LANGUAGE_KEY)
+    return saved === 'en' ? 'en' : 'zh'
+  })
+  const [langMenuOpen, setLangMenuOpen] = useState(false)
+  const [pendingLanguageSwitchTarget, setPendingLanguageSwitchTarget] = useState<UiLanguage | null>(null)
+  const [pageLanguageSwitchBlocking, setPageLanguageSwitchBlocking] = useState(false)
+  const [problemLanguageSwitchBlocking, setProblemLanguageSwitchBlocking] = useState(false)
 
   const [authMode, setAuthMode] = useState<AuthMode>('login')
   const [authError, setAuthError] = useState('')
@@ -645,6 +710,139 @@ function App() {
   const [formName, setFormName] = useState('')
   const [formPassword, setFormPassword] = useState('')
   const [formConfirm, setFormConfirm] = useState('')
+
+  useEffect(() => {
+    localStorage.setItem(UI_LANGUAGE_KEY, uiLanguage)
+    document.documentElement.lang = uiLanguage === 'en' ? 'en' : 'zh-CN'
+  }, [uiLanguage])
+
+  const prefetchLanguageWarmup = useCallback(async (target: UiLanguage) => {
+    if (target !== 'en') return
+    if (translationWarmupDoneRef.current.has(target)) return
+    translationWarmupDoneRef.current.add(target)
+    try {
+      await fetch('/api/translate/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceLang: 'auto',
+          targetLang: 'en',
+          texts: [...TRANSLATION_WARMUP_TEXTS],
+        }),
+      })
+    } catch {
+      // Ignore warmup failures; runtime translation will still work.
+    }
+  }, [])
+
+  const beginTranslationRevealBlock = useCallback((target: UiLanguage) => {
+    if (target !== 'en') {
+      translationRevealWindowUntilRef.current = 0
+      setPageLanguageSwitchBlocking(false)
+      return
+    }
+    // Keep a short guard window so late async content is still translated before reveal.
+    translationRevealWindowUntilRef.current = Date.now() + 1800
+    setPageLanguageSwitchBlocking(true)
+  }, [])
+
+  const changeUiLanguage = useCallback((next: UiLanguage) => {
+    if (next === uiLanguage) {
+      setLangMenuOpen(false)
+      return
+    }
+    if (next === 'en') {
+      void prefetchLanguageWarmup('en')
+    }
+    beginTranslationRevealBlock(next)
+    setPendingLanguageSwitchTarget(next)
+    setProblemLanguageSwitchBlocking(isOjProblemDetailPage && next === 'en')
+    setUiLanguage(next)
+    setLangMenuOpen(false)
+  }, [beginTranslationRevealBlock, isOjProblemDetailPage, prefetchLanguageWarmup, uiLanguage])
+
+  const handleTranslateBusyChange = useCallback((busy: boolean) => {
+    translateBusyRef.current = busy
+    if (busy && Date.now() < translationRevealWindowUntilRef.current) {
+      setPageLanguageSwitchBlocking(true)
+      if (isOjProblemDetailPage) {
+        setProblemLanguageSwitchBlocking(true)
+      }
+    }
+  }, [isOjProblemDetailPage])
+
+  const handleTranslateSettled = useCallback((language: UiLanguage) => {
+    setPendingLanguageSwitchTarget((prev) => (prev === language ? null : prev))
+    if (language === 'en') {
+      setPageLanguageSwitchBlocking(false)
+      setProblemLanguageSwitchBlocking(false)
+      return
+    }
+    setPageLanguageSwitchBlocking(false)
+    setProblemLanguageSwitchBlocking(false)
+  }, [])
+
+  useEffect(() => {
+    if (uiLanguage === 'en') {
+      void prefetchLanguageWarmup('en')
+    }
+  }, [prefetchLanguageWarmup, uiLanguage])
+
+  useEffect(() => {
+    if (!langMenuOpen) return
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (langSwitchRef.current?.contains(target)) return
+      setLangMenuOpen(false)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setLangMenuOpen(false)
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('touchstart', handlePointerDown, { passive: true })
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('touchstart', handlePointerDown)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [langMenuOpen])
+
+  useEffect(() => {
+    setLangMenuOpen(false)
+    if (uiLanguage !== 'en') {
+      setPageLanguageSwitchBlocking(false)
+      return
+    }
+    beginTranslationRevealBlock('en')
+    if (isOjProblemDetailPage) {
+      setProblemLanguageSwitchBlocking(true)
+    }
+  }, [beginTranslationRevealBlock, isOjProblemDetailPage, location.pathname, uiLanguage])
+
+  useEffect(() => {
+    if (!isOjProblemDetailPage) {
+      setProblemLanguageSwitchBlocking(false)
+    }
+  }, [isOjProblemDetailPage])
+
+  useEffect(() => {
+    if (location.pathname !== '/') {
+      setHomeEnter(false)
+      return
+    }
+    if (homeEnteredRef.current) return
+    homeEnteredRef.current = true
+    setHomeEnter(true)
+    const timer = window.setTimeout(() => {
+      setHomeEnter(false)
+    }, 900)
+    return () => window.clearTimeout(timer)
+  }, [location.pathname])
 
   const setAuthModeSafe = useCallback((mode: AuthMode) => {
     setAuthMode(mode)
@@ -678,7 +876,7 @@ function App() {
     loadCurrentUser()
   }, [loadCurrentUser])
 
-  // Poll unread message count every 15 seconds
+  // Poll unread message count (reduced frequency, paused when tab is hidden)
   const fetchUnreadCount = useCallback(async () => {
     if (!currentUser) return
     try {
@@ -698,9 +896,20 @@ function App() {
     }
 
     fetchUnreadCount()
-    const interval = setInterval(fetchUnreadCount, 15000)
+    const interval = setInterval(() => {
+      if (!isPollingPageVisible()) return
+      fetchUnreadCount()
+    }, 20000)
+    const handleVisibilityChange = () => {
+      if (!isPollingPageVisible()) return
+      fetchUnreadCount()
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
 
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [currentUser, fetchUnreadCount])
 
   useEffect(() => {
@@ -721,21 +930,6 @@ function App() {
       window.removeEventListener('resize', update)
     }
   }, [isAuthPage])
-
-  useEffect(() => {
-    if (location.pathname !== '/') {
-      homeEnteredRef.current = false
-      setHomeEnter(false)
-      return
-    }
-    if (homeEnteredRef.current) return
-    homeEnteredRef.current = true
-    setHomeEnter(true)
-    const timer = window.setTimeout(() => {
-      setHomeEnter(false)
-    }, 900)
-    return () => window.clearTimeout(timer)
-  }, [location.pathname])
 
   const handleAuthSubmit = useCallback(
     async (event: React.FormEvent) => {
@@ -1037,108 +1231,100 @@ function App() {
     [currentUser]
   )
 
-  const HomePage = () => {
-    const [stats, setStats] = useState<{
-      problemCount: number
-      userCount: number
-      todaySubmissions: number
-    } | null>(null)
+  const HomePage = useMemo(() => {
+    return function HomePage() {
+      const [stats, setStats] = useState<{
+        problemCount: number
+        userCount: number
+        todaySubmissions: number
+      } | null>(null)
 
-    useEffect(() => {
-      const loadStats = async () => {
-        const { response, data } = await fetchJson<StatsResponse>('/api/stats')
-        if (response.ok && data) {
-          setStats(data)
+      useEffect(() => {
+        const loadStats = async () => {
+          const { response, data } = await fetchJson<StatsResponse>('/api/stats')
+          if (response.ok && data) {
+            setStats(data)
+          }
         }
-      }
-      loadStats()
-    }, [])
+        loadStats()
+      }, [])
 
-    return (
-    <>
-      <section className="hero">
-        <div className="hero-left">
-          <div className="eyebrow">StarStack Mission</div>
-          <h1>星栈 · 以星海为幕的科技栈</h1>
-          <p>
-            星栈聚合评测、游戏与协作模块，构建面向未来的科技空间。这里是你的训练营、
-            你的宇宙实验室，也是你的灵感中继站。
-          </p>
-          <div className="hero-actions">
-            <button className="primary" onClick={() => navigate('/oj')}>
-              进入评测系统
-            </button>
-            <button className="ghost" onClick={() => navigate('/games')}>
-              浏览游戏
-            </button>
-          </div>
-        </div>
-        <div className="hero-right">
-          <div className="stat-card">
-            <div className="stat-label">题库规模</div>
-            <div className="stat-value">{stats?.problemCount ?? '-'}</div>
-            <div className="stat-desc">覆盖算法、系统与工程能力</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">评测吞吐</div>
-            <div className="stat-value">{stats?.todaySubmissions ?? '-'}</div>
-            <div className="stat-desc">每日提交与运行的总量</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">活跃星友</div>
-            <div className="stat-value">{stats?.userCount ?? '-'}</div>
-            <div className="stat-desc">专注技术成长的探索者</div>
-          </div>
-        </div>
-      </section>
+      return (
+        <>
+          <section className="hero">
+            <div className="hero-left">
+              <div className="eyebrow">StarStack 核心能力</div>
+              <h1>星栈 · 以星海为幕的科技栈</h1>
+              <p>
+                星栈聚合算法评测、StarBot 自动化与社区协作能力，构建面向技术实践的统一工作台。
+                这里既是训练场，也是你的个人自动化实验室与知识沉淀空间。
+              </p>
+              <div className="hero-actions">
+                <button className="primary" onClick={() => navigate('/oj')}>
+                  进入评测系统
+                </button>
+                <button className="ghost" onClick={() => navigate('/starbot')}>
+                  进入 StarBot
+                </button>
+              </div>
+            </div>
+            <div className="hero-right">
+              <div className="stat-card">
+                <div className="stat-label">题库规模</div>
+                <div className="stat-value">{stats?.problemCount ?? '-'}</div>
+                <div className="stat-desc">覆盖算法、系统与工程能力</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">评测吞吐</div>
+                <div className="stat-value">{stats?.todaySubmissions ?? '-'}</div>
+                <div className="stat-desc">每日提交与运行的总量</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">活跃星友</div>
+                <div className="stat-value">{stats?.userCount ?? '-'}</div>
+                <div className="stat-desc">专注技术成长的探索者</div>
+              </div>
+            </div>
+          </section>
 
-      <section className="section">
-        <div className="section-header">
-          <h2>核心模块</h2>
-          <span className="tag">Modules</span>
-        </div>
-        <div className="section-body">
-          <div className="info-panel">
-            <h3>星栈算法测评</h3>
-            <p>
-              拥有真实判题、在线 IDE 与提交回放能力，支持多语言评测与测试点可视化。
-              持续升级的题库，让每一次训练都有清晰的成长轨迹。
-            </p>
-            <ul className="feature-list">
-              <li>多语言判题与结果明细</li>
-              <li>在线 IDE + 样例测试</li>
-              <li>提交记录与数据回溯</li>
-            </ul>
-          </div>
-          <div className="card-grid">
-            <div className="module-card">
-              <div className="module-title">星栈游戏</div>
-              <p>沉浸式科技风关卡，支持多人协作与竞技挑战。</p>
+          <section className="section">
+            <div className="section-header">
+              <h2>核心模块</h2>
+              <span className="tag">模块矩阵</span>
             </div>
-            <div className="module-card">
-              <div className="module-title">星栈数据中枢</div>
-              <p>记录你的学习路径、题目画像与成长报告。</p>
+            <div className="section-body">
+              <div className="info-panel">
+                <h3>星栈算法评测</h3>
+                <p>
+                  拥有真实判题、在线 IDE 与提交回放能力，支持多语言评测与测试点可视化。
+                  持续升级的题库，让每一次训练都有清晰的成长轨迹。
+                </p>
+                <ul className="feature-list">
+                  <li>多语言判题与结果明细</li>
+                  <li>在线 IDE + 样例测试</li>
+                  <li>提交记录与数据回溯</li>
+                </ul>
+              </div>
+              <div className="card-grid">
+                <div className="module-card">
+                  <div className="module-title">StarBot</div>
+                  <p>通过 Discord 远程控制本地 Windows AI Agent，支持桌面操作、文件处理、网页任务与自动化流程。</p>
+                </div>
+                <div className="module-card">
+                  <div className="module-title">星栈数据中枢</div>
+                  <p>汇总学习路径、题目画像、热力图、排行榜表现与成长数据。</p>
+                </div>
+                <div className="module-card">
+                  <div className="module-title">星栈协作社区</div>
+                  <p>讨论区、私信、做题计划与经验沉淀，帮助你持续协作与复盘。</p>
+                </div>
+              </div>
             </div>
-            <div className="module-card">
-              <div className="module-title">星栈创作工坊</div>
-              <p>未来模块：项目发布、协作与成果展示。</p>
-            </div>
-          </div>
-        </div>
-      </section>
-    </>
-  )
-  }
-
-  const GamesPage = () => (
-    <section className="section">
-      <div className="section-header">
-        <h2>星栈游戏</h2>
-        <span className="tag">Games</span>
-      </div>
-      <p>游戏模块正在建设中，将提供科技感关卡与协作玩法。</p>
-    </section>
-  )
+          </section>
+        </>
+      )
+    }
+  }, [navigate])
 
   const MyProblemsPage = () => {
     const [problems, setProblems] = useState<OjProblemSummary[]>([])
@@ -2329,8 +2515,8 @@ function App() {
                 initial
               )}
             </div>
-            <div className="account-name" style={{ fontSize: '20px', fontWeight: 600 }}>{currentUser.name}</div>
-            <div className="account-id" style={{ color: 'var(--muted)' }}>@{currentUser.id}</div>
+            <div className="account-name" data-user-name style={{ fontSize: '20px', fontWeight: 600 }}>{currentUser.name}</div>
+            <div className="account-id" data-user-id style={{ color: 'var(--muted)' }}>@{currentUser.id}</div>
             {stats.rank && stats.rank > 0 && (
               <div className="profile-rank-badge">
                 全站排名 #{stats.rank}
@@ -2698,8 +2884,8 @@ function App() {
                             )}
                           </div>
                           <div>
-                            <div style={{ fontWeight: 500 }}>{user.userName}</div>
-                            <div style={{ fontSize: '12px', color: 'var(--muted)' }}>@{user.userId}</div>
+                            <div className="leaderboard-user-name" data-user-name style={{ fontWeight: 500 }}>{user.userName}</div>
+                            <div className="leaderboard-user-id" data-user-id style={{ fontSize: '12px', color: 'var(--muted)' }}>@{user.userId}</div>
                           </div>
                         </div>
                       </td>
@@ -3053,8 +3239,8 @@ function App() {
             </div>
             {currentAdminUsers.map((user) => (
               <div key={user.id} className="admin-row">
-                <div>{user.id}</div>
-                <div>{user.name}</div>
+                <div data-user-id>{user.id}</div>
+                <div className="admin-user-name" data-user-name>{user.name}</div>
                 <div>{user.isAdmin ? '管理员' : '用户'}</div>
                 <div className={user.isBanned ? 'status-banned' : 'status-normal'}>
                   {user.isBanned ? '封禁' : '正常'}
@@ -3977,38 +4163,37 @@ function App() {
     const [problem, setProblem] = useState<OjProblemDetail | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
-    const [language, setLanguage] = useState(LANGUAGE_OPTIONS[0].value)
-    const [code, setCode] = useState(getLanguageConfig(LANGUAGE_OPTIONS[0].value).template)
-    const [submitError, setSubmitError] = useState('')
     const [ideOpen, setIdeOpen] = useState(false)
-    const [runBusy, setRunBusy] = useState(false)
-    const [runStatus, setRunStatus] = useState('')
-    const [runMessage, setRunMessage] = useState('')
-    const [runTime, setRunTime] = useState<number | null>(null)
-    const [runInput, setRunInput] = useState('')
-    const [runOutput, setRunOutput] = useState('')
-    const [runExpected, setRunExpected] = useState('')
+    const [pendingSampleRunIndex, setPendingSampleRunIndex] = useState<number | null>(null)
+    const ideDraftCacheRef = useRef<Record<number, {
+      language: string
+      code: string
+      runInput: string
+      runExpected: string
+    }>>({})
+    const latestIdeSubmissionCacheRef = useRef<{ problemId: number; submission: OjSubmission | null } | null>(null)
+
+    const preloadOjIde = useCallback(() => {
+      void preloadOjIdeAssets().catch(() => undefined)
+    }, [])
+
+    const loadLatestSubmissionForIde = useCallback(async (problemId: number) => {
+      if (!currentUser) return null
+      const cached = latestIdeSubmissionCacheRef.current
+      if (cached && cached.problemId === problemId) {
+        return cached.submission
+      }
+      const { response, data } = await fetchJson<SubmissionResponse>(`/api/oj/submissions/latest?problemId=${problemId}`)
+      const submission = response.ok ? (data?.submission ?? null) : null
+      latestIdeSubmissionCacheRef.current = { problemId, submission }
+      return submission
+    }, [currentUser])
+
     const openIde = useCallback(async () => {
       if (!problem) return
-      setSubmitError('')
+      preloadOjIde()
       setIdeOpen(true)
-      if (!currentUser) {
-        setCode('')
-        return
-      }
-      const { response, data } = await fetchJson<SubmissionResponse>(`/api/oj/submissions/latest?problemId=${problem.id}`)
-      if (!response.ok) {
-        setCode('')
-        return
-      }
-      const submission = data?.submission
-      if (submission?.code) {
-        setLanguage(submission.language || language)
-        setCode(submission.code)
-      } else {
-        setCode('')
-      }
-    }, [language, problem])
+    }, [preloadOjIde, problem])
 
     const loadProblem = useCallback(async () => {
       if (!id) return
@@ -4030,82 +4215,33 @@ function App() {
       loadProblem()
     }, [loadProblem])
 
-    const updateLanguage = (next: string) => {
-      setCode((prev) => {
-        const prevTemplate = getLanguageConfig(language).template.trim()
-        if (!prev.trim() || prev.trim() === prevTemplate) {
-          return getLanguageConfig(next).template
+    useEffect(() => {
+      if (!problem) return
+      const timer = window.setTimeout(() => {
+        preloadOjIde()
+        if (currentUser) {
+          void loadLatestSubmissionForIde(problem.id)
         }
-        return prev
-      })
-      setLanguage(next)
-    }
+      }, 600)
+      return () => window.clearTimeout(timer)
+    }, [currentUser, loadLatestSubmissionForIde, preloadOjIde, problem])
 
-    const handleSubmit = () => {
-      if (!problem) return
-      if (!currentUser) {
-        openAuth('login')
-        return
-      }
-      if (!code.trim()) {
-        setSubmitError('请填写代码')
-        return
-      }
-      setSubmitError('')
-      navigate('/oj/judge', {
-        state: {
-          problemId: problem.id,
-          problemTitle: problem.title,
-          language,
-          code,
-        },
-      })
-    }
+    const handleSubmitJudge = useCallback((payload: {
+      problemId: number
+      problemTitle: string
+      language: string
+      code: string
+    }) => {
+      navigate('/oj/judge', { state: payload })
+    }, [navigate])
 
-    const handleRunCustom = async (input: string, expected = '') => {
-      if (!problem) return
-      if (!currentUser) {
-        openAuth('login')
-        return
-      }
-      setRunBusy(true)
-      setRunStatus('运行中')
-      setRunMessage('')
-      setRunTime(null)
-      setRunOutput('')
-      const { response, data } = await fetchJson<{ status?: string; message?: string; output?: string; timeMs?: number }>('/api/oj/run-custom', {
-        method: 'POST',
-        body: JSON.stringify({
-          problemId: problem.id,
-          language,
-          code,
-          input,
-          expected,
-        }),
-      })
-      if (!response.ok) {
-        setRunStatus('失败')
-        setRunMessage(data?.message || '运行失败')
-        setRunBusy(false)
-        return
-      }
-      setRunStatus(data?.status || '完成')
-      setRunMessage(data?.message || '')
-      setRunOutput(data?.output || '')
-      setRunTime(data?.timeMs ?? null)
-      setRunBusy(false)
-    }
-
-    const handleRunSample = async (index: number) => {
+    const handleRunSample = (index: number) => {
       if (!problem) return
       const sample = problem.samples?.[index]
       if (!sample) return
-      if (!ideOpen) {
-        await openIde()
-      }
-      setRunInput(sample.input)
-      setRunExpected(sample.output)
-      await handleRunCustom(sample.input, sample.output)
+      preloadOjIde()
+      setIdeOpen(true)
+      setPendingSampleRunIndex(index)
     }
 
     if (loading) {
@@ -4160,7 +4296,12 @@ function App() {
                       {problemPlan.some(p => p.problem_id === problem.id) ? '从计划移除' : '加入计划'}
                     </button>
                   )}
-                  <button className="ghost small" onClick={ideOpen ? () => setIdeOpen(false) : openIde}>
+                  <button
+                    className="ghost small"
+                    onMouseEnter={preloadOjIde}
+                    onFocus={preloadOjIde}
+                    onClick={ideOpen ? () => setIdeOpen(false) : openIde}
+                  >
                     {ideOpen ? '关闭提交' : '提交'}
                   </button>
                 </div>
@@ -4189,7 +4330,12 @@ function App() {
                     <div>
                       <div className="oj-sample-title">
                         <span>输入 #{index + 1}</span>
-                        <button className="ghost small" onClick={() => handleRunSample(index)}>
+                        <button
+                          className="ghost small"
+                          onMouseEnter={preloadOjIde}
+                          onFocus={preloadOjIde}
+                          onClick={() => handleRunSample(index)}
+                        >
                           运行此样例
                         </button>
                       </div>
@@ -4251,137 +4397,24 @@ function App() {
         </div>
 
         {ideOpen && (
-          <div
-            className="oj-detail-ide"
-            onWheel={(event) => {
-              const target = event.target as HTMLElement | null
-              if (target && target.closest('.monaco-editor')) return
-              event.preventDefault()
-              event.stopPropagation()
-            }}
-          >
-            <div className="ide-panel side">
-              <div className="ide-header">
-                <div className="ide-header-left">
-                  <select
-                    className="ide-lang-select"
-                    value={language}
-                    onChange={(event) => updateLanguage(event.target.value)}
-                  >
-                    {LANGUAGE_OPTIONS.map((item) => (
-                      <option key={item.value} value={item.value}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="ide-header-right">
-                  <button className="ide-btn ide-btn-primary" onClick={handleSubmit}>
-                    提交
-                  </button>
-                </div>
-              </div>
-              <div className="ide-main">
-                <div className="ide-editor">
-                  <Editor
-                    height="100%"
-                    language={getLanguageConfig(language).monaco}
-                    value={code}
-                    onChange={(value) => setCode(value ?? '')}
-                    theme="vs-dark"
-                    options={{
-                      minimap: { enabled: false },
-                      fontSize: 14,
-                      fontFamily: "'Consolas', 'Monaco', 'Courier New', monospace",
-                      tabSize: 4,
-                      insertSpaces: true,
-                      detectIndentation: false,
-                      automaticLayout: true,
-                      scrollBeyondLastLine: false,
-                      lineNumbers: 'on',
-                      glyphMargin: false,
-                      folding: true,
-                      lineDecorationsWidth: 0,
-                      lineNumbersMinChars: 3,
-                      renderLineHighlight: 'line',
-                      scrollbar: {
-                        verticalScrollbarSize: 8,
-                        horizontalScrollbarSize: 8,
-                      },
-                      // 禁用代码提示
-                      quickSuggestions: false,
-                      suggestOnTriggerCharacters: false,
-                      acceptSuggestionOnCommitCharacter: false,
-                      acceptSuggestionOnEnter: 'off',
-                      wordBasedSuggestions: 'off',
-                    }}
-                  />
-                </div>
-              </div>
-              <div className="ide-lab">
-                <div className="ide-run">
-                  <div className="ide-run-header">
-                    <span className="ide-run-title">测试运行</span>
-                    <button
-                      className="ide-btn ide-btn-secondary"
-                      onClick={() => handleRunCustom(runInput, runExpected)}
-                      disabled={runBusy}
-                    >
-                      {runBusy ? '运行中...' : '运行'}
-                    </button>
-                  </div>
-                  <div className="ide-run-grid">
-                    <div className="ide-run-pane">
-                      <div className="ide-run-pane-title">输入</div>
-                      <textarea
-                        className="ide-run-input"
-                        value={runInput}
-                        placeholder="在此输入测试数据"
-                        onChange={(event) => {
-                          setRunInput(event.target.value)
-                          setRunExpected('')
-                        }}
-                      />
-                    </div>
-                    <div className="ide-run-pane">
-                      <div className="ide-run-pane-title">
-                        <span>输出</span>
-                        {runExpected && (runStatus || runMessage) && (
-                          <span
-                            className={`ide-run-status ${
-                              runStatus === 'Accepted'
-                                ? 'ok'
-                                : runStatus === 'Wrong Answer'
-                                  ? 'bad'
-                                  : runStatus === 'Compile Error'
-                                    ? 'warn'
-                                    : runStatus === 'Runtime Error'
-                                      ? 'runtime'
-                                      : ''
-                            }`}
-                          >
-                            {[runStatus, runMessage].filter(Boolean).join(' ')}
-                          </span>
-                        )}
-                      </div>
-                      <pre className="ide-run-output">{runOutput || '暂无输出'}</pre>
-                    </div>
-                  </div>
-                  {(runTime !== null || runExpected) && (
-                    <div className="ide-run-meta">
-                      {runTime !== null && <span>用时: {runTime}ms</span>}
-                      {runExpected && <span>期望输出: {runExpected}</span>}
-                    </div>
-                  )}
-                </div>
-              </div>
-              {submitError && (
-                <div className="ide-footer">
-                  <div className="ide-error">{submitError}</div>
-                </div>
-              )}
-            </div>
-          </div>
+          <Suspense fallback={<div className="oj-loading">IDE 加载中...</div>}>
+            <LazyOjIdePanel
+              problem={problem}
+              currentUser={currentUser}
+              languageOptions={LANGUAGE_OPTIONS}
+              getLanguageConfig={getLanguageConfig}
+              fetchJson={fetchJson}
+              openAuth={openAuth}
+              loadLatestSubmissionForIde={loadLatestSubmissionForIde}
+              initialDraft={ideDraftCacheRef.current[problem.id] ?? null}
+              onDraftChange={(problemId, draft) => {
+                ideDraftCacheRef.current[problemId] = draft
+              }}
+              onSubmitJudge={handleSubmitJudge}
+              pendingSampleRunIndex={pendingSampleRunIndex}
+              onPendingSampleRunHandled={() => setPendingSampleRunIndex(null)}
+            />
+          </Suspense>
         )}
       </div>
     )
@@ -4716,7 +4749,8 @@ function App() {
             >
               <div>{formatTime(record.createdAt)}</div>
               <div>
-                {record.userName} ({record.userId})
+                <span className="submission-user-name" data-user-name>{record.userName}</span>{' '}
+                (<span className="submission-user-id" data-user-id>{record.userId}</span>)
               </div>
               <div>{record.language}</div>
               <div>{record.status}</div>
@@ -4967,10 +5001,21 @@ function App() {
       loadConversations()
     }, [loadConversations])
 
-    // Poll conversation list every 10 seconds
+    // Poll conversation list (reduced frequency, paused when tab is hidden)
     useEffect(() => {
-      const interval = setInterval(loadConversations, 10000)
-      return () => clearInterval(interval)
+      const interval = setInterval(() => {
+        if (!isPollingPageVisible()) return
+        loadConversations()
+      }, 15000)
+      const handleVisibilityChange = () => {
+        if (!isPollingPageVisible()) return
+        loadConversations()
+      }
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+      return () => {
+        clearInterval(interval)
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+      }
     }, [loadConversations])
 
     // Search users for new conversation
@@ -5159,10 +5204,13 @@ function App() {
       loadMessages(1)
     }, [loadMessages])
 
-    // Poll for new messages every 5 seconds
+    // Poll for new messages (paused when tab is hidden)
     useEffect(() => {
       if (!otherUserId) return
+      let polling = false
       const poll = async () => {
+        if (!isPollingPageVisible() || polling) return
+        polling = true
         try {
           const { response, data } = await fetchJson<MessagesResponse>(
             `/api/messages/conversations/${otherUserId}?page=1&pageSize=${pageSize}`
@@ -5184,10 +5232,22 @@ function App() {
           }
         } catch {
           // Silently ignore polling errors
+        } finally {
+          polling = false
         }
       }
-      const interval = setInterval(poll, 5000)
-      return () => clearInterval(interval)
+      const interval = setInterval(poll, 7000)
+      const handleVisibilityChange = () => {
+        if (!isPollingPageVisible()) return
+        void poll()
+      }
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+      window.addEventListener('focus', handleVisibilityChange)
+      return () => {
+        clearInterval(interval)
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+        window.removeEventListener('focus', handleVisibilityChange)
+      }
     }, [otherUserId, fetchUnreadCount])
 
     useEffect(() => {
@@ -5657,7 +5717,11 @@ function App() {
               </svg>
             </button>
           )}
-          {comment.replyToName && <span className="comment-reply-to">回复 {comment.replyToName}</span>}
+          {comment.replyToName && (
+            <span className="comment-reply-to">
+              回复 <span className="comment-reply-to-name" data-user-name>{comment.replyToName}</span>
+            </span>
+          )}
           <span className="comment-time">{formatTime(comment.createdAt)}</span>
         </div>
         <div className="comment-body" dangerouslySetInnerHTML={{ __html: comment.content }} />
@@ -6050,9 +6114,26 @@ function App() {
     )
   }
 
+  const uiLanguageEntries: Array<{ value: UiLanguage; label: string; menuLabel: string; flag: string }> = [
+    { value: 'zh', label: '中文', menuLabel: '中文（简体）', flag: '🇨🇳' },
+    { value: 'en', label: 'English', menuLabel: 'English', flag: '🇺🇸' },
+  ]
+  const currentUiLanguageEntry = uiLanguageEntries.find((item) => item.value === uiLanguage) ?? uiLanguageEntries[0]
+  const showLanguageSwitchOverlay =
+    uiLanguage === 'en' &&
+    pageLanguageSwitchBlocking &&
+    pendingLanguageSwitchTarget !== 'zh'
+
   return (
     <>
       <canvas ref={canvasRef} className="starfield" />
+      <div ref={translateRootRef}>
+        <AutoTranslateScope
+          rootRef={translateRootRef}
+          language={uiLanguage}
+          onBusyChange={handleTranslateBusyChange}
+          onSettled={handleTranslateSettled}
+        />
       {isAuthPage ? (
         <div className="auth-shell">
           <main className="auth-main">
@@ -6085,11 +6166,47 @@ function App() {
       ) : (
         <div className={appClassName} ref={appRef}>
           <header className="topbar" ref={topbarRef}>
-            <div className="topbar-left">
+            <div className="topbar-left" data-no-auto-translate>
               <div className="topbar-title">星栈</div>
               <div className="topbar-badge">STARSTACK</div>
             </div>
             <div className="topbar-actions">
+              <div className={`lang-switch ${langMenuOpen ? 'open' : ''}`} ref={langSwitchRef} data-no-auto-translate>
+                <button
+                  type="button"
+                  className="lang-switch-trigger"
+                  aria-haspopup="menu"
+                  aria-expanded={langMenuOpen}
+                  title="切换语言 / Switch language"
+                  onClick={() => setLangMenuOpen((prev) => !prev)}
+                >
+                  <span className="lang-switch-flag" aria-hidden="true">{currentUiLanguageEntry.flag}</span>
+                  <span className="lang-switch-current">{currentUiLanguageEntry.label}</span>
+                  <svg className="lang-switch-chevron" viewBox="0 0 20 20" aria-hidden="true">
+                    <path d="M5.5 7.5 10 12l4.5-4.5" />
+                  </svg>
+                </button>
+                {langMenuOpen && (
+                  <div className="lang-switch-menu" role="menu" aria-label="Language menu">
+                    {uiLanguageEntries.map((item) => (
+                      <button
+                        key={item.value}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={uiLanguage === item.value}
+                        className={`lang-switch-item ${uiLanguage === item.value ? 'active' : ''}`}
+                        onClick={() => {
+                          changeUiLanguage(item.value)
+                        }}
+                      >
+                        <span className="lang-switch-flag" aria-hidden="true">{item.flag}</span>
+                        <span className="lang-switch-item-label">{item.menuLabel}</span>
+                        {uiLanguage === item.value && <span className="lang-switch-check" aria-hidden="true">{item.flag}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               {logoutNotice && (
                 <div className="logout-notice" role="status">
                   {logoutNotice}
@@ -6174,19 +6291,19 @@ function App() {
                   <span className="nav-label">讨论</span>
                 </button>
                 <button
-                  className={`nav-link ${location.pathname.startsWith('/games') ? 'active' : ''}`}
-                  onClick={() => navigate('/games')}
+                  className={`nav-link ${location.pathname.startsWith('/starbot') ? 'active' : ''}`}
+                  onClick={() => navigate('/starbot')}
                 >
                   <span className="nav-icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24">
-                      <path d="M7.5 9h9a4.5 4.5 0 0 1 4.5 4.5v1a4 4 0 0 1-4 4h-2l-2.2 2-2.2-2H7a4 4 0 0 1-4-4v-1A4.5 4.5 0 0 1 7.5 9Z" />
-                      <path d="M7.8 12.2h3.2" />
-                      <path d="M9.4 10.6v3.2" />
-                      <circle cx="16.2" cy="12.2" r="1.1" />
-                      <circle cx="18.6" cy="13.6" r="1.1" />
+                      <rect x="6" y="8" width="12" height="9" rx="2" />
+                      <circle cx="10" cy="12.5" r="1" />
+                      <circle cx="14" cy="12.5" r="1" />
+                      <path d="M12 8V5" />
+                      <path d="M9 5h6" />
                     </svg>
                   </span>
-                  <span className="nav-label">游戏</span>
+                  <span className="nav-label">StarBot</span>
                 </button>
                 {currentUser?.isAdmin && (
                   <button
@@ -6212,9 +6329,18 @@ function App() {
 
             <div className="content">
               <main className={`main ${location.pathname === '/' ? 'home' : ''} ${homeEnter ? 'home-enter' : ''}`}>
+                {showLanguageSwitchOverlay && (
+                  <div className="language-switch-overlay" role="status" aria-live="polite" data-no-auto-translate>
+                    <div className="language-switch-overlay-card">
+                      <span className="language-switch-spinner" aria-hidden="true" />
+                      <span>{isOjProblemDetailPage && problemLanguageSwitchBlocking ? '正在切换语言并预加载题目内容...' : '正在切换语言并预加载页面内容...'}</span>
+                    </div>
+                  </div>
+                )}
                 <Routes>
                   <Route path="/" element={<HomePage />} />
-                  <Route path="/games" element={<GamesPage />} />
+                  <Route path="/starbot" element={<StarBotPageView />} />
+                  <Route path="/starbot/get-started" element={<StarBotGettingStartedView />} />
                   <Route path="/account" element={<AccountPage />} />
                   <Route path="/leaderboard" element={<LeaderboardPage />} />
                   <Route path="/discussions" element={<DiscussionListPage />} />
@@ -6257,6 +6383,7 @@ function App() {
           )}
         </div>
       )}
+      </div>
     </>
   )
 }

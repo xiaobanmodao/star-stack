@@ -295,6 +295,114 @@ body {
   position: relative;
 }
 
+.lang-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.lang-switch-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 132px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(79, 195, 247, 0.28);
+  background: rgba(6, 10, 18, 0.78);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  white-space: nowrap;
+}
+
+button.lang-switch-trigger:hover {
+  transform: none;
+  filter: none;
+  border-color: rgba(79, 195, 247, 0.45);
+  background: rgba(9, 15, 24, 0.92);
+}
+
+.lang-switch-flag {
+  font-size: 15px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.lang-switch-current {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.lang-switch-chevron {
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  fill: none;
+  opacity: 0.9;
+  transition: transform 0.18s ease;
+}
+
+.lang-switch.open .lang-switch-chevron {
+  transform: rotate(180deg);
+}
+
+.lang-switch-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(79, 195, 247, 0.24);
+  background: rgba(5, 9, 16, 0.96);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
+  z-index: 30;
+}
+
+.lang-switch-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+button.lang-switch-item:hover {
+  transform: none;
+  filter: none;
+  background: rgba(79, 195, 247, 0.08);
+}
+
+.lang-switch-item.active {
+  background: rgba(79, 195, 247, 0.12);
+}
+
+.lang-switch-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.lang-switch-check {
+  margin-left: auto;
+  font-size: 14px;
+  line-height: 1;
+}
+
 .logout-notice {
   padding: 6px 12px;
   border-radius: 12px;
@@ -305,11 +413,53 @@ body {
   letter-spacing: 0.1em;
 }
 
+.language-switch-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 22;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 8, 14, 0.78);
+  backdrop-filter: blur(6px);
+}
+
+.language-switch-overlay-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(79, 195, 247, 0.25);
+  background: rgba(9, 13, 21, 0.92);
+  color: var(--text);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+.language-switch-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(79, 195, 247, 0.2);
+  border-top-color: var(--accent);
+  animation: language-switch-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes language-switch-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .main {
   padding: 32px;
   display: flex;
   flex-direction: column;
   gap: 28px;
+  position: relative;
 }
 
 .hero {
@@ -497,11 +647,18 @@ body {
 
 button.primary,
 button.ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 12px;
+  min-height: 40px;
   padding: 12px 20px;
   font-weight: 600;
   letter-spacing: 0.05em;
   font-size: 14px;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-align: center;
 }
 
 button.ghost.submit-btn {
@@ -534,6 +691,9 @@ button.small {
   padding: 6px 12px;
   font-size: 12px;
   letter-spacing: 0.08em;
+  min-height: 30px;
+  line-height: 1.1;
+  white-space: nowrap;
 }
 
 .user-chip {
@@ -739,6 +899,7 @@ button.small {
 .confirm-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 6px;
 }
@@ -1001,11 +1162,13 @@ button.small {
 
 .oj-quick-jump-buttons {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
 .oj-quick-jump-buttons button {
   flex: 1;
+  min-width: 110px;
   border-radius: 6px;
   padding: 5px 9px;
   font-size: 12px;
@@ -3061,6 +3224,7 @@ button.danger:hover {
 
 .problem-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
   padding-top: 12px;
@@ -3069,6 +3233,7 @@ button.danger:hover {
 
 .problem-actions button {
   flex: 1;
+  min-width: 110px;
 }
 
 @media (max-width: 768px) {
@@ -4151,6 +4316,7 @@ button.danger:hover {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 12px;
   margin-top: 24px;
   padding: 16px 0;
@@ -4163,6 +4329,7 @@ button.danger:hover {
   background: transparent;
   color: var(--text);
   font-size: 13px;
+  white-space: nowrap;
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -4887,6 +5054,8 @@ button.danger:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
   padding: 16px 24px;
   border-top: 1px solid var(--border);
 }
@@ -5094,11 +5263,13 @@ button.danger:hover {
 
 .oj-quick-action-buttons {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
 .oj-quick-action-buttons button {
   flex: 1;
+  min-width: 120px;
 }
 
 .oj-quick-action-card button {
@@ -6023,4 +6194,584 @@ button.danger:hover {
   .chat-input-area {
     padding: 12px 16px;
   }
+}
+
+/* ===================== StarBot Page ===================== */
+
+.starbot-page {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+
+/* Hero */
+.starbot-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 28px;
+  padding: 36px 40px;
+  background: linear-gradient(135deg, rgba(79, 195, 247, 0.06) 0%, rgba(156, 39, 176, 0.06) 100%);
+  border: 1px solid rgba(79, 195, 247, 0.2);
+  border-radius: 20px;
+  backdrop-filter: blur(6px);
+}
+
+.starbot-hero-icon {
+  font-size: 64px;
+  line-height: 1;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 20px rgba(79, 195, 247, 0.5));
+}
+
+.starbot-hero-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+}
+
+.starbot-hero-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.starbot-title {
+  font-size: 36px;
+  font-weight: 700;
+  font-family: 'Oxanium', sans-serif;
+  letter-spacing: 0.1em;
+  background: linear-gradient(135deg, #4fc3f7, #ce93d8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0;
+}
+
+.starbot-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(79, 195, 247, 0.1);
+  color: #4fc3f7;
+  border: 1px solid rgba(79, 195, 247, 0.3);
+  letter-spacing: 0.02em;
+}
+
+.starbot-badge-green {
+  background: rgba(76, 175, 80, 0.1);
+  color: #81c784;
+  border-color: rgba(76, 175, 80, 0.3);
+}
+
+.starbot-badge-blue {
+  background: rgba(100, 181, 246, 0.1);
+  color: #90caf9;
+  border-color: rgba(100, 181, 246, 0.3);
+}
+
+.starbot-badge-purple {
+  background: rgba(206, 147, 216, 0.1);
+  color: #ce93d8;
+  border-color: rgba(206, 147, 216, 0.3);
+}
+
+.starbot-desc {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 0;
+}
+
+.starbot-stats-row {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+
+.starbot-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.starbot-stat-num {
+  font-size: 24px;
+  font-weight: 700;
+  font-family: 'Oxanium', sans-serif;
+  color: #4fc3f7;
+}
+
+.starbot-stat-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Section */
+.starbot-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.starbot-page-tutorial {
+  gap: 28px;
+}
+
+.starbot-page-tutorial .starbot-section {
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(7, 10, 16, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.starbot-page-tutorial .starbot-two-col {
+  gap: 16px;
+}
+
+.starbot-page-tutorial .starbot-two-col > div {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.starbot-page-tutorial .starbot-two-col > div > .starbot-section-title {
+  margin-top: 0;
+}
+
+.starbot-page-tutorial .starbot-section-title {
+  font-size: 16px;
+  padding-bottom: 10px;
+}
+
+.starbot-tutorial-overview {
+  gap: 12px;
+}
+
+.starbot-tutorial-stepbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.starbot-tutorial-stepchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(79, 195, 247, 0.06);
+  border: 1px solid rgba(79, 195, 247, 0.14);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+
+button.starbot-tutorial-stepchip:hover {
+  transform: none;
+  filter: none;
+  background: rgba(79, 195, 247, 0.1);
+  border-color: rgba(79, 195, 247, 0.24);
+}
+
+button.starbot-tutorial-stepchip:focus-visible {
+  outline: 2px solid rgba(79, 195, 247, 0.45);
+  outline-offset: 2px;
+}
+
+.starbot-tutorial-stepchip-num {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(79, 195, 247, 0.18);
+  color: #8ce7ff;
+  font-family: 'Oxanium', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.starbot-tutorial-stepchip-label {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.starbot-anchor-section,
+.starbot-anchor-subsection {
+  scroll-margin-top: 88px;
+}
+
+.starbot-section-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Feature Grid */
+.starbot-features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.starbot-feature-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  background: rgba(11, 14, 22, 0.7);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.starbot-feature-card:hover {
+  border-color: rgba(79, 195, 247, 0.3);
+  background: rgba(79, 195, 247, 0.04);
+}
+
+.starbot-feature-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+.starbot-feature-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.starbot-feature-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* Skills Grid */
+.starbot-skills-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.starbot-skill-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  background: rgba(11, 14, 22, 0.7);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: border-color 0.2s ease;
+}
+
+.starbot-skill-card:hover {
+  border-color: rgba(206, 147, 216, 0.35);
+}
+
+.starbot-skill-icon {
+  font-size: 20px;
+}
+
+.starbot-skill-name {
+  font-size: 12px;
+  color: #ce93d8;
+  background: rgba(206, 147, 216, 0.1);
+  padding: 2px 7px;
+  border-radius: 6px;
+  width: fit-content;
+  font-family: 'Consolas', 'Fira Code', monospace;
+}
+
+.starbot-skill-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* Tool Groups */
+.starbot-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.starbot-tool-group {
+  padding: 14px 16px;
+  background: rgba(11, 14, 22, 0.7);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.starbot-tool-group-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.starbot-tool-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.starbot-tool-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(79, 195, 247, 0.08);
+  color: #4fc3f7;
+  border: 1px solid rgba(79, 195, 247, 0.2);
+  font-family: 'Consolas', 'Fira Code', monospace;
+}
+
+/* Architecture */
+.starbot-arch-card {
+  background: rgba(6, 9, 14, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px 28px;
+  overflow-x: auto;
+}
+
+.starbot-arch-flow {
+  font-family: 'Consolas', 'Fira Code', monospace;
+  font-size: 13px;
+  color: #4fc3f7;
+  line-height: 1.8;
+  margin: 0;
+  white-space: pre;
+}
+
+/* Two column layout */
+.starbot-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .starbot-two-col {
+    grid-template-columns: 1fr;
+  }
+  .starbot-hero {
+    flex-direction: column;
+    padding: 24px;
+  }
+  .starbot-hero-icon {
+    font-size: 48px;
+  }
+  .starbot-title {
+    font-size: 28px;
+  }
+}
+
+/* Requirements */
+.starbot-req-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.starbot-page-tutorial .starbot-req-list {
+  border-color: rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+}
+
+.starbot-req-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(11, 14, 22, 0.7);
+  font-size: 13px;
+}
+
+.starbot-page-tutorial .starbot-req-row {
+  padding: 10px 12px;
+  font-size: 12px;
+}
+
+.starbot-req-row:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+}
+
+.starbot-req-key {
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+  min-width: 100px;
+}
+
+.starbot-req-val {
+  color: var(--muted);
+}
+
+/* Installation */
+.starbot-install-methods {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.starbot-page-tutorial .starbot-install-methods {
+  gap: 8px;
+}
+
+.starbot-install-card {
+  background: rgba(6, 9, 14, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.starbot-page-tutorial .starbot-install-card {
+  border-radius: 10px;
+  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(8, 12, 18, 0.82);
+}
+
+.starbot-install-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.starbot-page-tutorial .starbot-install-label {
+  padding: 7px 12px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.starbot-code {
+  font-family: 'Consolas', 'Fira Code', monospace;
+  font-size: 12px;
+  color: #b2dfdb;
+  padding: 12px 16px;
+  margin: 0;
+  line-height: 1.7;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.starbot-page-tutorial .starbot-code {
+  padding: 10px 12px;
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+/* Discord Commands */
+.starbot-cmd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.starbot-cmd-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(11, 14, 22, 0.7);
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+
+.starbot-cmd-row:last-child {
+  border-bottom: none;
+}
+
+.starbot-cmd {
+  font-family: 'Consolas', 'Fira Code', monospace;
+  font-size: 12px;
+  color: #4fc3f7;
+  background: rgba(79, 195, 247, 0.08);
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(79, 195, 247, 0.2);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.starbot-cmd-desc {
+  color: var(--muted);
+}
+
+/* LLM Providers */
+.starbot-llm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.starbot-llm-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  background: rgba(11, 14, 22, 0.7);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: border-color 0.2s ease;
+}
+
+.starbot-llm-card:hover {
+  border-color: rgba(79, 195, 247, 0.3);
+}
+
+.starbot-llm-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.starbot-llm-model {
+  font-family: 'Consolas', 'Fira Code', monospace;
+  font-size: 12px;
+  color: #81c784;
+  background: rgba(76, 175, 80, 0.08);
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(76, 175, 80, 0.2);
+  width: fit-content;
+}
+
+.starbot-llm-api {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: 'Consolas', 'Fira Code', monospace;
+  word-break: break-all;
 }
