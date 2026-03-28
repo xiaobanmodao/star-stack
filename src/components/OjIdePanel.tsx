@@ -79,21 +79,6 @@ const OjIdePanel = ({
   const userEditedRef = useRef(false)
 
   useEffect(() => {
-    userEditedRef.current = false
-    const nextLanguage = initialDraft?.language || defaultLanguage
-    setLanguage(nextLanguage)
-    setCode(initialDraft?.code || '')
-    setSubmitError('')
-    setRunBusy(false)
-    setRunStatus('')
-    setRunMessage('')
-    setRunTime(null)
-    setRunInput(initialDraft?.runInput || '')
-    setRunOutput('')
-    setRunExpected(initialDraft?.runExpected || '')
-  }, [defaultLanguage, initialDraft, problem.id])
-
-  useEffect(() => {
     onDraftChange(problem.id, { language, code, runInput, runExpected })
   }, [code, language, onDraftChange, problem.id, runExpected, runInput])
 
@@ -158,7 +143,10 @@ const OjIdePanel = ({
 
   useEffect(() => {
     if (pendingSampleRunIndex === null) return
-    void runSample(pendingSampleRunIndex).finally(onPendingSampleRunHandled)
+    const timer = window.setTimeout(() => {
+      void runSample(pendingSampleRunIndex).finally(onPendingSampleRunHandled)
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [onPendingSampleRunHandled, pendingSampleRunIndex, runSample])
 
   return (

@@ -484,6 +484,9 @@ export function AutoTranslateScope({ rootRef, language, onBusyChange, onSettled 
       clearScanTimer()
       clearSettleTimer()
     }
+  // The observer intentionally rebinds only when the root or target language changes.
+  // Internal helpers are ref-backed and read the latest mutable state during callbacks.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [language, rootRef])
 
   return null
