@@ -1,0 +1,17 @@
+{
+  "name": "星栈 StarStack",
+  "short_name": "StarStack",
+  "description": "StarStack OJ - 星空主题在线评测平台",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070a0f",
+  "theme_color": "#4fc3f7",
+  "icons": [
+    {
+      "src": "/starstack.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

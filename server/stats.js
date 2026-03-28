@@ -305,30 +305,32 @@ async function checkAndUnlockAchievements(db, userId, submission) {
 }
 
 /**
- * Update global rankings
+ * Update global rankings — 使用单条 SQL 批量更新，避免 O(n) 次写入
+ * 带节流：最多每 30 秒执行一次
  */
-async function updateRankings(db) {
-  // Rank by rating (与排行榜总榜一致), DENSE_RANK 同分并列，过滤封禁用户
-  const users = await db.all(
-    `SELECT us.user_id, u.rating
-     FROM user_stats us
-     JOIN users u ON us.user_id = u.id
-     WHERE u.is_banned = 0 AND us.total_submissions > 0
-     ORDER BY u.rating DESC`
-  )
+let _lastRankingUpdate = 0
+const RANKING_THROTTLE_MS = 30000
 
-  let currentRank = 1
-  for (let i = 0; i < users.length; i++) {
-    // DENSE_RANK: 同 rating 的用户排名相同
-    if (i > 0 && users[i].rating < users[i - 1].rating) {
-      currentRank = i + 1
-    }
-    await db.run(
-      `UPDATE user_stats SET rank = ? WHERE user_id = ?`,
-      currentRank,
-      users[i].user_id
-    )
-  }
+async function updateRankings(db) {
+  const now = Date.now()
+  if (now - _lastRankingUpdate < RANKING_THROTTLE_MS) return
+  _lastRankingUpdate = now
+
+  // 单条 SQL 批量更新排名
+  await db.run(
+    `UPDATE user_stats SET rank = (
+       SELECT COUNT(DISTINCT u2.rating) + 1
+       FROM user_stats us2
+       JOIN users u2 ON us2.user_id = u2.id
+       WHERE u2.is_banned = 0 AND us2.total_submissions > 0
+         AND u2.rating > (SELECT rating FROM users WHERE id = user_stats.user_id)
+     )
+     WHERE user_id IN (
+       SELECT us.user_id FROM user_stats us
+       JOIN users u ON us.user_id = u.id
+       WHERE u.is_banned = 0 AND us.total_submissions > 0
+     )`
+  )
 
   // 被封禁用户排名清零
   await db.run(

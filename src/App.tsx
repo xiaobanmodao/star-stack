@@ -13,10 +13,20 @@ const preloadOjIdeAssets = () => {
   if (!ojIdeAssetsPreloadPromise) {
     ojIdeAssetsPreloadPromise = Promise.allSettled([
       import('./components/OjIdePanel'),
-      import('@monaco-editor/react'),
+      import('@monaco-editor/react').then(m => m.loader.init()),
     ])
   }
   return ojIdeAssetsPreloadPromise
+}
+
+// Start preloading Monaco immediately on module load (idle callback)
+if (typeof window !== 'undefined') {
+  const start = () => preloadOjIdeAssets()
+  if ('requestIdleCallback' in window) {
+    (window as unknown as { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(start)
+  } else {
+    setTimeout(start, 200)
+  }
 }
 
 const isPollingPageVisible = () =>
@@ -38,6 +48,9 @@ type OjProblemSummary = {
   difficulty: string
   tags: string[]
   createdAt?: string
+  acCount?: number
+  totalCount?: number
+  passRate?: number
 }
 
 type OjProblemDetail = OjProblemSummary & {
@@ -472,6 +485,10 @@ const fetchJson = async <T = unknown>(url: string, options: RequestInit = {}) =>
     headers.set('Authorization', `Bearer ${token}`)
   }
   const response = await fetch(url, { ...options, headers })
+  if (response.status === 401) {
+    localStorage.removeItem(TOKEN_KEY)
+    window.dispatchEvent(new CustomEvent('starstack:auth-expired'))
+  }
   let data: T | null = null
   const contentType = response.headers.get('content-type') || ''
   if (contentType.includes('application/json')) {
@@ -876,7 +893,20 @@ function App() {
     loadCurrentUser()
   }, [loadCurrentUser])
 
-  // Poll unread message count (reduced frequency, paused when tab is hidden)
+  // Listen for 401 auth expiry from fetchJson
+  useEffect(() => {
+    let handled = false
+    const handleAuthExpired = () => {
+      if (handled) return
+      handled = true
+      setCurrentUser(null)
+      navigate('/auth')
+    }
+    window.addEventListener('starstack:auth-expired', handleAuthExpired)
+    return () => window.removeEventListener('starstack:auth-expired', handleAuthExpired)
+  }, [navigate])
+
+  // Poll unread message count via SSE with polling fallback
   const fetchUnreadCount = useCallback(async () => {
     if (!currentUser) return
     try {
@@ -895,37 +925,111 @@ function App() {
       return
     }
 
-    fetchUnreadCount()
-    const interval = setInterval(() => {
-      if (!isPollingPageVisible()) return
-      fetchUnreadCount()
-    }, 20000)
-    const handleVisibilityChange = () => {
-      if (!isPollingPageVisible()) return
-      fetchUnreadCount()
+    const token = localStorage.getItem(TOKEN_KEY)
+    let es: EventSource | null = null
+    let fallbackInterval: ReturnType<typeof setInterval> | null = null
+    let usingSSE = false
+
+    const startSSE = () => {
+      try {
+        es = new EventSource(`/api/messages/unread-stream?token=${encodeURIComponent(token || '')}`)
+        es.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data)
+            if (typeof payload.unreadCount === 'number') {
+              setUnreadMessageCount(payload.unreadCount)
+            }
+          } catch {}
+        }
+        es.onopen = () => { usingSSE = true }
+        es.onerror = () => {
+          es?.close()
+          es = null
+          usingSSE = false
+          startPolling()
+        }
+      } catch {
+        startPolling()
+      }
     }
+
+    const startPolling = () => {
+      if (fallbackInterval) return
+      fetchUnreadCount()
+      fallbackInterval = setInterval(() => {
+        if (!isPollingPageVisible()) return
+        fetchUnreadCount()
+      }, 20000)
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        es?.close()
+        es = null
+        if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null }
+      } else {
+        if (usingSSE) startSSE()
+        else startPolling()
+      }
+    }
+
+    startSSE()
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
-      clearInterval(interval)
+      es?.close()
+      if (fallbackInterval) clearInterval(fallbackInterval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [currentUser, fetchUnreadCount])
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable || target.closest('.monaco-editor')
+
+      // Ctrl+K / Cmd+K: navigate to problem list and focus search
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        navigate('/oj/list')
+        setTimeout(() => {
+          const searchInput = document.querySelector<HTMLInputElement>('.oj-search input, .oj-search-input')
+          searchInput?.focus()
+        }, 100)
+        return
+      }
+
+      // "/" when not in input: focus current page search
+      if (e.key === '/' && !isInput) {
+        e.preventDefault()
+        const searchInput = document.querySelector<HTMLInputElement>('input[type="text"], input[type="search"], .oj-search input')
+        searchInput?.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [navigate])
 
   useEffect(() => {
     if (isAuthPage) return
     const appEl = appRef.current
     const topbarEl = topbarRef.current
     if (!appEl || !topbarEl) return
+    let rafId = 0
     const update = () => {
-      const next = Math.round(topbarEl.getBoundingClientRect().height)
-      appEl.style.setProperty('--topbar-offset', `${next}px`)
+      cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(() => {
+        const next = Math.round(topbarEl.getBoundingClientRect().height)
+        appEl.style.setProperty('--topbar-offset', `${next}px`)
+      })
     }
     update()
     const observer = new ResizeObserver(update)
     observer.observe(topbarEl)
     window.addEventListener('resize', update)
     return () => {
+      cancelAnimationFrame(rafId)
       observer.disconnect()
       window.removeEventListener('resize', update)
     }
@@ -2345,6 +2449,7 @@ function App() {
     const [heatmapData, setHeatmapData] = useState<HeatmapData[]>([])
     const [achievements, setAchievements] = useState<Achievement[]>([])
     const [loading, setLoading] = useState(true)
+    const [ratingHistory, setRatingHistory] = useState<{ date: string; rating: number }[]>([])
     const loadedUserIdRef = useRef<string | null>(null)
 
     const handleAvatarClick = () => {
@@ -2413,10 +2518,11 @@ function App() {
       const loadProfileData = async () => {
         setLoading(true)
         try {
-          const [statsRes, heatmapRes, achievementsRes] = await Promise.all([
+          const [statsRes, heatmapRes, achievementsRes, ratingRes] = await Promise.all([
             fetchJson<ProfileStatsResponse>(`/api/user/profile/${currentUser.id}`),
             fetchJson<{ heatmap: HeatmapResponse }>(`/api/user/heatmap/${currentUser.id}`),
-            fetchJson<{ achievements: AchievementsResponse }>(`/api/user/achievements/${currentUser.id}`)
+            fetchJson<{ achievements: AchievementsResponse }>(`/api/user/achievements/${currentUser.id}`),
+            fetchJson<{ history: { date: string; rating: number }[] }>(`/api/user/rating-history/${currentUser.id}`)
           ])
 
           if (!isMounted) return
@@ -2429,6 +2535,9 @@ function App() {
           }
           if (achievementsRes.response.ok && achievementsRes.data) {
             setAchievements(achievementsRes.data.achievements || [])
+          }
+          if (ratingRes.response.ok && ratingRes.data) {
+            setRatingHistory(ratingRes.data.history || [])
           }
 
           // 标记已加载
@@ -2467,28 +2576,24 @@ function App() {
       return (
         <div className="profile-container">
           <div className="profile-left">
-            <div className="profile-card skeleton-loading">
-              <div className="profile-avatar-large">
-                {initial}
-              </div>
-              <div style={{ width: '100%', textAlign: 'center' }}>
-                <div style={{ height: '24px', background: 'rgba(79, 195, 247, 0.1)', borderRadius: '4px', marginBottom: '8px' }}></div>
-                <div style={{ height: '16px', background: 'rgba(79, 195, 247, 0.1)', borderRadius: '4px', width: '60%', margin: '0 auto' }}></div>
-              </div>
+            <div className="profile-card">
+              <div className="skeleton skeleton-avatar" style={{ width: 80, height: 80, margin: '0 auto 12px' }} />
+              <div className="skeleton skeleton-title" style={{ margin: '0 auto 8px' }} />
+              <div className="skeleton skeleton-line" style={{ width: '40%', margin: '0 auto' }} />
             </div>
           </div>
           <div className="profile-right">
             <div className="stats-grid">
               {[1, 2, 3, 4, 5, 6].map(i => (
-                <div key={i} className="stat-card skeleton-loading">
-                  <div className="stat-value">-</div>
-                  <div className="stat-label">加载中</div>
+                <div key={i} className="stat-card">
+                  <div className="skeleton skeleton-line" style={{ width: '50%', height: 20 }} />
+                  <div className="skeleton skeleton-line" style={{ width: '70%', height: 14 }} />
                 </div>
               ))}
             </div>
-            <div className="heatmap-container skeleton-loading" style={{ minHeight: '200px' }}>
+            <div className="heatmap-container" style={{ minHeight: '200px' }}>
               <div className="heatmap-title">做题热力图</div>
-              <p style={{ color: 'var(--muted)', fontSize: '14px' }}>加载中...</p>
+              <div className="skeleton" style={{ height: 120, marginTop: 12 }} />
             </div>
           </div>
         </div>
@@ -2510,7 +2615,7 @@ function App() {
               title="点击更换头像"
             >
               {currentUser.avatar ? (
-                <img src={currentUser.avatar} alt="头像" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                <img src={currentUser.avatar} alt="头像" loading="lazy" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
               ) : (
                 initial
               )}
@@ -2574,7 +2679,7 @@ function App() {
                     key={idx}
                     className="heatmap-cell"
                     data-level={level}
-                    title={`${day.date}: ${day.count} 次提交, ${day.accepted} 次通过`}
+                    data-tip={`${day.date}: ${day.count}次提交, ${day.accepted}次AC`}
                   />
                 )
               })}
@@ -2630,6 +2735,40 @@ function App() {
               })()
             )}
           </div>
+
+          {/* Rating Chart */}
+          {ratingHistory.length >= 2 && (() => {
+            const W = 600, H = 180, PX = 40, PY = 20
+            const ratings = ratingHistory.map(r => r.rating)
+            const minR = Math.min(...ratings) - 50
+            const maxR = Math.max(...ratings) + 50
+            const rangeR = maxR - minR || 1
+            const points = ratingHistory.map((r, i) => ({
+              x: PX + (i / (ratingHistory.length - 1)) * (W - PX * 2),
+              y: PY + (1 - (r.rating - minR) / rangeR) * (H - PY * 2),
+              date: r.date,
+              rating: r.rating,
+            }))
+            const polyline = points.map(p => `${p.x},${p.y}`).join(' ')
+            return (
+              <div className="rating-chart">
+                <div className="rating-chart-title">Rating 变化曲线</div>
+                <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }}>
+                  <line x1={PX} y1={H - PY} x2={W - PX} y2={H - PY} stroke="rgba(79,195,247,0.15)" strokeWidth="1" />
+                  <line x1={PX} y1={PY} x2={PX} y2={H - PY} stroke="rgba(79,195,247,0.15)" strokeWidth="1" />
+                  <text x={PX - 4} y={PY + 4} fill="var(--muted)" fontSize="10" textAnchor="end">{Math.round(maxR)}</text>
+                  <text x={PX - 4} y={H - PY + 4} fill="var(--muted)" fontSize="10" textAnchor="end">{Math.round(minR)}</text>
+                  <polyline points={polyline} fill="none" stroke="#4fc3f7" strokeWidth="2" strokeLinejoin="round" />
+                  {points.map((p, i) => (
+                    <g key={i}>
+                      <circle cx={p.x} cy={p.y} r="3" fill="#4fc3f7" />
+                      <title>{`${p.date}: ${p.rating}`}</title>
+                    </g>
+                  ))}
+                </svg>
+              </div>
+            )
+          })()}
 
           {/* Achievements */}
           <div className="achievements-container">
@@ -2819,7 +2958,7 @@ function App() {
         )}
 
         {loading ? (
-          <p>加载中...</p>
+          <div>{Array.from({ length: 10 }, (_, i) => <div key={i} className="skeleton skeleton-row" />)}</div>
         ) : leaderboard.length === 0 ? (
           <div className="leaderboard-empty">
             <div className="leaderboard-empty-icon">{leaderboardType === 'total' ? '🏆' : leaderboardType === 'weekly' ? '📈' : '📊'}</div>
@@ -2878,7 +3017,7 @@ function App() {
                             }}
                           >
                             {user.avatar ? (
-                              <img src={user.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <img src={user.avatar} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             ) : (
                               user.userName.charAt(0).toUpperCase()
                             )}
@@ -3821,7 +3960,7 @@ function App() {
                       <div key={index} className="oj-recent-ac-item">
                         <div className="oj-recent-ac-avatar">
                           {ac.avatar ? (
-                            <img src={ac.avatar} alt={ac.user_name} />
+                            <img src={ac.avatar} alt={ac.user_name} loading="lazy" />
                           ) : (
                             <div className="oj-recent-ac-avatar-placeholder">
                               {ac.user_name.charAt(0).toUpperCase()}
@@ -4070,6 +4209,14 @@ function App() {
                       </span>
                     ))}
                   </div>
+                  {(problem.totalCount ?? 0) > 0 && (
+                    <div className="oj-pass-rate">
+                      <div className="oj-pass-rate-bar">
+                        <div className="oj-pass-rate-fill" style={{ width: `${problem.passRate ?? 0}%` }} />
+                      </div>
+                      <span>{problem.passRate}%</span>
+                    </div>
+                  )}
                 </div>
               </div>
               {currentUser && (
@@ -4092,7 +4239,7 @@ function App() {
               )}
             </div>
           ))}
-          {problemLoading && <div className="admin-empty">加载中...</div>}
+          {problemLoading && <div className="admin-empty">{Array.from({ length: 6 }, (_, i) => <div key={i} className="skeleton skeleton-card" />)}</div>}
           {!problemLoading && problemList.length === 0 && (
             <div className="admin-empty">暂无题目</div>
           )}
@@ -4435,6 +4582,8 @@ function App() {
     const [stage, setStage] = useState<'idle' | 'running' | 'success' | 'fail'>('idle')
     const [showResults, setShowResults] = useState(false)
     const submitRef = useRef(false)
+    const [streamResults, setStreamResults] = useState<{ index: number; status: string; message: string; timeMs: number }[]>([])
+    const [totalCases, setTotalCases] = useState(0)
 
     const loadSubmission = useCallback(async (idValue: number) => {
       const { response, data } = await fetchJson<SubmissionResponse>(`/api/oj/submissions/${idValue}`)
@@ -4458,31 +4607,83 @@ function App() {
       setStage('running')
       setError('')
       setShowResults(false)
-      const { response, data } = await fetchJson<SubmissionResponse>('/api/oj/submissions', {
-        method: 'POST',
-        body: JSON.stringify({
-          problemId: locationState.problemId,
-          language: locationState.language,
-          code: locationState.code,
-        }),
-      })
-      if (!response.ok) {
-        setError(data?.message || '评测失败')
+      setStreamResults([])
+      setTotalCases(0)
+
+      try {
+        const token = localStorage.getItem(TOKEN_KEY)
+        const resp = await fetch('/api/oj/submissions/stream', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            problemId: locationState.problemId,
+            language: locationState.language,
+            code: locationState.code,
+          }),
+        })
+
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => null)
+          setError((errData as { message?: string } | null)?.message || '评测失败')
+          setStage('fail')
+          setShowResults(true)
+          return
+        }
+
+        const reader = resp.body?.getReader()
+        if (!reader) {
+          setError('浏览器不支持流式读取')
+          setStage('fail')
+          setShowResults(true)
+          return
+        }
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let doneSubmission: OjSubmission | null = null
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          let eventType = ''
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              eventType = line.slice(7).trim()
+            } else if (line.startsWith('data: ')) {
+              try {
+                const payload = JSON.parse(line.slice(6))
+                if (eventType === 'start') {
+                  setTotalCases(payload.totalCases)
+                } else if (eventType === 'testcase') {
+                  setStreamResults(prev => [...prev, payload])
+                } else if (eventType === 'done') {
+                  doneSubmission = payload.submission
+                }
+              } catch {}
+              eventType = ''
+            }
+          }
+        }
+
+        if (doneSubmission) {
+          setSubmission(doneSubmission)
+          const accepted = (doneSubmission as OjSubmission).status === 'Accepted'
+          setStage(accepted ? 'success' : 'fail')
+          navigate(`/oj/judge/${(doneSubmission as OjSubmission).id}`, { replace: true })
+          setTimeout(() => { setShowResults(true) }, 1100)
+        }
+      } catch (err) {
+        setError('评测请求失败')
         setStage('fail')
         setShowResults(true)
-        return
-      }
-      if (data?.submission) {
-        setSubmission(data.submission)
-        const accepted = data.submission?.status === 'Accepted'
-        setStage(accepted ? 'success' : 'fail')
-
-        // 提交成功后立即跳转到独立的提交记录页面，防止刷新重复评测
-        navigate(`/oj/judge/${data.submission.id}`, { replace: true })
-
-        setTimeout(() => {
-          setShowResults(true)
-        }, 1100)
       }
     }, [locationState.code, locationState.language, locationState.problemId, navigate])
 
@@ -4596,6 +4797,23 @@ function App() {
             {!submission && stage === 'running' && <div className="judge-status-wait">正在判题</div>}
           </div>
         </div>
+
+        {stage === 'running' && totalCases > 0 && (
+          <div className="sse-progress">
+            <div className="sse-progress-bar">
+              <div className="sse-progress-fill" style={{ width: `${(streamResults.length / totalCases) * 100}%` }} />
+            </div>
+            <div className="sse-progress-text">{streamResults.length} / {totalCases}</div>
+            <div className="sse-testcase-grid">
+              {streamResults.map((tc) => (
+                <span key={tc.index} className={`sse-tc-dot ${tc.status === 'Accepted' ? 'ac' : tc.status === 'Time Limit Exceeded' ? 'tle' : 'err'}`} title={`#${tc.index + 1}: ${tc.status}`} />
+              ))}
+              {Array.from({ length: totalCases - streamResults.length }, (_, i) => (
+                <span key={`pending-${i}`} className="sse-tc-dot pending" />
+              ))}
+            </div>
+          </div>
+        )}
 
         {showResults && (
           <div className="submit-results">
@@ -5094,7 +5312,7 @@ function App() {
               >
                 <div className="conversation-avatar">
                   {conv.otherUser.avatar ? (
-                    <img src={conv.otherUser.avatar} alt={conv.otherUser.name} />
+                    <img src={conv.otherUser.avatar} alt={conv.otherUser.name} loading="lazy" />
                   ) : (
                     <span>{conv.otherUser.name.charAt(0).toUpperCase()}</span>
                   )}
@@ -5140,7 +5358,7 @@ function App() {
                   searchResults.map(u => (
                     <div key={u.id} className="new-chat-user" onClick={() => { setShowNewChat(false); navigate(`/messages/${u.id}`) }}>
                       <div className="conversation-avatar" style={{ width: 36, height: 36, fontSize: 16 }}>
-                        {u.avatar ? <img src={u.avatar} alt={u.name} /> : <span>{u.name.charAt(0).toUpperCase()}</span>}
+                        {u.avatar ? <img src={u.avatar} alt={u.name} loading="lazy" /> : <span>{u.name.charAt(0).toUpperCase()}</span>}
                       </div>
                       <div>
                         <div className="new-chat-user-name">{u.name}</div>
@@ -5386,7 +5604,7 @@ function App() {
           <div className="chat-header-user">
             <div className="chat-avatar">
               {otherUser.avatar ? (
-                <img src={otherUser.avatar} alt={otherUser.name} />
+                <img src={otherUser.avatar} alt={otherUser.name} loading="lazy" />
               ) : (
                 <span>{otherUser.name.charAt(0).toUpperCase()}</span>
               )}
@@ -5417,7 +5635,7 @@ function App() {
               >
                 <div className="message-avatar">
                   {message.senderAvatar ? (
-                    <img src={message.senderAvatar} alt={message.senderName} />
+                    <img src={message.senderAvatar} alt={message.senderName} loading="lazy" />
                   ) : (
                     <span>{(message.senderName || '?').charAt(0).toUpperCase()}</span>
                   )}
@@ -5546,7 +5764,7 @@ function App() {
         </div>
 
         {loading ? (
-          <div className="discussion-loading">加载中...</div>
+          <div className="discussion-loading">{Array.from({ length: 5 }, (_, i) => <div key={i} className="skeleton skeleton-card" />)}</div>
         ) : posts.length === 0 ? (
           <div className="discussion-empty">暂无讨论帖子</div>
         ) : (
@@ -5558,7 +5776,7 @@ function App() {
                   <div className="discussion-card-meta">
                     <span className="discussion-card-author">
                       {post.userAvatar ? (
-                        <img className="discussion-avatar" src={post.userAvatar} alt="" />
+                        <img className="discussion-avatar" src={post.userAvatar} alt="" loading="lazy" />
                       ) : (
                         <span className="discussion-avatar fallback">{post.userName?.charAt(0) || '?'}</span>
                       )}
@@ -5699,7 +5917,7 @@ function App() {
         <div className="comment-header">
           <span className="comment-author">
             {comment.userAvatar ? (
-              <img className="discussion-avatar small" src={comment.userAvatar} alt="" />
+              <img className="discussion-avatar small" src={comment.userAvatar} alt="" loading="lazy" />
             ) : (
               <span className="discussion-avatar fallback small">{comment.userName?.charAt(0) || '?'}</span>
             )}
@@ -5755,7 +5973,7 @@ function App() {
           <div className="post-meta">
             <span className="post-author">
               {post.userAvatar ? (
-                <img className="discussion-avatar" src={post.userAvatar} alt="" />
+                <img className="discussion-avatar" src={post.userAvatar} alt="" loading="lazy" />
               ) : (
                 <span className="discussion-avatar fallback">{post.userName?.charAt(0) || '?'}</span>
               )}

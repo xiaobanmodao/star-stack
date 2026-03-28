@@ -1,5 +1,8 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import Editor from '@monaco-editor/react'
+import Editor, { loader } from '@monaco-editor/react'
+
+// Pre-configure Monaco loader to start fetching immediately on import
+loader.config({ 'vs/nls': { availableLanguages: { '*': '' } } })
 
 type LanguageOption = {
   label: string
@@ -61,10 +64,9 @@ const OjIdePanel = ({
   onPendingSampleRunHandled,
 }: OjIdePanelProps) => {
   const defaultLanguage = languageOptions[0]?.value || 'C++'
-  const defaultCode = getLanguageConfig(defaultLanguage).template
 
   const [language, setLanguage] = useState(initialDraft?.language || defaultLanguage)
-  const [code, setCode] = useState(initialDraft?.code || defaultCode)
+  const [code, setCode] = useState(initialDraft?.code || '')
   const [submitError, setSubmitError] = useState('')
   const [runBusy, setRunBusy] = useState(false)
   const [runStatus, setRunStatus] = useState('')
@@ -80,7 +82,7 @@ const OjIdePanel = ({
     userEditedRef.current = false
     const nextLanguage = initialDraft?.language || defaultLanguage
     setLanguage(nextLanguage)
-    setCode(initialDraft?.code || getLanguageConfig(nextLanguage).template)
+    setCode(initialDraft?.code || '')
     setSubmitError('')
     setRunBusy(false)
     setRunStatus('')
@@ -89,7 +91,7 @@ const OjIdePanel = ({
     setRunInput(initialDraft?.runInput || '')
     setRunOutput('')
     setRunExpected(initialDraft?.runExpected || '')
-  }, [defaultLanguage, getLanguageConfig, initialDraft, problem.id])
+  }, [defaultLanguage, initialDraft, problem.id])
 
   useEffect(() => {
     onDraftChange(problem.id, { language, code, runInput, runExpected })
@@ -103,51 +105,27 @@ const OjIdePanel = ({
       const submission = await loadLatestSubmissionForIde(problem.id)
       if (cancelled || userEditedRef.current) return
       if (submission?.code) {
-        const nextLanguage = submission.language || language
-        setLanguage(nextLanguage)
+        setLanguage(submission.language || language)
         setCode(submission.code)
       }
     })()
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [currentUser, initialDraft?.code, language, loadLatestSubmissionForIde, problem.id])
 
   const updateLanguage = useCallback((next: string) => {
     userEditedRef.current = true
-    setCode((prev) => {
-      const prevTemplate = getLanguageConfig(language).template.trim()
-      if (!prev.trim() || prev.trim() === prevTemplate) {
-        return getLanguageConfig(next).template
-      }
-      return prev
-    })
     setLanguage(next)
-  }, [getLanguageConfig, language])
+  }, [])
 
   const handleSubmit = useCallback(() => {
-    if (!currentUser) {
-      openAuth('login')
-      return
-    }
-    if (!code.trim()) {
-      setSubmitError('请填写代码')
-      return
-    }
+    if (!currentUser) { openAuth('login'); return }
+    if (!code.trim()) { setSubmitError('请填写代码'); return }
     setSubmitError('')
-    onSubmitJudge({
-      problemId: problem.id,
-      problemTitle: problem.title,
-      language,
-      code,
-    })
+    onSubmitJudge({ problemId: problem.id, problemTitle: problem.title, language, code })
   }, [code, currentUser, language, onSubmitJudge, openAuth, problem.id, problem.title])
 
   const handleRunCustom = useCallback(async (input: string, expected = '') => {
-    if (!currentUser) {
-      openAuth('login')
-      return
-    }
+    if (!currentUser) { openAuth('login'); return }
     setRunBusy(true)
     setRunStatus('运行中')
     setRunMessage('')
@@ -155,13 +133,7 @@ const OjIdePanel = ({
     setRunOutput('')
     const { response, data } = await fetchJson<{ status?: string; message?: string; output?: string; timeMs?: number }>('/api/oj/run-custom', {
       method: 'POST',
-      body: JSON.stringify({
-        problemId: problem.id,
-        language,
-        code,
-        input,
-        expected,
-      }),
+      body: JSON.stringify({ problemId: problem.id, language, code, input, expected }),
     })
     if (!response.ok) {
       setRunStatus('失败')
@@ -208,14 +180,12 @@ const OjIdePanel = ({
               onChange={(event) => updateLanguage(event.target.value)}
             >
               {languageOptions.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
+                <option key={item.value} value={item.value}>{item.label}</option>
               ))}
             </select>
           </div>
           <div className="ide-header-right">
-            <button className="ide-btn ide-btn-primary" onClick={handleSubmit}>
+            <button className="ide-btn ide-btn-primary" onClick={handleSubmit} title="Ctrl+Enter">
               提交
             </button>
           </div>
@@ -227,12 +197,14 @@ const OjIdePanel = ({
               height="100%"
               language={getLanguageConfig(language).monaco}
               value={code}
-              onChange={(value) => {
-                userEditedRef.current = true
-                setCode(value ?? '')
+              onChange={(value) => { userEditedRef.current = true; setCode(value ?? '') }}
+              onMount={(editor) => {
+                editor.addAction({ id: 'starstack-submit', label: 'Submit', keybindings: [2048 | 3], run: () => { handleSubmit() } })
+                editor.addAction({ id: 'starstack-save', label: 'Save', keybindings: [2048 | 49], run: () => {} })
+                editor.focus()
               }}
               theme="vs-dark"
-              loading={<div className="oj-loading">IDE 加载中...</div>}
+              loading={null}
               saveViewState={false}
               keepCurrentModel={false}
               options={{
@@ -247,14 +219,11 @@ const OjIdePanel = ({
                 scrollBeyondLastLine: false,
                 lineNumbers: 'on',
                 glyphMargin: false,
-                folding: true,
-                lineDecorationsWidth: 0,
-                lineNumbersMinChars: 3,
+                folding: false,
+                lineDecorationsWidth: 10,
+                lineNumbersMinChars: 4,
                 renderLineHighlight: 'line',
-                scrollbar: {
-                  verticalScrollbarSize: 8,
-                  horizontalScrollbarSize: 8,
-                },
+                scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 },
                 quickSuggestions: false,
                 suggestOnTriggerCharacters: false,
                 acceptSuggestionOnCommitCharacter: false,
@@ -267,6 +236,11 @@ const OjIdePanel = ({
                 codeLens: false,
                 links: false,
                 colorDecorators: false,
+                renderWhitespace: 'none',
+                guides: { indentation: false, bracketPairs: false },
+                overviewRulerLanes: 0,
+                hideCursorInOverviewRuler: true,
+                overviewRulerBorder: false,
               }}
             />
           </div>
@@ -291,10 +265,10 @@ const OjIdePanel = ({
                 <textarea
                   className="ide-run-input"
                   value={runInput}
-                  placeholder="在此输入测试数据"
-                  onChange={(event) => {
-                    setRunInput(event.target.value)
-                    setRunExpected('')
+                  onChange={(e) => setRunInput(e.target.value)}
+                  placeholder="输入测试数据..."
+                  onKeyDown={(e) => {
+                    if (e.key === 'Tab') { e.preventDefault(); const t = e.currentTarget; const s = t.selectionStart; const end = t.selectionEnd; setRunInput(runInput.substring(0, s) + '  ' + runInput.substring(end)); setTimeout(() => { t.selectionStart = t.selectionEnd = s + 2 }, 0) }
                   }}
                 />
               </div>
@@ -303,19 +277,7 @@ const OjIdePanel = ({
                 <div className="ide-run-pane-title">
                   <span>输出</span>
                   {runExpected && (runStatus || runMessage) && (
-                    <span
-                      className={`ide-run-status ${
-                        runStatus === 'Accepted'
-                          ? 'ok'
-                          : runStatus === 'Wrong Answer'
-                            ? 'bad'
-                            : runStatus === 'Compile Error'
-                              ? 'warn'
-                              : runStatus === 'Runtime Error'
-                                ? 'runtime'
-                                : ''
-                      }`}
-                    >
+                    <span className={`ide-run-status ${runStatus === 'Accepted' ? 'ok' : runStatus === 'Wrong Answer' ? 'bad' : runStatus === 'Compile Error' ? 'warn' : runStatus === 'Runtime Error' ? 'runtime' : ''}`}>
                       {[runStatus, runMessage].filter(Boolean).join(' ')}
                     </span>
                   )}

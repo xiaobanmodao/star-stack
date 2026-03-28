@@ -14,8 +14,60 @@ import {
   recalculateUserRating
 } from './stats.js'
 
+// 带容量上限和 TTL 的缓存，防止内存泄漏
+class BoundedCache {
+  constructor(maxSize = 500, ttlMs = 0) {
+    this._map = new Map()
+    this._maxSize = maxSize
+    this._ttlMs = ttlMs // 0 = 不过期
+  }
+  has(key) {
+    if (!this._map.has(key)) return false
+    if (this._ttlMs && Date.now() - this._map.get(key).ts > this._ttlMs) {
+      this._map.delete(key)
+      return false
+    }
+    return true
+  }
+  get(key) {
+    if (!this.has(key)) return undefined
+    const entry = this._map.get(key)
+    // LRU: 移到末尾
+    this._map.delete(key)
+    this._map.set(key, entry)
+    return entry.v
+  }
+  set(key, value) {
+    this._map.delete(key)
+    if (this._map.size >= this._maxSize) {
+      // 淘汰最旧的条目
+      const oldest = this._map.keys().next().value
+      this._map.delete(oldest)
+    }
+    this._map.set(key, { v: value, ts: Date.now() })
+  }
+  delete(key) { this._map.delete(key) }
+  get size() { return this._map.size }
+  entries() { return this._map.entries() }
+}
+
 const app = express()
-app.use(cors())
+
+// CORS: 生产环境限制为指定域名，开发环境允许 localhost
+const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
+  : null // null = 未配置时回退到宽松模式（兼容开发环境）
+
+app.use(cors({
+  origin(origin, callback) {
+    // 允许无 origin 的请求（如服务器间调用、curl）
+    if (!origin) return callback(null, true)
+    if (!ALLOWED_ORIGINS) return callback(null, true) // 未配置时允许所有
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true)
+    callback(new Error('CORS not allowed'))
+  },
+  credentials: true,
+}))
 app.use(express.json({ limit: '1mb' }))
 
 const createToken = () => randomBytes(24).toString('hex')
@@ -31,8 +83,10 @@ const parseResults = (raw) => {
 
 const getAuthToken = (req) => {
   const header = req.headers.authorization || ''
-  if (!header.startsWith('Bearer ')) return null
-  return header.slice(7).trim()
+  if (header.startsWith('Bearer ')) return header.slice(7).trim()
+  // Support token via query param for EventSource (SSE) which can't set headers
+  if (req.query && req.query.token) return String(req.query.token).trim()
+  return null
 }
 
 const getUserByToken = async (db, token) => {
@@ -89,7 +143,7 @@ const requireUser = async (req, res) => {
   return { db, user }
 }
 
-const translateCache = new Map()
+const translateCache = new BoundedCache(2000, 30 * 60 * 1000) // 最多 2000 条，30 分钟过期
 
 const normalizeTranslateTarget = (targetLang) => {
   if (targetLang === 'zh' || targetLang === 'zh-CN' || targetLang === 'zh_CN') return 'zh-CN'
@@ -531,7 +585,9 @@ app.get('/api/oj/problems', async (req, res) => {
   }
   const whereSql = `WHERE ${where.join(' AND ')}`
   const rows = await db.all(
-    `SELECT id, slug, title, difficulty, tags, created_at
+    `SELECT id, slug, title, difficulty, tags, created_at,
+       (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id AND status = 'Accepted') as ac_count,
+       (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id) as total_count
      FROM problems ${whereSql} ORDER BY id ASC`,
     ...params
   )
@@ -543,6 +599,9 @@ app.get('/api/oj/problems', async (req, res) => {
       difficulty: row.difficulty,
       tags: row.tags ? row.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
       createdAt: row.created_at,
+      acCount: row.ac_count || 0,
+      totalCount: row.total_count || 0,
+      passRate: row.total_count > 0 ? Math.round((row.ac_count / row.total_count) * 100) : 0,
     })),
   })
 })
@@ -1186,6 +1245,90 @@ app.post('/api/oj/submissions', async (req, res) => {
   })
 })
 
+// SSE streaming submission endpoint
+app.post('/api/oj/submissions/stream', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  const { problemId, language, code } = req.body || {}
+  if (!problemId || !language || !code) {
+    return res.status(400).json({ message: '请填写完整信息' })
+  }
+  const allowedLanguages = ['C++', 'Python', 'Java']
+  if (!allowedLanguages.includes(language)) {
+    return res.status(400).json({ message: '不支持的编程语言' })
+  }
+  if (code.length > 100000) {
+    return res.status(400).json({ message: '代码长度超过限制（最大 100KB）' })
+  }
+  const problem = await db.get(`SELECT id FROM problems WHERE id = ?`, Number(problemId))
+  if (!problem) {
+    return res.status(404).json({ message: '题目不存在' })
+  }
+  const testcases = await db.all(
+    `SELECT input, output FROM testcases WHERE problem_id = ? ORDER BY id ASC`,
+    Number(problemId)
+  )
+  if (testcases.length === 0) {
+    return res.status(400).json({ message: '该题暂无测试用例' })
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+  res.flushHeaders()
+
+  let closed = false
+  req.on('close', () => { closed = true })
+
+  const sendEvent = (event, data) => {
+    if (closed) return
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+  }
+
+  sendEvent('start', { totalCases: testcases.length })
+
+  const normalized = String(code)
+  const judgeResult = await judgeSubmission({
+    language,
+    code: normalized,
+    testcases,
+    onTestCase: (tc) => sendEvent('testcase', tc),
+  })
+
+  const status = judgeResult.status
+  const message = judgeResult.message
+  const timeMs = judgeResult.timeMs ?? null
+  const memoryKb = null
+  const score = judgeResult.score ?? 0
+  const results = Array.isArray(judgeResult.results) ? judgeResult.results : []
+  const resultsJson = JSON.stringify(results)
+  const createdAt = new Date().toISOString()
+  const result = await db.run(
+    `INSERT INTO submissions (problem_id, user_id, language, code, status, time_ms, memory_kb, message, results_json, score, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    Number(problemId), user.id, language, normalized, status, timeMs, memoryKb, message, resultsJson, score, createdAt
+  )
+  const submissionId = result.lastID
+
+  try {
+    await updateUserStats(db, user.id, { id: submissionId, problemId: Number(problemId), status, createdAt })
+    await checkAndUnlockAchievements(db, user.id, { id: submissionId, problemId: Number(problemId), status, createdAt })
+    await updateRankings(db)
+    if (status === 'Accepted') {
+      saveLeaderboardHistory().catch(err => console.error('Failed to save leaderboard history after AC:', err))
+    }
+  } catch (error) {
+    console.error('Failed to update stats:', error)
+  }
+
+  sendEvent('done', {
+    submission: { id: submissionId, problemId: Number(problemId), language, status, timeMs, memoryKb, message, results, score, createdAt }
+  })
+  res.end()
+})
+
 app.post('/api/oj/run-sample', async (req, res) => {
   const auth = await requireUser(req, res)
   if (!auth) return
@@ -1636,6 +1779,29 @@ app.get('/api/user/heatmap/:userId', async (req, res) => {
   }
 })
 
+// Rating history for chart
+app.get('/api/user/rating-history/:userId', async (req, res) => {
+  try {
+    const db = await getDb()
+    const userId = req.params.userId
+    const user = await db.get(`SELECT id FROM users WHERE id = ?`, userId)
+    if (!user) {
+      return res.status(404).json({ message: '用户不存在' })
+    }
+    const rows = await db.all(
+      `SELECT recorded_at as date, rating
+       FROM leaderboard_history
+       WHERE user_id = ? AND period_type = 'total'
+       ORDER BY recorded_at DESC LIMIT 30`,
+      userId
+    )
+    return res.json({ history: rows.reverse() })
+  } catch (error) {
+    console.error('Failed to get rating history:', error)
+    return res.status(500).json({ message: '获取Rating历史失败' })
+  }
+})
+
 // 获取最近10天的做题统计
 app.get('/api/user/weekly-stats/:userId', async (req, res) => {
   try {
@@ -2048,7 +2214,7 @@ app.get('/api/users/search', async (req, res) => {
 })
 
 // Rate limiting for message sending (3 seconds cooldown)
-const messageRateLimits = new Map()
+const messageRateLimits = new BoundedCache(5000, 3000) // 3 秒过期
 
 // Get or create conversation between two users
 const getOrCreateConversation = async (db, userId1, userId2) => {
@@ -2253,12 +2419,10 @@ app.post('/api/messages/conversations/:userId', async (req, res) => {
       return res.status(400).json({ message: '不能给自己发消息' })
     }
 
-    // Check rate limit (3 seconds cooldown)
+    // Check rate limit (3 seconds cooldown, BoundedCache TTL handles expiry)
     const now = Date.now()
-    const lastSent = messageRateLimits.get(user.id) || 0
-    if (now - lastSent < 3000) {
-      const remaining = Math.ceil((3000 - (now - lastSent)) / 1000)
-      return res.status(429).json({ message: `请等待 ${remaining} 秒后再发送` })
+    if (messageRateLimits.has(user.id)) {
+      return res.status(429).json({ message: '请等待几秒后再发送' })
     }
 
     // Check if other user exists and is not banned
@@ -2297,13 +2461,6 @@ app.post('/api/messages/conversations/:userId', async (req, res) => {
 
     // Update rate limit
     messageRateLimits.set(user.id, now)
-
-    // Clean up old rate limits (older than 10 seconds)
-    for (const [userId, time] of messageRateLimits.entries()) {
-      if (now - time > 10000) {
-        messageRateLimits.delete(userId)
-      }
-    }
 
     res.json({
       message: {
@@ -2381,6 +2538,45 @@ app.get('/api/messages/unread-count', async (req, res) => {
     console.error('Failed to get unread count:', error)
     res.status(500).json({ message: '获取未读数失败' })
   }
+})
+
+// SSE unread message count stream
+app.get('/api/messages/unread-stream', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+  res.flushHeaders()
+
+  let closed = false
+  req.on('close', () => { closed = true; clearInterval(timer) })
+
+  const pushCount = async () => {
+    if (closed) return
+    try {
+      const result = await db.get(
+        `SELECT COUNT(*) as count
+         FROM messages m
+         JOIN conversations c ON m.conversation_id = c.id
+         LEFT JOIN message_deletions md ON m.id = md.message_id AND md.user_id = ?
+         WHERE (c.user1_id = ? OR c.user2_id = ?)
+           AND m.sender_id != ?
+           AND m.is_read = 0
+           AND md.id IS NULL`,
+        user.id, user.id, user.id, user.id
+      )
+      if (!closed) {
+        res.write(`data: ${JSON.stringify({ unreadCount: result.count })}\n\n`)
+      }
+    } catch {}
+  }
+
+  await pushCount()
+  const timer = setInterval(pushCount, 15000)
 })
 
 // Delete a message
@@ -2622,27 +2818,50 @@ app.put('/api/problem-plan/:id/complete', async (req, res) => {
 // === Discussion Hall API Routes ===
 // =============================================
 
-// === HTML Sanitizer for Discussion content ===
+// === HTML Sanitizer for Discussion content (whitelist-based) ===
 const ALLOWED_TAGS = new Set(['p', 'br', 'strong', 'em', 'code', 'pre', 'a', 'ul', 'ol', 'li', 'b', 'i', 'div', 'span', 'h1', 'h2', 'h3', 'blockquote'])
-const ALLOWED_ATTRS = { a: new Set(['href', 'target', 'rel']) }
+const ALLOWED_ATTR_MAP = { a: new Set(['href', 'target', 'rel']) }
+const SAFE_URL_RE = /^(?:https?:\/\/|mailto:|\/)/i
 
 function sanitizeHtml(html) {
   if (!html) return ''
-  // Remove script tags and their content
-  let clean = html.replace(/<script[\s\S]*?<\/script>/gi, '')
-  // Remove event handlers
-  clean = clean.replace(/\s+on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]*)/gi, '')
-  // Remove javascript: URLs
-  clean = clean.replace(/href\s*=\s*["']?\s*javascript:/gi, 'href="')
-  // Remove style tags
-  clean = clean.replace(/<style[\s\S]*?<\/style>/gi, '')
-  // Remove iframe/object/embed
-  clean = clean.replace(/<(iframe|object|embed|form|input|textarea|select|button)[\s\S]*?(<\/\1>|\/?>)/gi, '')
-  return clean
+  // 白名单方式：只保留允许的标签和属性，其余全部转义
+  return html.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)?\/?>/g, (match, tag, attrStr) => {
+    const lower = tag.toLowerCase()
+    if (!ALLOWED_TAGS.has(lower)) {
+      // 不在白名单中的标签，转义尖括号
+      return match.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    }
+    // 闭合标签直接返回
+    if (match.startsWith('</')) return `</${lower}>`
+    // 自闭合标签
+    if (lower === 'br') return '<br>'
+    // 过滤属性：只保留白名单属性
+    const allowedAttrs = ALLOWED_ATTR_MAP[lower]
+    if (!allowedAttrs || !attrStr || !attrStr.trim()) return `<${lower}>`
+    const safeAttrs = []
+    const attrRe = /([a-zA-Z][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))/g
+    let m
+    while ((m = attrRe.exec(attrStr)) !== null) {
+      const attrName = m[1].toLowerCase()
+      const attrVal = m[2] ?? m[3] ?? m[4] ?? ''
+      if (!allowedAttrs.has(attrName)) continue
+      // href 必须是安全协议
+      if (attrName === 'href' && !SAFE_URL_RE.test(attrVal.trim())) continue
+      // 转义属性值中的引号
+      const escaped = attrVal.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+      safeAttrs.push(`${attrName}="${escaped}"`)
+    }
+    // a 标签强制 rel="noopener noreferrer"
+    if (lower === 'a') {
+      safeAttrs.push('rel="noopener noreferrer"')
+    }
+    return safeAttrs.length > 0 ? `<${lower} ${safeAttrs.join(' ')}>` : `<${lower}>`
+  })
 }
 
 // Rate limiting map for discussion posts
-const postRateLimits = new Map()
+const postRateLimits = new BoundedCache(5000, 10000) // 10 秒过期
 
 // GET /api/discussions - List posts with pagination, sorting, filtering
 app.get('/api/discussions', async (req, res) => {
@@ -2839,9 +3058,8 @@ app.post('/api/discussions', async (req, res) => {
   const { db, user } = auth
 
   try {
-    // Rate limiting: 10 seconds between posts
-    const lastPost = postRateLimits.get(user.id)
-    if (lastPost && Date.now() - lastPost < 10000) {
+    // Rate limiting: 10 seconds between posts (BoundedCache TTL handles expiry)
+    if (postRateLimits.has(user.id)) {
       return res.status(429).json({ message: '发帖过于频繁，请稍后再试' })
     }
 

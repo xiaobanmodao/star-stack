@@ -247,3 +247,119 @@ OJ
 - 运行/判题报错：确认 C++/Python/Java 环境已安装并在 PATH 中可用。
 - 第一个测试点时间过长：已通过预热机制修复，确保使用最新版本代码。
 - 刷新页面重复评测：已通过路由优化修复，提交后会跳转到独立路由。
+
+---
+
+## 更新日志
+
+### 2026-03-28 - 安全加固与性能优化
+
+#### 1. XSS 过滤器重写（P0 紧急修复）
+**问题：** 原 `sanitizeHtml` 使用正则黑名单，`<img onerror>`, `<svg onload>`, 大小写混合 `javascript:` 等均可绕过。
+
+**修复：** 重写为白名单解析器。只允许指定标签（`p, br, strong, em, code, pre, a, ul, ol, li, b, i, div, span, h1, h2, h3, blockquote`）通过，其余标签转义为 `&lt;&gt;`。属性仅允许 `<a>` 的 `href`（限 http/https/mailto 协议）、`target`、`rel`，并强制添加 `rel="noopener noreferrer"`。
+
+**修改文件：** `server/index.js`
+
+#### 2. 评测沙箱（P0 紧急修复）
+**问题：** 用户提交的代码通过 `child_process.spawn` 直接在服务器上执行，无任何隔离。可读取文件系统、发起网络请求、fork bomb。
+
+**修复：** 新增 `server/sandbox.sh`，在 Ubuntu 上通过 Linux 内核特性隔离：
+- `unshare --net --mount`：隔离网络和挂载命名空间，禁止网络访问
+- `ulimit -v`：内存限制 256MB
+- `ulimit -u 32`：最大进程数 32
+- `ulimit -f 51200`：最大文件大小 50MB
+- `ulimit -n 64`：最大文件描述符 64
+- `timeout --signal=KILL`：双重超时保险
+- 编译步骤不走沙箱（需要编译器访问），仅执行步骤沙箱化
+- stdout/stderr 加大小限制（10MB/1MB），防止内存爆炸
+- Windows 开发环境行为不变
+
+**部署要求：** `sudo setcap cap_sys_admin+ep $(which unshare)` 或以 root 运行
+
+**修改文件：** `server/judge.js`, `server/sandbox.sh`（新增）
+
+#### 3. CORS 限制（P2 修复）
+**问题：** `app.use(cors())` 允许任何域名跨域请求。
+
+**修复：** 通过环境变量 `ALLOWED_ORIGINS` 配置允许的域名（逗号分隔）。未配置时兼容开发环境。
+```bash
+ALLOWED_ORIGINS=https://yourdomain.com node server/index.js
+```
+
+**修改文件：** `server/index.js`
+
+#### 4. 内存缓存泄漏修复（P2 修复）
+**问题：** `translateCache`, `compileCache`, `messageRateLimits`, `postRateLimits` 均为无上限 `Map`，长期运行内存持续增长。
+
+**修复：** 实现 `BoundedCache` 类（LRU + TTL），替换所有无上限 Map：
+- `translateCache`：最多 2000 条，30 分钟过期
+- `compileCache`：最多 200 条（LRU 淘汰）
+- `messageRateLimits`：最多 5000 条，3 秒过期
+- `postRateLimits`：最多 5000 条，10 秒过期
+
+手动清理循环已移除，TTL 自动处理过期。
+
+**修改文件：** `server/index.js`, `server/judge.js`
+
+#### 5. 排行榜更新优化（P2 修复）
+**问题：** `updateRankings` 每次提交都遍历所有用户逐个 UPDATE（O(n) 次写入），严重拖慢提交响应。
+
+**修复：**
+- 从 N 次逐行 UPDATE 改为单条 SQL 子查询批量更新
+- 加 30 秒节流，避免高频提交时重复计算
+
+**修改文件：** `server/stats.js`
+
+#### 6. 其他安全改进
+- 编译缓存 hash 从 MD5 升级为 SHA-256，避免碰撞风险
+- Linux 可执行文件不再使用 `.exe` 后缀
+
+---
+
+## 待优化项（前端页面与架构）
+
+### 架构问题
+
+#### A1. 单文件巨石组件（高优先级）
+`src/App.tsx` 共 6391 行，18 个页面组件全部定义为 `App()` 内的闭包。任何顶层状态变化（如未读消息轮询）都会重新创建所有 18 个组件的函数引用。应将页面组件提取到独立文件，使用 React Context 或状态管理库共享全局状态。
+
+#### A2. 无全局错误处理
+`fetchJson` 工具函数存在，但 401（token 过期）在每个调用点手动处理。应添加全局拦截器，token 失效时自动跳转登录页。
+
+#### A3. 重复代码模式
+- 分页逻辑在 4+ 个页面中重复，应提取 `usePagination` hook
+- `CreateProblemPage` 和 `EditProblemPage` 逻辑高度相似，应合并为 `ProblemFormPage`
+- `formatDate` 在多处内联定义
+
+#### A4. 富文本编辑器使用已废弃 API
+`RichTextEditor` 使用 `document.execCommand`（已废弃），应替换为 `Selection/Range` API 或使用成熟库。
+
+### CSS 性能
+
+#### C1. `backdrop-filter: blur()` 性能问题
+全局 12 处使用，其中 `.topbar`（固定定位 + blur）在每次滚动时触发重绘。建议改为半透明纯色背景，或添加 `will-change: transform`。
+
+#### C2. `transition: all` 滥用
+多处使用 `transition: all 0.2s ease`，会过渡所有可动画属性（包括 width/height 等昂贵属性）。应限定为具体属性如 `transition: color 0.2s, background-color 0.2s`。
+
+#### C3. 热力图 371 个单元格各带 hover 动画
+`.heatmap-grid` 的 371 个格子每个都有 `transition: all` + `:hover { transform: scale(1.2) + box-shadow }`，在 profile 页面造成不必要的性能开销。
+
+#### C4. CSS 文件组织
+6777 行单文件，media query 分散在 11 处。建议按功能拆分为独立 CSS 文件（Vite 原生支持零开销导入）。
+
+### 无障碍（Accessibility）
+
+#### ACC1. 缺少焦点样式
+IDE 工具栏按钮、讨论区操作按钮等无 `:focus-visible` 样式，键盘用户无法看到焦点位置。
+
+#### ACC2. 缺少 ARIA 属性
+- 星空 `<canvas>` 缺少 `aria-hidden="true"`
+- `UserMenu` 触发器缺少 `role="button"`, `aria-haspopup`, `aria-expanded`
+- 模态框缺少焦点陷阱（focus trap）
+- `RichTextEditor` 的 `contentEditable` 缺少 `aria-label`
+
+#### ACC3. 颜色对比度不足
+- `.oj-badge.noi` 和 `.difficulty-label.noi`：`color: #555555` 在深色背景上对比度远低于 WCAG AA 标准 4.5:1
+- `prefers-reduced-motion` 仅覆盖 `.home-enter` 动画，火箭/烟花/hover 变换等均未覆盖

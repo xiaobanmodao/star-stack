@@ -36,7 +36,6 @@ body {
   min-height: 0;
   width: 100%;
   padding-left: var(--sidebar-collapsed-width, 44px);
-  transition: padding-left 0.28s ease;
 }
 
 .sidebar {
@@ -63,10 +62,9 @@ body {
   box-shadow: 12px 0 30px rgba(0, 0, 0, 0.25);
 }
 
-/* 默认情况下，侧栏 hover 时推开内容 */
+/* 侧栏 hover 时悬浮覆盖，不推开内容，避免布局抖动 */
 .sidebar:hover ~ .main {
-  margin-left: calc(var(--sidebar-width, 173px) - var(--sidebar-collapsed-width, 44px));
-  transition: margin-left 0.28s ease;
+  margin-left: 0;
 }
 
 /* 在题目详情页和评测页面，侧栏悬浮不推开内容 */
@@ -103,7 +101,7 @@ body {
   border-radius: 10px;
   background: transparent;
   border: 1px solid transparent;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
   text-align: left;
   display: flex;
   align-items: center;
@@ -250,14 +248,13 @@ body {
   justify-content: space-between;
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
-  background: rgba(7, 10, 15, 0.88);
+  background: rgba(7, 10, 15, 0.95);
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   width: 100%;
   z-index: 1001;
-  backdrop-filter: blur(10px);
   min-height: 64px;
   max-height: 64px;
   box-sizing: border-box;
@@ -727,7 +724,7 @@ button.small {
   font-weight: 700;
   color: #d8f2ff;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
   overflow: hidden;
   will-change: border-color, box-shadow;
 }
@@ -1040,7 +1037,7 @@ button.small {
   font-weight: 700;
   color: #d8f2ff;
   flex-shrink: 0;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
   position: relative;
   overflow: hidden;
 }
@@ -1354,7 +1351,7 @@ button.small {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .pagination-btn:hover:not(:disabled) {
@@ -1384,7 +1381,7 @@ button.small {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .pagination-number:hover {
@@ -1429,7 +1426,7 @@ button.small {
   color: var(--text);
   font-size: 14px;
   text-align: center;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .pagination-input:focus {
@@ -1448,7 +1445,7 @@ button.small {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .pagination-go:hover {
@@ -1643,7 +1640,7 @@ button.small {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
   text-align: center;
 }
 
@@ -2056,6 +2053,7 @@ button.small {
 .submit-results {
   display: grid;
   gap: 10px;
+  animation: sse-fade-in 0.3s ease;
 }
 
 .submit-results-title {
@@ -2286,7 +2284,7 @@ button.small {
 
 .oj-submission.clickable {
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .oj-submission.clickable:hover {
@@ -2408,7 +2406,7 @@ button.small {
   font-size: 14px;
   cursor: pointer;
   outline: none;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .ide-lang-select:hover {
@@ -2426,7 +2424,7 @@ button.small {
   font-weight: 500;
   cursor: pointer;
   border: none;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
   outline: none;
 }
 
@@ -2621,7 +2619,7 @@ button.small {
   line-height: 1.6;
   resize: vertical;
   outline: none;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .ide-run-input:focus {
@@ -2935,9 +2933,10 @@ button:disabled:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .home-enter .hero,
-  .home-enter .section {
-    animation: none;
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
@@ -3310,7 +3309,7 @@ button.danger:hover {
   font-size: 48px;
   font-weight: 700;
   color: #d8f2ff;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
   position: relative;
   overflow: hidden;
 }
@@ -3369,13 +3368,35 @@ button.danger:hover {
   height: 12px;
   border-radius: 2px;
   background: rgba(79, 195, 247, 0.1);
-  transition: all 0.2s ease;
   cursor: pointer;
+  position: relative;
 }
 
 .heatmap-cell:hover {
-  transform: scale(1.2);
-  box-shadow: 0 0 8px rgba(79, 195, 247, 0.6);
+  box-shadow: 0 0 6px rgba(79, 195, 247, 0.5);
+}
+
+.heatmap-cell[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(7, 10, 15, 0.95);
+  color: var(--text);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 10;
+  border: 1px solid var(--border);
+  transition: opacity 0.15s;
+}
+
+.heatmap-cell:hover[data-tip]::after {
+  opacity: 1;
 }
 
 .heatmap-cell[data-level="1"] {
@@ -3560,7 +3581,7 @@ button.danger:hover {
   border-radius: 12px;
   border: 1px solid var(--border);
   background: rgba(8, 12, 20, 0.6);
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .achievement-badge:hover {
@@ -3613,7 +3634,7 @@ button.danger:hover {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: color 0.3s, background-color 0.3s, border-color 0.3s, opacity 0.3s, transform 0.3s, box-shadow 0.3s;
   position: relative;
   overflow: hidden;
 }
@@ -3916,7 +3937,7 @@ button.danger:hover {
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 4px;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .problem-plan-toggle:hover {
@@ -3951,7 +3972,7 @@ button.danger:hover {
   background: rgba(19, 30, 48, 0.4);
   border: 1px solid var(--border);
   border-radius: 8px;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .problem-plan-item:hover {
@@ -4047,7 +4068,7 @@ button.danger:hover {
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .problem-plan-remove:hover {
@@ -4082,7 +4103,7 @@ button.danger:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
   padding: 0;
 }
 
@@ -4203,7 +4224,7 @@ button.danger:hover {
   color: var(--muted);
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .sort-btn:hover {
@@ -4233,7 +4254,7 @@ button.danger:hover {
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.03);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
   gap: 16px;
 }
 
@@ -4331,7 +4352,7 @@ button.danger:hover {
   font-size: 13px;
   white-space: nowrap;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .discussion-pagination button:hover:not(:disabled) {
@@ -4441,7 +4462,7 @@ button.danger:hover {
   color: var(--muted);
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .like-btn:hover {
@@ -4461,7 +4482,7 @@ button.danger:hover {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .like-btn.liked svg {
@@ -4598,7 +4619,7 @@ button.danger:hover {
   color: var(--muted);
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .reply-btn:hover {
@@ -4784,7 +4805,7 @@ button.danger:hover {
   color: var(--muted);
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s, opacity 0.15s, transform 0.15s;
   line-height: 1.4;
 }
 
@@ -4849,7 +4870,7 @@ button.danger:hover {
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
   min-height: 44px;
 }
 
@@ -4881,7 +4902,7 @@ button.danger:hover {
   border-radius: 6px;
   font-size: 13px;
   color: var(--text);
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .selected-tag:hover {
@@ -4917,7 +4938,7 @@ button.danger:hover {
   color: #4fc3f7;
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
   white-space: nowrap;
 }
 
@@ -4978,7 +4999,7 @@ button.danger:hover {
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .tag-selector-close:hover {
@@ -5017,7 +5038,7 @@ button.danger:hover {
   color: var(--text);
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
   text-align: left;
   display: flex;
   align-items: center;
@@ -5141,7 +5162,7 @@ button.danger:hover {
   border-radius: 8px;
   padding: 10px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -5222,7 +5243,7 @@ button.danger:hover {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .oj-quick-action-card.highlight {
@@ -5291,7 +5312,7 @@ button.danger:hover {
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid var(--border);
   border-radius: 8px;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .oj-recent-ac-item:hover {
@@ -5469,7 +5490,7 @@ button.danger:hover {
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .oj-hot-problem-item:hover {
@@ -5615,7 +5636,7 @@ button.danger:hover {
   background: transparent;
   border-radius: 50%;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .topbar-message-btn:hover {
@@ -5691,7 +5712,7 @@ button.danger:hover {
   border: 1px solid var(--border);
   border-radius: 12px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .conversation-card:hover {
@@ -5799,7 +5820,7 @@ button.danger:hover {
   background: rgba(79, 195, 247, 0.1);
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .back-button:hover {
@@ -5864,7 +5885,7 @@ button.danger:hover {
   color: var(--accent);
   font-size: 14px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .load-more-button:hover:not(:disabled) {
@@ -6040,7 +6061,7 @@ button.danger:hover {
   border: 1px solid rgba(79, 195, 247, 0.2);
   border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .send-message-btn:hover {
@@ -6774,4 +6795,124 @@ button.starbot-tutorial-stepchip:focus-visible {
   color: var(--muted);
   font-family: 'Consolas', 'Fira Code', monospace;
   word-break: break-all;
+}
+
+/* ===== Skeleton Screens ===== */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(79,195,247,0.06);
+  border-radius: 6px;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 25%, rgba(79,195,247,0.1) 50%, transparent 75%);
+  animation: shimmer 1.5s infinite;
+  will-change: transform;
+}
+.skeleton-line { height: 16px; margin-bottom: 12px; }
+.skeleton-title { height: 24px; width: 60%; margin-bottom: 16px; }
+.skeleton-card { height: 80px; margin-bottom: 12px; border-radius: 10px; }
+.skeleton-row { height: 44px; margin-bottom: 8px; border-radius: 8px; }
+.skeleton-avatar { width: 48px; height: 48px; border-radius: 50%; }
+@keyframes shimmer { 0% { transform: translateX(-100%) } 100% { transform: translateX(100%) } }
+
+/* ===== SSE Progress ===== */
+.sse-progress {
+  padding: 16px;
+  background: rgba(11, 14, 22, 0.6);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  animation: sse-fade-in 0.25s ease;
+}
+@keyframes sse-fade-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.sse-progress-bar {
+  height: 6px;
+  background: rgba(79, 195, 247, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.sse-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4fc3f7, #81d4fa);
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+.sse-progress-text {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.sse-testcase-grid {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.sse-tc-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  display: inline-block;
+}
+.sse-tc-dot.ac { background: #4caf50; }
+.sse-tc-dot.tle { background: #ff9800; }
+.sse-tc-dot.err { background: #f44336; }
+.sse-tc-dot.pending { background: rgba(79, 195, 247, 0.15); }
+
+/* ===== Pass Rate Bar ===== */
+.oj-pass-rate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.oj-pass-rate-bar {
+  width: 60px;
+  height: 4px;
+  background: rgba(79, 195, 247, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.oj-pass-rate-fill {
+  height: 100%;
+  background: #4caf50;
+  border-radius: 2px;
+}
+
+/* ===== Rating Chart ===== */
+.rating-chart {
+  margin-top: 20px;
+  padding: 16px;
+  background: rgba(11, 14, 22, 0.5);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.rating-chart-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+.rating-chart svg {
+  width: 100%;
+  display: block;
+}
+.rating-chart-tooltip {
+  position: absolute;
+  background: rgba(7, 10, 15, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 10;
 }

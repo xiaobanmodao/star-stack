@@ -3,19 +3,47 @@ import path from 'path'
 import os from 'os'
 import crypto from 'crypto'
 import { spawn } from 'child_process'
+import { fileURLToPath } from 'url'
 
 const TIME_LIMIT_MS = 1500
 const COMPILE_LIMIT_MS = 15000
 const IS_WIN = process.platform === 'win32'
+const IS_LINUX = process.platform === 'linux'
 const WORK_ROOT = IS_WIN ? path.join('C:\\', 'Temp', 'starstack-oj') : path.join(os.tmpdir(), 'starstack-oj')
 const CACHE_ROOT = path.join(WORK_ROOT, 'cache')
+const MEMORY_LIMIT_KB = 256 * 1024 // 256MB
+const NPROC_LIMIT = 32
 
-// 编译缓存：key是代码hash，value是编译后的可执行文件路径
-const compileCache = new Map()
+// 带容量上限的编译缓存，防止内存泄漏
+class CompileCache {
+  constructor(maxSize = 200) {
+    this._map = new Map()
+    this._maxSize = maxSize
+  }
+  has(key) { return this._map.has(key) }
+  get(key) {
+    if (!this._map.has(key)) return undefined
+    const v = this._map.get(key)
+    this._map.delete(key)
+    this._map.set(key, v)
+    return v
+  }
+  set(key, value) {
+    this._map.delete(key)
+    if (this._map.size >= this._maxSize) {
+      const oldest = this._map.keys().next().value
+      this._map.delete(oldest)
+    }
+    this._map.set(key, value)
+  }
+  delete(key) { this._map.delete(key) }
+}
 
-// 计算代码的hash值
+const compileCache = new CompileCache(200)
+
+// 计算代码的hash值（使用 SHA-256 替代 MD5 避免碰撞）
 const getCodeHash = (language, code) => {
-  return crypto.createHash('md5').update(`${language}:${code}`).digest('hex')
+  return crypto.createHash('sha256').update(`${language}:${code}`).digest('hex')
 }
 
 const buildWorkEnv = (extraBins) => {
@@ -46,18 +74,58 @@ const statusMessage = (status) => {
   return '判题失败'
 }
 
+const SANDBOX_SH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'sandbox.sh')
+
+// 检测沙箱是否可用（Linux 且 sandbox.sh 存在）
+const sandboxAvailable = IS_LINUX && fs.existsSync(SANDBOX_SH)
+if (sandboxAvailable) {
+  try { fs.chmodSync(SANDBOX_SH, 0o755) } catch {}
+  console.log('Sandbox enabled: sandbox.sh found')
+} else if (IS_LINUX) {
+  console.warn('Sandbox disabled: sandbox.sh not found at', SANDBOX_SH)
+}
+
+// 在 Linux 上通过沙箱执行命令，限制网络/内存/进程数
 const runCommand = (cmd, args, options = {}) =>
   new Promise((resolve) => {
     const start = Date.now()
-    const child = spawn(cmd, args, {
+    const timeoutMs = options.timeout ?? TIME_LIMIT_MS
+    const timeLimitSec = Math.ceil(timeoutMs / 1000) + 1 // 沙箱超时比应用超时多 1 秒
+
+    let spawnCmd = cmd
+    let spawnArgs = args
+    let spawnEnv = options.env ? { ...process.env, ...options.env } : process.env
+
+    // Linux 沙箱模式：通过 sandbox.sh 包裹执行
+    if (sandboxAvailable && options.sandbox !== false) {
+      spawnCmd = '/bin/bash'
+      spawnArgs = [
+        SANDBOX_SH,
+        options.cwd || '.',
+        String(timeLimitSec),
+        String(MEMORY_LIMIT_KB),
+        cmd,
+        ...args,
+      ]
+      // 沙箱环境下限制 PATH，移除敏感环境变量
+      spawnEnv = {
+        PATH: '/usr/local/bin:/usr/bin:/bin',
+        HOME: options.cwd || '/tmp',
+        LANG: 'en_US.UTF-8',
+        ...(options.env || {}),
+      }
+    }
+
+    const child = spawn(spawnCmd, spawnArgs, {
       cwd: options.cwd,
       windowsHide: true,
-      env: options.env ? { ...process.env, ...options.env } : process.env,
+      env: spawnEnv,
     })
     let stdout = ''
     let stderr = ''
     let finished = false
-    const timeout = setTimeout(() => {
+    // 应用层超时（双重保险，沙箱内 timeout 命令也会限制）
+    const timer = setTimeout(() => {
       if (finished) return
       finished = true
       child.kill('SIGKILL')
@@ -68,7 +136,7 @@ const runCommand = (cmd, args, options = {}) =>
         timedOut: true,
         duration: Date.now() - start,
       })
-    }, options.timeout ?? TIME_LIMIT_MS)
+    }, timeoutMs + 2000) // 比沙箱超时多 2 秒余量
 
     if (options.input) {
       child.stdin.write(options.input)
@@ -76,15 +144,20 @@ const runCommand = (cmd, args, options = {}) =>
     child.stdin.end()
 
     child.stdout.on('data', (data) => {
-      stdout += data.toString()
+      // 限制输出大小，防止内存爆炸
+      if (stdout.length < 10 * 1024 * 1024) {
+        stdout += data.toString()
+      }
     })
     child.stderr.on('data', (data) => {
-      stderr += data.toString()
+      if (stderr.length < 1024 * 1024) {
+        stderr += data.toString()
+      }
     })
     child.on('error', (error) => {
       if (finished) return
       finished = true
-      clearTimeout(timeout)
+      clearTimeout(timer)
       resolve({
         stdout,
         stderr: error.message || '执行失败',
@@ -96,12 +169,14 @@ const runCommand = (cmd, args, options = {}) =>
     child.on('close', (code) => {
       if (finished) return
       finished = true
-      clearTimeout(timeout)
+      clearTimeout(timer)
+      // 被 SIGKILL (code 137) 或 timeout 杀死视为超时
+      const timedOut = code === 137 || code === 124
       resolve({
         stdout,
         stderr,
-        code,
-        timedOut: false,
+        code: timedOut ? -1 : code,
+        timedOut,
         duration: Date.now() - start,
       })
     })
@@ -202,7 +277,7 @@ const prepareWorkspace = async (language, code) => {
   if (language === 'C++') {
     const source = path.join(root, 'main.cpp')
     await fs.promises.writeFile(source, code, 'utf-8')
-    return { root, source, exec: path.join(root, 'main.exe') }
+    return { root, source, exec: path.join(root, IS_WIN ? 'main.exe' : 'main') }
   }
   if (language === 'Python') {
     const source = path.join(root, 'main.py')
@@ -252,7 +327,7 @@ const compileSource = async (language, code, workspace) => {
     const compile = await runCommand(
       GPP_CMD,
       [workspace.source, '-O2', '-std=c++17', '-o', workspace.exec],
-      { cwd: workspace.root, timeout: COMPILE_LIMIT_MS, env: WORK_ENV || undefined }
+      { cwd: workspace.root, timeout: COMPILE_LIMIT_MS, env: WORK_ENV || undefined, sandbox: false }
     )
     if (compile.timedOut) {
       return {
@@ -274,7 +349,7 @@ const compileSource = async (language, code, workspace) => {
     // 保存到缓存
     try {
       await fs.promises.mkdir(CACHE_ROOT, { recursive: true })
-      const cachedExec = path.join(CACHE_ROOT, `${codeHash}.exe`)
+      const cachedExec = path.join(CACHE_ROOT, `${codeHash}${IS_WIN ? '.exe' : ''}`)
       await fs.promises.copyFile(workspace.exec, cachedExec)
       compileCache.set(codeHash, cachedExec)
     } catch (e) {
@@ -286,6 +361,7 @@ const compileSource = async (language, code, workspace) => {
       cwd: workspace.root,
       timeout: COMPILE_LIMIT_MS,
       env: WORK_ENV || undefined,
+      sandbox: false,
     })
     if (compile.timedOut) {
       return {
@@ -318,7 +394,7 @@ const compileSource = async (language, code, workspace) => {
   return { ok: true, cached: false }
 }
 
-export const judgeSubmission = async ({ language, code, testcases }) => {
+export const judgeSubmission = async ({ language, code, testcases, onTestCase }) => {
   const workspace = await prepareWorkspace(language, code)
   const result = {
     status: 'Judge Error',
@@ -430,6 +506,10 @@ export const judgeSubmission = async ({ language, code, testcases }) => {
         message: caseMessage,
         timeMs: execResult.duration,
       })
+
+      if (typeof onTestCase === 'function') {
+        try { onTestCase({ index, status: caseStatus, message: caseMessage, timeMs: execResult.duration }) } catch {}
+      }
     }
 
     const totalTime = results.reduce((sum, item) => sum + (item.timeMs ?? 0), 0)
