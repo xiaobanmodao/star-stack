@@ -1,0 +1,74 @@
+:root {
+  color-scheme: dark;
+
+  --ss-font-sans: 'Space Grotesk', 'Noto Sans SC', sans-serif;
+  --ss-font-display: 'Oxanium', 'Space Grotesk', sans-serif;
+  --ss-font-mono: 'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace;
+
+  --ss-color-bg: #05070b;
+  --ss-color-bg-soft: #08101a;
+  --ss-color-surface: rgba(10, 15, 24, 0.86);
+  --ss-color-surface-muted: rgba(226, 232, 240, 0.045);
+  --ss-color-surface-strong: rgba(6, 10, 17, 0.94);
+  --ss-color-border: rgba(226, 232, 240, 0.11);
+  --ss-color-border-strong: rgba(226, 232, 240, 0.18);
+  --ss-color-text: #eef4ff;
+  --ss-color-text-muted: rgba(226, 232, 240, 0.66);
+  --ss-color-text-subtle: rgba(226, 232, 240, 0.46);
+  --ss-color-accent: #8bd3ff;
+  --ss-color-accent-strong: #f8fafc;
+  --ss-color-success: #5ee6a8;
+  --ss-color-warning: #ffd166;
+  --ss-color-danger: #ff6b7a;
+  --ss-color-info: #8bd3ff;
+
+  --ss-radius-xs: 4px;
+  --ss-radius-sm: 6px;
+  --ss-radius-md: 8px;
+  --ss-radius-lg: 12px;
+  --ss-radius-xl: 18px;
+  --ss-radius-pill: 999px;
+
+  --ss-space-1: 4px;
+  --ss-space-2: 8px;
+  --ss-space-3: 12px;
+  --ss-space-4: 16px;
+  --ss-space-5: 20px;
+  --ss-space-6: 24px;
+  --ss-space-8: 32px;
+  --ss-space-10: 40px;
+  --ss-space-12: 48px;
+
+  --ss-text-xs: 12px;
+  --ss-text-sm: 13px;
+  --ss-text-md: 14px;
+  --ss-text-lg: 16px;
+  --ss-text-xl: 20px;
+  --ss-text-2xl: 28px;
+  --ss-text-3xl: 40px;
+
+  --ss-line-tight: 1.2;
+  --ss-line-normal: 1.6;
+  --ss-line-reading: 1.85;
+
+  --ss-shadow-rest: none;
+  --ss-shadow-raised: 0 12px 30px rgba(0, 0, 0, 0.22);
+  --ss-focus-ring: 0 0 0 3px rgba(139, 211, 255, 0.22);
+
+  --ss-motion-fast: 120ms ease;
+  --ss-motion-normal: 180ms ease;
+
+  --bg: var(--ss-color-bg);
+  --panel: var(--ss-color-surface);
+  --panel-strong: var(--ss-color-surface-strong);
+  --border: var(--ss-color-border);
+  --text: var(--ss-color-text);
+  --muted: var(--ss-color-text-muted);
+  --accent: var(--ss-color-accent);
+}
+
+.low-performance-mode {
+  --ss-shadow-raised: none;
+  --ss-motion-fast: 1ms linear;
+  --ss-motion-normal: 1ms linear;
+}

@@ -1,4 +1,3 @@
-import katex from 'katex'
 import { TOKEN_KEY } from './constants'
 
 export const isPollingPageVisible = () =>
@@ -16,36 +15,30 @@ export const formatTime = (dateString?: string): string => {
   return `${year}-${month}-${day} ${hours}:${minutes}`
 }
 
-// 渲染LaTeX公式的函数
-export const renderLatex = (text: string): string => {
-  if (!text) return ''
-
-  // 先处理块级公式 $$...$$
-  let result = text.replace(/\$\$([^$]+)\$\$/g, (match, formula) => {
-    try {
-      return katex.renderToString(formula.trim(), {
-        displayMode: true,
-        throwOnError: false
-      })
-    } catch {
-      return match
-    }
-  })
-
-  // 再处理行内公式 $...$
-  result = result.replace(/\$([^$]+)\$/g, (match, formula) => {
-    try {
-      return katex.renderToString(formula.trim(), {
-        displayMode: false,
-        throwOnError: false
-      })
-    } catch {
-      return match
-    }
-  })
-
-  return result
+export const decodeHtmlEntities = (value = ''): string => {
+  if (!value) return ''
+  if (typeof document !== 'undefined') {
+    const textarea = document.createElement('textarea')
+    textarea.innerHTML = value
+    return textarea.value
+  }
+  return value
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
 }
+
+export const htmlToPlainText = (value = ''): string => {
+  const withoutTags = value
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/(p|div|li|pre|blockquote|h[1-6])>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+  return decodeHtmlEntities(withoutTags).replace(/\s+/g, ' ').trim()
+}
+
 export const fetchJson = async <T = unknown>(url: string, options: RequestInit = {}) => {
   const headers = new Headers(options.headers || {})
   if (options.body && !headers.has('Content-Type')) {
@@ -77,14 +70,4 @@ export const preloadOjIdeAssets = () => {
     ])
   }
   return ojIdeAssetsPreloadPromise
-}
-
-// Start preloading Monaco immediately on module load (idle callback)
-if (typeof window !== 'undefined') {
-  const start = () => preloadOjIdeAssets()
-  if ('requestIdleCallback' in window) {
-    (window as unknown as { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(start)
-  } else {
-    setTimeout(start, 200)
-  }
 }

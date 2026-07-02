@@ -1,11 +1,27 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
-import { fetchJson, formatTime } from '../utils'
+import { fetchJson, formatTime, htmlToPlainText } from '../utils'
 import type { DiscussionPost, DiscussionComment, DiscussionDetailResponse } from '../types'
+import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import './DiscussionPages.css'
+
+const getPostTypeMeta = (post: DiscussionPost) => {
+  const title = post.title.toLowerCase()
+  if (post.problemId && /题解|solution|做法|思路/.test(post.title)) {
+    return { label: '题解', tone: 'success' as const }
+  }
+  if (/求助|求调|wa|tle|re|ce|为什么|错/.test(title) || /求助|求调|为什么|错/.test(post.title)) {
+    return { label: '求助', tone: 'danger' as const }
+  }
+  if (post.problemId) return { label: '题目讨论', tone: 'info' as const }
+  if (/公告|更新|规则/.test(post.title)) return { label: '公告', tone: 'warning' as const }
+  return { label: '讨论', tone: 'neutral' as const }
+}
 
 export default function DiscussionDetailPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { currentUser } = useAppContext()
   const { id } = useParams<{ id: string }>()
   const [post, setPost] = useState<DiscussionPost | null>(null)
@@ -14,6 +30,15 @@ export default function DiscussionDetailPage() {
   const [commentText, setCommentText] = useState('')
   const [replyTo, setReplyTo] = useState<{ id: number; name: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const fromProblemId = (location.state as { fromProblemId?: number } | null)?.fromProblemId
+
+  const navigateBack = useCallback(() => {
+    if (fromProblemId) {
+      navigate(`/oj/p${fromProblemId}`)
+      return
+    }
+    navigate('/discussions')
+  }, [fromProblemId, navigate])
 
   const loadDetail = useCallback(async () => {
     if (!id) return
@@ -87,7 +112,7 @@ export default function DiscussionDetailPage() {
   const handleDeletePost = async () => {
     if (!post || !confirm('确定要删除这篇帖子吗？')) return
     const { response } = await fetchJson(`/api/discussions/${post.id}`, { method: 'DELETE' })
-    if (response.ok) navigate('/discussions')
+    if (response.ok) navigateBack()
   }
 
   const handleDeleteComment = async (commentId: number) => {
@@ -146,88 +171,164 @@ export default function DiscussionDetailPage() {
     </div>
   )
 
-  if (loading) return <section className="discussion-detail-page"><div className="discussion-loading">加载中...</div></section>
-  if (!post) return <section className="discussion-detail-page"><div className="discussion-empty">帖子不存在</div></section>
+  if (loading) return (
+    <section className="discussion-detail-page discussion-detail-v2">
+      <div className="discussion-loading">
+        {Array.from({ length: 3 }, (_, index) => <div key={index} className="skeleton skeleton-card" />)}
+      </div>
+    </section>
+  )
+  if (!post) return (
+    <section className="discussion-detail-page discussion-detail-v2">
+      <EmptyState title="帖子不存在" description="这条讨论可能已经被删除，或链接地址不正确。" />
+    </section>
+  )
+
+  const typeMeta = getPostTypeMeta(post)
+  const plainContent = htmlToPlainText(post.content)
+  const problemTargetId = fromProblemId || post.problemId
 
   return (
-    <section className="discussion-detail-page">
-      <button className="ghost small back-btn" onClick={() => navigate('/discussions')}>← 返回列表</button>
-
-      <article className="discussion-post-detail">
-        <h1 className="post-title">{post.title}</h1>
-        <div className="post-meta">
-          <span className="post-author">
-            {post.userAvatar ? (
-              <img className="discussion-avatar" src={post.userAvatar} alt="" loading="lazy" />
-            ) : (
-              <span className="discussion-avatar fallback">{post.userName?.charAt(0) || '?'}</span>
+    <section className="discussion-detail-page discussion-detail-v2">
+      <PageHeader
+        kicker="Discussion Thread"
+        title={post.title}
+        description={plainContent ? `${plainContent.slice(0, 96)}${plainContent.length > 96 ? '...' : ''}` : '阅读讨论、补充思路，然后回到题目继续推进。'}
+        actions={(
+          <>
+            <Button variant="ghost" onClick={navigateBack}>
+              {fromProblemId ? '返回题目' : '返回列表'}
+            </Button>
+            {post.problemId && (
+              <Button variant="primary" onClick={() => navigate(`/oj/p${post.problemId}`)}>
+                打开题目
+              </Button>
             )}
-            {post.userName}
-          </span>
-          {currentUser && currentUser.id !== post.userId && (
-            <button
-              className="send-message-btn"
-              onClick={() => navigate(`/messages/${post.userId}`)}
-              title="发送私信"
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14">
-                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-                <polyline points="22,6 12,13 2,6" />
-              </svg>
-            </button>
-          )}
-          <span className="post-time">{formatTime(post.createdAt)}</span>
-          {post.problemTitle && (
-            <span className="post-problem" onClick={() => navigate(`/oj/p${post.problemId}`)}>
-              P{post.problemId} {post.problemTitle}
-            </span>
-          )}
-          <span className="post-views">浏览 {post.viewCount}</span>
-        </div>
-        <div className="post-content" dangerouslySetInnerHTML={{ __html: post.content || '' }} />
-        <div className="post-actions">
-          <button className={`like-btn ${post.liked ? 'liked' : ''}`} onClick={handleLikePost}>
-            <svg viewBox="0 0 24 24"><path d="M12 21C12 21 3 13.5 3 8.5C3 5.42 5.42 3 8.5 3C10.24 3 11.91 3.81 12 5C12.09 3.81 13.76 3 15.5 3C18.58 3 21 5.42 21 8.5C21 13.5 12 21 12 21Z" /></svg>
-            {post.likeCount}
-          </button>
-          {currentUser && (currentUser.id === post.userId || currentUser.isAdmin) && (
-            <>
-              <button className="ghost small" onClick={() => navigate(`/discussions/${post.id}/edit`)}>编辑</button>
-              <button className="ghost small danger" onClick={handleDeletePost}>删除</button>
-            </>
-          )}
-        </div>
-      </article>
-
-      <div className="discussion-comments-section">
-        <h3>评论 ({post.commentCount})</h3>
-        {comments.length === 0 ? (
-          <div className="discussion-empty">暂无评论，来发表第一条评论吧</div>
-        ) : (
-          <div className="comments-list">
-            {comments.map(c => renderComment(c))}
-          </div>
+          </>
         )}
+      />
 
-        {currentUser && (
-          <div className="comment-input-area">
-            {replyTo && (
-              <div className="reply-hint">
-                回复 {replyTo.name}
-                <button onClick={() => setReplyTo(null)}>✕</button>
+      <div className="discussion-detail-grid">
+        <main className="discussion-detail-main">
+          <Panel className="discussion-post-detail discussion-post-detail-v2">
+            <div className="discussion-thread-meta-row">
+              <Badge tone={typeMeta.tone}>{typeMeta.label}</Badge>
+              {post.problemTitle && (
+                <button className="post-problem" onClick={() => navigate(`/oj/p${post.problemId}`)}>
+                  P{post.problemId} {post.problemTitle}
+                </button>
+              )}
+            </div>
+            <div className="post-meta">
+              <span className="post-author">
+                {post.userAvatar ? (
+                  <img className="discussion-avatar" src={post.userAvatar} alt="" loading="lazy" />
+                ) : (
+                  <span className="discussion-avatar fallback">{post.userName?.charAt(0) || '?'}</span>
+                )}
+                {post.userName}
+              </span>
+              {currentUser && currentUser.id !== post.userId && (
+                <button
+                  className="send-message-btn"
+                  onClick={() => navigate(`/messages/${post.userId}`)}
+                  title="发送私信"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                    <polyline points="22,6 12,13 2,6" />
+                  </svg>
+                </button>
+              )}
+              <span className="post-time">{formatTime(post.createdAt)}</span>
+              <span className="post-views">浏览 {post.viewCount}</span>
+            </div>
+            <div className="post-content" dangerouslySetInnerHTML={{ __html: post.content || '' }} />
+            <div className="post-actions">
+              <button className={`like-btn ${post.liked ? 'liked' : ''}`} onClick={handleLikePost}>
+                <svg viewBox="0 0 24 24"><path d="M12 21C12 21 3 13.5 3 8.5C3 5.42 5.42 3 8.5 3C10.24 3 11.91 3.81 12 5C12.09 3.81 13.76 3 15.5 3C18.58 3 21 5.42 21 8.5C21 13.5 12 21 12 21Z" /></svg>
+                {post.likeCount}
+              </button>
+              {currentUser && (currentUser.id === post.userId || currentUser.isAdmin) && (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => navigate(`/discussions/${post.id}/edit`)}>编辑</Button>
+                  <Button variant="danger" size="sm" onClick={handleDeletePost}>删除</Button>
+                </>
+              )}
+            </div>
+          </Panel>
+
+          <Panel className="discussion-comments-section discussion-comments-v2">
+            <div className="discussion-comments-head">
+              <div>
+                <div className="discussion-side-kicker">Replies</div>
+                <h3>评论 ({post.commentCount})</h3>
+              </div>
+              {currentUser && <Badge tone="info">可参与</Badge>}
+            </div>
+            {comments.length === 0 ? (
+              <EmptyState title="暂无评论" description="来发表第一条评论，给后来者留一盏灯。" />
+            ) : (
+              <div className="comments-list">
+                {comments.map(c => renderComment(c))}
               </div>
             )}
-            <textarea
-              placeholder={replyTo ? `回复 ${replyTo.name}...` : '写下你的评论...'}
-              value={commentText}
-              onChange={e => setCommentText(e.target.value)}
-              rows={3}
-            />
-            <button className="primary small" disabled={submitting || !commentText.trim()} onClick={handleSubmitComment}>
-              {submitting ? '提交中...' : '发表评论'}
-            </button>
-          </div>
-        )}
+
+            {currentUser ? (
+              <div className="comment-input-area">
+                {replyTo && (
+                  <div className="reply-hint">
+                    回复 {replyTo.name}
+                    <button onClick={() => setReplyTo(null)}>x</button>
+                  </div>
+                )}
+                <textarea
+                  placeholder={replyTo ? `回复 ${replyTo.name}...` : '写下你的评论...'}
+                  value={commentText}
+                  onChange={e => setCommentText(e.target.value)}
+                  rows={3}
+                />
+                <Button variant="primary" size="sm" disabled={submitting || !commentText.trim()} onClick={handleSubmitComment}>
+                  {submitting ? '提交中...' : '发表评论'}
+                </Button>
+              </div>
+            ) : (
+              <EmptyState title="登录后参与讨论" description="登录后可以点赞、回复和向作者提问。" />
+            )}
+          </Panel>
+        </main>
+
+        <aside className="discussion-detail-aside">
+          <Panel className="discussion-side-card">
+            <div className="discussion-side-kicker">Thread</div>
+            <h3>讨论状态</h3>
+            <div className="discussion-side-stats vertical">
+              <div><strong>{post.likeCount}</strong><span>点赞</span></div>
+              <div><strong>{post.commentCount}</strong><span>评论</span></div>
+              <div><strong>{post.viewCount}</strong><span>浏览</span></div>
+            </div>
+          </Panel>
+          {post.problemId && (
+            <Panel className="discussion-side-card discussion-problem-card">
+              <div className="discussion-side-kicker">Problem Link</div>
+              <h3>P{post.problemId} {post.problemTitle}</h3>
+              <p>这条讨论和题目绑定。看完后可以回到题面、继续调试，或查看同题更多讨论。</p>
+              <div className="discussion-side-actions">
+                <Button variant="primary" size="sm" onClick={() => navigate(`/oj/p${problemTargetId}`)}>
+                  返回题目
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => navigate(`/discussions?problemId=${post.problemId}`, { state: { fromProblemId: post.problemId } })}>
+                  同题讨论
+                </Button>
+              </div>
+            </Panel>
+          )}
+          <Panel className="discussion-side-card">
+            <div className="discussion-side-kicker">Tip</div>
+            <h3>讨论礼仪</h3>
+            <p>如果你在求助，补充错误状态、测试点信息、核心代码和已尝试的思路，会让别人更容易帮你定位问题。</p>
+          </Panel>
+        </aside>
       </div>
     </section>
   )

@@ -292,7 +292,7 @@ async function checkAndUnlockAchievements(db, userId, submission) {
   // Insert new achievements
   for (const achievement of newAchievements) {
     await db.run(
-      `INSERT INTO user_achievements (user_id, achievement_type, achievement_data, unlocked_at)
+      `INSERT OR IGNORE INTO user_achievements (user_id, achievement_type, achievement_data, unlocked_at)
        VALUES (?, ?, ?, ?)`,
       userId,
       achievement.type,

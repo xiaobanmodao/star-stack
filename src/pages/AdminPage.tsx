@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAppContext } from '../context/AppContext'
+import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
 import type { UserRecord, ApiResponse } from '../types'
+import './CreatorAdminPages.css'
 
 export default function AdminPage() {
   const { currentUser, openAuth } = useAppContext()
@@ -143,26 +145,35 @@ export default function AdminPage() {
 
   if (!currentUser) {
     return (
-      <section className="section">
-        <div className="section-header">
-          <h2>后台管理</h2>
-        </div>
-        <p>请先登录并确保拥有管理员权限。</p>
-        <button className="primary" onClick={() => openAuth('login')}>
-          登录
-        </button>
-      </section>
+      <div className="admin-page admin-console-v2">
+        <PageHeader
+          kicker="Admin Console"
+          title="后台管理"
+          description="请先登录并确保拥有管理员权限。"
+        />
+        <Panel>
+          <EmptyState title="需要登录" description="后台操作需要管理员身份。">
+            <Button variant="primary" onClick={() => openAuth('login')}>
+              登录
+            </Button>
+          </EmptyState>
+        </Panel>
+      </div>
     )
   }
 
   if (!currentUser.isAdmin) {
     return (
-      <section className="section">
-        <div className="section-header">
-          <h2>后台管理</h2>
-        </div>
-        <p>你没有管理员权限。</p>
-      </section>
+      <div className="admin-page admin-console-v2">
+        <PageHeader
+          kicker="Admin Console"
+          title="后台管理"
+          description="当前账号没有管理员权限。"
+        />
+        <Panel>
+          <EmptyState title="无权访问" description="请联系站点管理员开通权限。" />
+        </Panel>
+      </div>
     )
   }
 
@@ -170,42 +181,45 @@ export default function AdminPage() {
   const bannedCount = adminUsers.filter((user) => user.isBanned).length
 
   return (
-    <div className="admin-page">
-      <div className="admin-hero">
-        <div>
-          <div className="admin-title">星栈后台管理</div>
-          <div className="admin-subtitle">用户、题库与测试用例配置</div>
-        </div>
-        <div className="admin-actions">
-          <button className="ghost" onClick={loadAdminUsers} disabled={adminLoading}>
+    <div className="admin-page admin-console-v2">
+      <PageHeader
+        kicker="Admin Console"
+        title="星栈后台管理"
+        description="用户、题库与测试用例配置集中在一个轻量控制台里，优先保证可扫读和低性能设备流畅度。"
+        actions={
+          <Button variant="ghost" onClick={loadAdminUsers} disabled={adminLoading}>
             刷新用户
-          </button>
-        </div>
-      </div>
+          </Button>
+        }
+      />
 
-      <div className="admin-summary">
-        <div className="summary-card">
+      <div className="admin-summary admin-summary-v2">
+        <Panel className="summary-card admin-metric-card">
           <div className="summary-label">Users</div>
           <div className="summary-value">{adminUsers.length}</div>
-        </div>
-        <div className="summary-card">
+        </Panel>
+        <Panel className="summary-card admin-metric-card">
           <div className="summary-label">Admins</div>
           <div className="summary-value">{adminCount}</div>
-        </div>
-        <div className="summary-card">
+        </Panel>
+        <Panel className="summary-card admin-metric-card">
           <div className="summary-label">Banned</div>
           <div className="summary-value">{bannedCount}</div>
-        </div>
+        </Panel>
       </div>
 
-      <section className="admin-section">
+      <section className="admin-section admin-users-panel">
         <div className="admin-list-header">
-          <div>用户管理</div>
+          <div>
+            <Badge tone="info">Users</Badge>
+            <strong>用户管理</strong>
+          </div>
+          <span>{adminUsers.length} 个账号</span>
         </div>
         {adminError && <div className="auth-error">{adminError}</div>}
         {adminActionError && <div className="auth-error">{adminActionError}</div>}
         {adminActionMessage && <div className="auth-success">{adminActionMessage}</div>}
-        <div className="admin-form">
+        <div className="admin-form admin-form-v2">
           <label>
             新用户 ID
             <input
@@ -239,12 +253,12 @@ export default function AdminPage() {
             />
             设为管理员
           </label>
-          <button className="primary" onClick={handleCreateUser}>
+          <Button variant="primary" onClick={handleCreateUser}>
             创建用户
-          </button>
+          </Button>
         </div>
 
-        <div className="admin-table">
+        <div className="admin-table admin-table-v2">
           <div className="admin-row admin-row-head">
             <div>ID</div>
             <div>名称</div>
@@ -257,30 +271,39 @@ export default function AdminPage() {
             <div key={user.id} className="admin-row">
               <div data-user-id>{user.id}</div>
               <div className="admin-user-name" data-user-name>{user.name}</div>
-              <div>{user.isAdmin ? '管理员' : '用户'}</div>
+              <div>
+                <Badge tone={user.isAdmin ? 'warning' : 'neutral'}>
+                  {user.isAdmin ? '管理员' : '用户'}
+                </Badge>
+              </div>
               <div className={user.isBanned ? 'status-banned' : 'status-normal'}>
+                <Badge tone={user.isBanned ? 'danger' : 'success'}>
                 {user.isBanned ? '封禁' : '正常'}
+                </Badge>
               </div>
               <div>{user.createdAt ? new Date(user.createdAt).toLocaleString() : '-'}</div>
               <div className="admin-row-actions">
                 {!user.isAdmin && (
-                  <button
-                    className="ghost small"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => handleUserAction(`/api/admin/users/${user.id}/promote`)}
                   >
                     提升管理员
-                  </button>
+                  </Button>
                 )}
                 {user.isAdmin && (
-                  <button
-                    className="ghost small"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => handleUserAction(`/api/admin/users/${user.id}/demote`)}
                   >
                     降为普通
-                  </button>
+                  </Button>
                 )}
-                <button
-                  className="ghost small"
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
                     const password = window.prompt('新密码（至少 6 位）')
                     if (!password) return
@@ -290,9 +313,10 @@ export default function AdminPage() {
                   }}
                 >
                   重置密码
-                </button>
-                <button
-                  className="ghost small"
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() =>
                     handleUserAction(`/api/admin/users/${user.id}/ban`, {
                       banned: !user.isBanned,
@@ -300,15 +324,15 @@ export default function AdminPage() {
                   }
                 >
                   {user.isBanned ? '解除封禁' : '封禁'}
-                </button>
-                <button className="danger small" onClick={() => handleDeleteUser(user.id)}>
+                </Button>
+                <Button variant="danger" size="sm" onClick={() => handleDeleteUser(user.id)}>
                   删除
-                </button>
+                </Button>
               </div>
             </div>
           ))}
           {adminUsers.length === 0 && !adminLoading && (
-            <div className="admin-empty">暂无用户数据</div>
+            <EmptyState title="暂无用户数据" description="刷新后仍为空时，请检查后端管理接口和数据库初始化状态。" />
           )}
         </div>
 
@@ -368,4 +392,3 @@ export default function AdminPage() {
     </div>
   )
 }
-

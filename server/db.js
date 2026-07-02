@@ -14,12 +14,221 @@ const dbPromise = open({
   driver: sqlite3.Database,
 })
 
+const BUILTIN_PROBLEMS = [
+  {
+    id: 1001,
+    slug: 'p1001-star-sum',
+    title: '星尘求和',
+    difficulty: '入门',
+    tags: '数学,基础',
+    statement: '给定两个整数 A 和 B，输出 A + B。',
+    input_desc: '输入两个整数 A 和 B，以空格分隔。',
+    output_desc: '输出 A + B 的结果。',
+    data_range: '-10^9 \\le A, B \\le 10^9',
+    samples: [{ input: '1 2', output: '3' }],
+    testcases: [
+      { input: '1 2', output: '3', is_sample: 1 },
+      { input: '10 20', output: '30', is_sample: 0 },
+      { input: '-5 7', output: '2', is_sample: 0 },
+    ],
+  },
+  {
+    id: 1002,
+    slug: 'p1002-peak-energy',
+    title: '能量峰值',
+    difficulty: '普及-',
+    tags: '数组,基础',
+    statement: '给定 N 个整数，输出其中的最大值。',
+    input_desc: '第一行输入整数 N。第二行输入 N 个整数。',
+    output_desc: '输出最大值。',
+    data_range: '1 \\le N \\le 10^5',
+    samples: [{ input: '5\n1 9 3 4 7', output: '9' }],
+    testcases: [
+      { input: '5\n1 9 3 4 7', output: '9', is_sample: 1 },
+      { input: '3\n-5 -2 -8', output: '-2', is_sample: 0 },
+      { input: '1\n42', output: '42', is_sample: 0 },
+    ],
+  },
+  {
+    id: 1003,
+    slug: 'p1003-star-palindrome',
+    title: '星码回文',
+    difficulty: '普及',
+    tags: '字符串,模拟',
+    statement: '判断给定字符串是否为回文串。',
+    input_desc: '输入一行字符串 s（不含空格）。',
+    output_desc: '若 s 为回文串输出 Yes，否则输出 No。',
+    data_range: '1 \\le |s| \\le 10^5',
+    samples: [{ input: 'level', output: 'Yes' }],
+    testcases: [
+      { input: 'level', output: 'Yes', is_sample: 1 },
+      { input: 'star', output: 'No', is_sample: 0 },
+      { input: 'abba', output: 'Yes', is_sample: 0 },
+    ],
+  },
+  {
+    id: 1004,
+    slug: 'p1004-ladder-sum',
+    title: '阶梯求和',
+    difficulty: '入门',
+    tags: '数学,前缀和',
+    statement: '输入整数 N，输出 1 到 N 的和。',
+    input_desc: '输入一个整数 N。',
+    output_desc: '输出 1+2+...+N 的结果。',
+    data_range: '1 \\le N \\le 10^6',
+    samples: [{ input: '5', output: '15' }],
+    testcases: [
+      { input: '5', output: '15', is_sample: 1 },
+      { input: '1', output: '1', is_sample: 0 },
+      { input: '100', output: '5050', is_sample: 0 },
+    ],
+  },
+  {
+    id: 1005,
+    slug: 'p1005-even-odd-line',
+    title: '奇偶分流',
+    difficulty: '入门',
+    tags: '模拟,分支',
+    statement: '输入一个整数 N，如果 N 为偶数输出 Even，否则输出 Odd。',
+    input_desc: '输入一个整数 N。',
+    output_desc: '输出 Even 或 Odd。',
+    data_range: '-10^9 \\le N \\le 10^9',
+    samples: [{ input: '8', output: 'Even' }],
+    testcases: [
+      { input: '8', output: 'Even', is_sample: 1 },
+      { input: '7', output: 'Odd', is_sample: 0 },
+      { input: '0', output: 'Even', is_sample: 0 },
+    ],
+  },
+  {
+    id: 1006,
+    slug: 'p1006-prefix-delta',
+    title: '区间增量统计',
+    difficulty: '提高-',
+    tags: '前缀和,差分,数组',
+    statement: '给定一个长度为 N 的数组与若干次区间加法操作，输出最终数组。',
+    input_desc: '第一行输入 N 和 M。第二行输入 N 个整数。接下来 M 行每行输入 l, r, c，表示区间 [l,r] 每个数加上 c。',
+    output_desc: '输出操作完成后的数组，每个整数之间用空格分隔。',
+    data_range: '1 \\le N, M \\le 2 \\times 10^5',
+    samples: [{ input: '5 2\n1 2 3 4 5\n1 3 2\n2 5 -1', output: '3 3 4 3 4' }],
+    testcases: [
+      { input: '5 2\n1 2 3 4 5\n1 3 2\n2 5 -1', output: '3 3 4 3 4', is_sample: 1 },
+      { input: '3 1\n0 0 0\n1 3 5', output: '5 5 5', is_sample: 0 },
+      { input: '4 0\n3 1 4 1', output: '3 1 4 1', is_sample: 0 },
+    ],
+  },
+  {
+    id: 1007,
+    slug: 'p1007-binary-search-answer',
+    title: '最小可行值',
+    difficulty: '提高',
+    tags: '二分,贪心',
+    statement: '给定若干木板长度和目标段数 K。每次可以把木板切成若干段，要求每段长度相同且为整数。求能切出至少 K 段时，这个长度的最大值。',
+    input_desc: '第一行输入 N 和 K。第二行输入 N 个木板长度。',
+    output_desc: '输出满足条件的最大整数长度。',
+    data_range: '1 \\le N \\le 10^5, 1 \\le K \\le 10^9',
+    samples: [{ input: '4 11\n8 7 6 5', output: '2' }],
+    testcases: [
+      { input: '4 11\n8 7 6 5', output: '2', is_sample: 1 },
+      { input: '3 3\n9 9 9', output: '9', is_sample: 0 },
+      { input: '2 100\n5 7', output: '0', is_sample: 0 },
+    ],
+  },
+  {
+    id: 1008,
+    slug: 'p1008-bfs-maze',
+    title: '星港迷宫',
+    difficulty: '普及',
+    tags: '搜索,广度优先搜索,图论',
+    statement: '给定一个由 0 和 1 组成的网格，0 表示可走，1 表示障碍。求从左上角到右下角的最短步数，无法到达输出 -1。',
+    input_desc: '第一行输入 n 和 m。接下来 n 行每行 m 个字符，仅包含 0 或 1。',
+    output_desc: '输出最短步数。',
+    data_range: '1 \\le n, m \\le 200',
+    samples: [{ input: '3 3\n000\n010\n000', output: '4' }],
+    testcases: [
+      { input: '3 3\n000\n010\n000', output: '4', is_sample: 1 },
+      { input: '2 2\n00\n00', output: '2', is_sample: 0 },
+      { input: '2 2\n01\n10', output: '-1', is_sample: 0 },
+    ],
+  },
+]
+
+const ensureBuiltinProblems = async (db) => {
+  const now = new Date().toISOString()
+
+  for (const problem of BUILTIN_PROBLEMS) {
+    const existing = await db.get(
+      `SELECT id FROM problems WHERE id = ? OR slug = ? LIMIT 1`,
+      problem.id,
+      problem.slug
+    )
+
+    if (!existing) {
+      await db.run(
+        `INSERT INTO problems (id, slug, title, difficulty, tags, statement, input_desc, output_desc, data_range, samples, creator_id, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        problem.id,
+        problem.slug,
+        problem.title,
+        problem.difficulty,
+        problem.tags,
+        problem.statement,
+        problem.input_desc,
+        problem.output_desc,
+        problem.data_range,
+        JSON.stringify(problem.samples),
+        'admin',
+        'published',
+        now
+      )
+    } else {
+      await db.run(
+        `UPDATE problems
+         SET slug = ?, title = ?, difficulty = ?, tags = ?, statement = ?, input_desc = ?, output_desc = ?, data_range = ?, samples = ?, creator_id = COALESCE(creator_id, ?), status = COALESCE(status, ?)
+         WHERE id = ?`,
+        problem.slug,
+        problem.title,
+        problem.difficulty,
+        problem.tags,
+        problem.statement,
+        problem.input_desc,
+        problem.output_desc,
+        problem.data_range,
+        JSON.stringify(problem.samples),
+        'admin',
+        'published',
+        existing.id
+      )
+    }
+
+    const testcaseCount = await db.get(
+      `SELECT COUNT(*) as count FROM testcases WHERE problem_id = ?`,
+      problem.id
+    )
+    if (!testcaseCount || testcaseCount.count === 0) {
+      await db.run(`DELETE FROM testcases WHERE problem_id = ?`, problem.id)
+      for (const testcase of problem.testcases) {
+        await db.run(
+          `INSERT INTO testcases (problem_id, input, output, is_sample, created_at)
+           VALUES (?, ?, ?, ?, ?)`,
+          problem.id,
+          testcase.input,
+          testcase.output,
+          testcase.is_sample,
+          now
+        )
+      }
+    }
+  }
+}
+
 export const initDb = async () => {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true })
   }
   const db = await dbPromise
   await db.exec(`
+    PRAGMA foreign_keys = ON;
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -138,98 +347,7 @@ export const initDb = async () => {
     )
   }
 
-  const legacyProblem = await db.get(
-    `SELECT id FROM problems WHERE slug IN ('sum-a-b', 'max-of-three', 'string-reverse') LIMIT 1`
-  )
-  const problemCount = await db.get(`SELECT COUNT(*) as count FROM problems`)
-  if (legacyProblem || !problemCount || problemCount.count === 0) {
-    await db.exec(`DELETE FROM submissions;`)
-    await db.exec(`DELETE FROM testcases;`)
-    await db.exec(`DELETE FROM problems;`)
-    await db.exec(`DELETE FROM sqlite_sequence WHERE name IN ('problems', 'testcases', 'submissions');`)
-
-    const now = new Date().toISOString()
-    const problems = [
-      {
-        id: 1001,
-        slug: 'p1001-star-sum',
-        title: '星尘求和',
-        difficulty: '入门',
-        tags: '数学,基础',
-        statement: '给定两个整数 A 和 B，输出 A + B。',
-        input_desc: '输入两个整数 A 和 B，以空格分隔。',
-        output_desc: '输出 A + B 的结果。',
-        samples: [{ input: '1 2', output: '3' }],
-        testcases: [
-          { input: '1 2', output: '3', is_sample: 1 },
-          { input: '10 20', output: '30', is_sample: 0 },
-          { input: '-5 7', output: '2', is_sample: 0 },
-        ],
-      },
-      {
-        id: 1002,
-        slug: 'p1002-peak-energy',
-        title: '能量峰值',
-        difficulty: '普及-',
-        tags: '数组,基础',
-        statement: '给定 N 个整数，输出其中的最大值。',
-        input_desc: '第一行输入整数 N。第二行输入 N 个整数。',
-        output_desc: '输出最大值。',
-        samples: [{ input: '5\n1 9 3 4 7', output: '9' }],
-        testcases: [
-          { input: '5\n1 9 3 4 7', output: '9', is_sample: 1 },
-          { input: '3\n-5 -2 -8', output: '-2', is_sample: 0 },
-          { input: '1\n42', output: '42', is_sample: 0 },
-        ],
-      },
-      {
-        id: 1003,
-        slug: 'p1003-star-palindrome',
-        title: '星码回文',
-        difficulty: '普及',
-        tags: '字符串,模拟',
-        statement: '判断给定字符串是否为回文串。',
-        input_desc: '输入一行字符串 s（不含空格）。',
-        output_desc: '若 s 为回文串输出 Yes，否则输出 No。',
-        samples: [{ input: 'level', output: 'Yes' }],
-        testcases: [
-          { input: 'level', output: 'Yes', is_sample: 1 },
-          { input: 'star', output: 'No', is_sample: 0 },
-          { input: 'abba', output: 'Yes', is_sample: 0 },
-        ],
-      },
-    ]
-
-    for (const problem of problems) {
-      await db.run(
-        `INSERT INTO problems (id, slug, title, difficulty, tags, statement, input_desc, output_desc, samples, creator_id, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        problem.id,
-        problem.slug,
-        problem.title,
-        problem.difficulty,
-        problem.tags,
-        problem.statement,
-        problem.input_desc,
-        problem.output_desc,
-        JSON.stringify(problem.samples),
-        'admin',
-        'published',
-        now
-      )
-      for (const testcase of problem.testcases) {
-        await db.run(
-          `INSERT INTO testcases (problem_id, input, output, is_sample, created_at)
-           VALUES (?, ?, ?, ?, ?)`,
-          problem.id,
-          testcase.input,
-          testcase.output,
-          testcase.is_sample,
-          now
-        )
-      }
-    }
-  }
+  await ensureBuiltinProblems(db)
 
   const testcaseCount = await db.get(`SELECT COUNT(*) as count FROM testcases`)
   if (testcaseCount && testcaseCount.count === 0) {
@@ -311,6 +429,7 @@ export const initDb = async () => {
 
     CREATE INDEX IF NOT EXISTS idx_daily_activity_user_date ON daily_activity (user_id, activity_date);
     CREATE INDEX IF NOT EXISTS idx_user_achievements_user ON user_achievements (user_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_user_achievements_unique ON user_achievements (user_id, achievement_type);
     CREATE INDEX IF NOT EXISTS idx_solved_problems_user ON solved_problems (user_id);
     CREATE INDEX IF NOT EXISTS idx_solved_problems_problem ON solved_problems (problem_id);
     CREATE INDEX IF NOT EXISTS idx_solved_problems_time_user_problem ON solved_problems (first_solved_at, user_id, problem_id);

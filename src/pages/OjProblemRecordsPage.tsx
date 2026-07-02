@@ -1,7 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
 import { fetchJson, formatTime } from '../utils'
 import type { OjSubmission, SubmissionsResponse } from '../types'
+import './OpsPages.css'
+
+const getSubmissionTone = (status: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' => {
+  if (status === 'Accepted' || status === 'AC') return 'success'
+  if (status === 'Compile Error' || status === 'CE') return 'warning'
+  if (status === 'Time Limit Exceeded' || status === 'TLE') return 'warning'
+  if (status === 'Wrong Answer' || status === 'Runtime Error' || status === 'WA' || status === 'RE') return 'danger'
+  return 'info'
+}
 
 export default function OjProblemRecordsPage() {
   const navigate = useNavigate()
@@ -89,66 +99,123 @@ export default function OjProblemRecordsPage() {
     return pages
   }
 
+  const acceptedCount = records.filter((record) => record.status === 'Accepted' || record.status === 'AC').length
+  const bestScore = records.reduce((best, record) => Math.max(best, record.score ?? 0), 0)
+  const participantCount = new Set(records.map((record) => record.userId).filter(Boolean)).size
+
   return (
-    <section className="section">
-      <div className="section-header">
-        <h2>提交记录</h2>
-        <span className="tag">Records</span>
+    <section className="ops-page-v2 submissions-v2">
+      <PageHeader
+        kicker="Problem Records"
+        title="提交记录"
+        description={`查看 P${id} 的提交轨迹，可按用户 ID 过滤，快速定位同题调试记录。`}
+        actions={
+          <Button variant="ghost" onClick={() => navigate(`/oj/p${id}`)}>
+            返回题目
+          </Button>
+        }
+      />
+
+      <div className="ops-summary-grid">
+        <Panel>
+          <span>提交总数</span>
+          <strong>{records.length}</strong>
+        </Panel>
+        <Panel>
+          <span>Accepted</span>
+          <strong>{acceptedCount}</strong>
+        </Panel>
+        <Panel>
+          <span>最高得分</span>
+          <strong>{bestScore}</strong>
+        </Panel>
+        <Panel>
+          <span>参与用户</span>
+          <strong>{participantCount}</strong>
+        </Panel>
       </div>
-      <div className="oj-record-filters">
-        <input
-          className="auth-input"
-          placeholder="输入用户 ID 过滤"
-          value={userFilter}
-          onChange={(event) => setUserFilter(event.target.value)}
-        />
-        <button className="ghost" onClick={loadRecords}>
+
+      <Panel className="record-filter-panel">
+        <label>
+          <span>用户过滤</span>
+          <input
+            className="auth-input"
+            placeholder="输入用户 ID 过滤"
+            value={userFilter}
+            onChange={(event) => setUserFilter(event.target.value)}
+          />
+        </label>
+        <Button variant="secondary" onClick={loadRecords}>
           搜索
-        </button>
-        <button className="ghost" onClick={() => navigate(`/oj/p${id}`)}>
-          返回题目
-        </button>
-      </div>
+        </Button>
+        <Button variant="ghost" onClick={() => {
+          setUserFilter('')
+          setRecordsPage(1)
+          setRecordsPageInput('1')
+        }}>
+          清空
+        </Button>
+      </Panel>
+
       {error && <div className="auth-error">{error}</div>}
-      <div className="oj-submissions full">
-        <div className="oj-submission head">
-          <div>时间</div>
-          <div>用户</div>
-          <div>语言</div>
-          <div>状态</div>
-          <div>分数</div>
-          <div>耗时</div>
-        </div>
-        {currentRecords.map((record) => (
-          <div
-            key={record.id}
-            className="oj-submission clickable"
-            onClick={() => handleRecordClick(record.id)}
-          >
-            <div>{formatTime(record.createdAt)}</div>
-            <div>
-              <span className="submission-user-name" data-user-name>{record.userName}</span>{' '}
-              (<span className="submission-user-id" data-user-id>{record.userId}</span>)
-            </div>
-            <div>{record.language}</div>
-            <div>{record.status}</div>
-            <div className={record.score === 100 ? 'score-perfect' : 'score-partial'}>{record.score ?? 0}</div>
-            <div>{record.timeMs ? `${record.timeMs}ms` : '-'}</div>
+
+      <Panel className="ops-list-panel">
+        <div className="ops-panel-head">
+          <div>
+            <Badge tone="info">Records</Badge>
+            <h2>题目提交</h2>
           </div>
-        ))}
-        {loading && <div className="admin-empty">加载中...</div>}
-        {!loading && records.length === 0 && <div className="admin-empty">暂无提交记录</div>}
-      </div>
+          <span>点击任意记录查看判题详情</span>
+        </div>
+
+        {loading ? (
+          <div className="ops-skeleton-list">
+            {Array.from({ length: 8 }, (_, index) => <div key={index} className="skeleton skeleton-row" />)}
+          </div>
+        ) : records.length === 0 ? (
+          <EmptyState title="暂无提交记录" description="这个题目还没有产生提交，或当前用户过滤没有匹配结果。" />
+        ) : (
+          <div className="submission-list-v2">
+            <div className="submission-row-v2 problem-record head">
+              <span>时间</span>
+              <span>用户</span>
+              <span>语言</span>
+              <span>状态</span>
+              <span>分数</span>
+              <span>耗时</span>
+            </div>
+            {currentRecords.map((record) => (
+              <button
+                key={record.id}
+                type="button"
+                className="submission-row-v2 problem-record"
+                onClick={() => handleRecordClick(record.id)}
+              >
+                <span>{formatTime(record.createdAt)}</span>
+                <strong>
+                  <span className="submission-user-name" data-user-name>{record.userName || record.userId}</span>
+                  <em className="submission-user-id" data-user-id>@{record.userId}</em>
+                </strong>
+                <span>{record.language}</span>
+                <Badge tone={getSubmissionTone(record.status)}>{record.status}</Badge>
+                <span className={record.score === 100 ? 'score-perfect' : 'score-partial'}>{record.score ?? 0}</span>
+                <span>{record.timeMs ? `${record.timeMs}ms` : '-'}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </Panel>
 
       {recordsTotalPages > 1 && (
         <div className="pagination">
-          <button
-            className="pagination-btn"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => handleRecordsPageChange(recordsPage - 1)}
             disabled={recordsPage === 1}
           >
             上一页
-          </button>
+          </Button>
 
           <div className="pagination-numbers">
             {renderRecordsPageNumbers().map((page, index) => (
@@ -168,13 +235,14 @@ export default function OjProblemRecordsPage() {
             ))}
           </div>
 
-          <button
-            className="pagination-btn"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => handleRecordsPageChange(recordsPage + 1)}
             disabled={recordsPage === recordsTotalPages}
           >
             下一页
-          </button>
+          </Button>
 
           <div className="pagination-jump">
             <span>跳转到</span>
@@ -185,13 +253,12 @@ export default function OjProblemRecordsPage() {
               onChange={(e) => handleRecordsPageInputChange(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleRecordsPageInputSubmit()}
             />
-            <button className="pagination-go" onClick={handleRecordsPageInputSubmit}>
+            <Button variant="ghost" size="sm" onClick={handleRecordsPageInputSubmit}>
               GO
-            </button>
+            </Button>
           </div>
         </div>
       )}
     </section>
   )
 }
-

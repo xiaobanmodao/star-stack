@@ -1,33 +1,4 @@
 export const TOKEN_KEY = 'starstack_token'
-export const UI_LANGUAGE_KEY = 'starstack_ui_lang'
-
-export const TRANSLATION_WARMUP_TEXTS = [
-  '首页',
-  '算法测评',
-  '排行榜',
-  '讨论',
-  'StarBot',
-  '后台',
-  '登录',
-  '退出',
-  '进入评测系统',
-  '进入 StarBot',
-  '核心模块',
-  '模块矩阵',
-  '题目描述',
-  '输入格式',
-  '输出格式',
-  '输入输出样例',
-  '数据范围',
-  '提交',
-  '运行此样例',
-  '提交记录',
-  '加载中',
-  '题目不存在',
-  '个人中心',
-  '私信',
-  '做题计划',
-] as const
 
 export const LANGUAGE_OPTIONS = [
   {

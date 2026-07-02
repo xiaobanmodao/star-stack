@@ -62,13 +62,18 @@ app.use(cors({
   origin(origin, callback) {
     // 允许无 origin 的请求（如服务器间调用、curl）
     if (!origin) return callback(null, true)
-    if (!ALLOWED_ORIGINS) return callback(null, true) // 未配置时允许所有
+    if (!ALLOWED_ORIGINS) {
+      if (process.env.NODE_ENV === 'production') {
+        return callback(new Error('CORS not allowed'))
+      }
+      return callback(null, true)
+    }
     if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true)
     callback(new Error('CORS not allowed'))
   },
   credentials: true,
 }))
-app.use(express.json({ limit: '1mb' }))
+app.use(express.json({ limit: '4mb' }))
 
 const createToken = () => randomBytes(24).toString('hex')
 const parseResults = (raw) => {
@@ -84,8 +89,6 @@ const parseResults = (raw) => {
 const getAuthToken = (req) => {
   const header = req.headers.authorization || ''
   if (header.startsWith('Bearer ')) return header.slice(7).trim()
-  // Support token via query param for EventSource (SSE) which can't set headers
-  if (req.query && req.query.token) return String(req.query.token).trim()
   return null
 }
 
@@ -143,168 +146,10 @@ const requireUser = async (req, res) => {
   return { db, user }
 }
 
-const translateCache = new BoundedCache(2000, 30 * 60 * 1000) // 最多 2000 条，30 分钟过期
-
-const normalizeTranslateTarget = (targetLang) => {
-  if (targetLang === 'zh' || targetLang === 'zh-CN' || targetLang === 'zh_CN') return 'zh-CN'
-  return 'en'
-}
-
-const parseGoogleTranslatePayload = (payload) => {
-  if (!Array.isArray(payload) || !Array.isArray(payload[0])) return ''
-  return payload[0]
-    .map((segment) => (Array.isArray(segment) ? String(segment[0] || '') : ''))
-    .join('')
-}
-
-const protectSegmentsForTranslation = (text) => {
-  const protectedParts = []
-  let result = text
-  const patterns = [
-    /```[\s\S]*?```/g,        // fenced code
-    /`[^`\n]+`/g,             // inline code
-    /\$\$[\s\S]*?\$\$/g,      // block latex
-    /\$[^$\n]+\$/g,           // inline latex
-    /<[^>]+>/g,               // HTML tags
-  ]
-
-  for (const pattern of patterns) {
-    result = result.replace(pattern, (match) => {
-      const token = `__STARSTACK_T_${protectedParts.length}__`
-      protectedParts.push(match)
-      return token
-    })
-  }
-
-  return { result, protectedParts }
-}
-
-const restoreProtectedSegments = (text, protectedParts) => {
-  let result = text
-  for (let i = 0; i < protectedParts.length; i += 1) {
-    result = result.replaceAll(`__STARSTACK_T_${i}__`, protectedParts[i])
-  }
-  return result
-}
-
-const splitTranslateText = (text, maxLen = 1000) => {
-  if (text.length <= maxLen) return [text]
-  const parts = []
-  let cursor = 0
-  while (cursor < text.length) {
-    let end = Math.min(cursor + maxLen, text.length)
-    if (end < text.length) {
-      const windowText = text.slice(cursor, end)
-      const lastBreak = Math.max(
-        windowText.lastIndexOf('\n'),
-        windowText.lastIndexOf('。'),
-        windowText.lastIndexOf('！'),
-        windowText.lastIndexOf('？'),
-        windowText.lastIndexOf('. '),
-        windowText.lastIndexOf(', '),
-        windowText.lastIndexOf(' ')
-      )
-      if (lastBreak > maxLen * 0.4) {
-        end = cursor + lastBreak + 1
-      }
-    }
-    parts.push(text.slice(cursor, end))
-    cursor = end
-  }
-  return parts
-}
-
-const translateTextWithGoogle = async (text, targetLang, sourceLang = 'auto') => {
-  const normalizedTarget = normalizeTranslateTarget(targetLang)
-  const cacheKey = `${sourceLang}|${normalizedTarget}|${text}`
-  if (translateCache.has(cacheKey)) {
-    return translateCache.get(cacheKey)
-  }
-
-  if (!text || !String(text).trim()) {
-    translateCache.set(cacheKey, text || '')
-    return text || ''
-  }
-
-  const { result: safeText, protectedParts } = protectSegmentsForTranslation(String(text))
-  const chunks = splitTranslateText(safeText, 900)
-  const translatedChunks = []
-
-  for (const chunk of chunks) {
-    const qs = new URLSearchParams({
-      client: 'gtx',
-      sl: sourceLang,
-      tl: normalizedTarget,
-      dt: 't',
-      q: chunk,
-    })
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 8000)
-    try {
-      const response = await fetch(`https://translate.googleapis.com/translate_a/single?${qs.toString()}`, {
-        method: 'GET',
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'Mozilla/5.0',
-        },
-      })
-      if (!response.ok) {
-        throw new Error(`translate_http_${response.status}`)
-      }
-      const payload = await response.json()
-      translatedChunks.push(parseGoogleTranslatePayload(payload))
-    } finally {
-      clearTimeout(timer)
-    }
-  }
-
-  const translated = restoreProtectedSegments(translatedChunks.join(''), protectedParts)
-  translateCache.set(cacheKey, translated)
-  return translated
-}
-
-const translateBatchTexts = async (texts, targetLang, sourceLang = 'auto') => {
-  const results = new Array(texts.length).fill('')
-  const queue = texts.map((text, index) => ({ text, index }))
-  const concurrency = 4
-  const workers = Array.from({ length: concurrency }, async () => {
-    while (queue.length > 0) {
-      const item = queue.shift()
-      if (!item) return
-      const raw = typeof item.text === 'string' ? item.text : ''
-      try {
-        results[item.index] = await translateTextWithGoogle(raw, targetLang, sourceLang)
-      } catch {
-        results[item.index] = raw
-      }
-    }
-  })
-  await Promise.all(workers)
-  return results
-}
+const sanitizeProblemText = (value) => sanitizeHtml(String(value ?? '').trim())
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true })
-})
-
-app.post('/api/translate/batch', async (req, res) => {
-  const { texts, targetLang = 'en', sourceLang = 'auto' } = req.body || {}
-  if (!Array.isArray(texts)) {
-    return res.status(400).json({ message: 'texts 必须是数组' })
-  }
-  if (texts.length > 120) {
-    return res.status(400).json({ message: '单次翻译数量过多' })
-  }
-  const sanitized = texts.map((item) => (typeof item === 'string' ? item : ''))
-  const totalChars = sanitized.reduce((sum, item) => sum + item.length, 0)
-  if (totalChars > 40000) {
-    return res.status(400).json({ message: '单次翻译内容过长' })
-  }
-  const translations = await translateBatchTexts(sanitized, targetLang, sourceLang)
-  return res.json({
-    targetLang: normalizeTranslateTarget(targetLang),
-    translations,
-  })
 })
 
 app.get('/api/stats', async (req, res) => {
@@ -664,12 +509,16 @@ app.post('/api/problems', async (req, res) => {
   const { db, user } = auth
 
   const { title, difficulty, tags, statement, inputDesc, outputDesc, dataRange, samples, testFiles, status } = req.body || {}
+  const sanitizedStatement = sanitizeProblemText(statement)
+  const sanitizedInputDesc = sanitizeProblemText(inputDesc)
+  const sanitizedOutputDesc = sanitizeProblemText(outputDesc)
+  const sanitizedDataRange = sanitizeProblemText(dataRange)
 
   if (!title || !title.trim()) {
     return res.status(400).json({ message: '请填写题目标题' })
   }
 
-  if (!statement || !statement.trim()) {
+  if (!sanitizedStatement) {
     return res.status(400).json({ message: '请填写题目描述' })
   }
 
@@ -680,6 +529,7 @@ app.post('/api/problems', async (req, res) => {
   const now = new Date().toISOString()
 
   try {
+    await db.exec('BEGIN IMMEDIATE')
     // 查找最小的闲置题号
     const existingIds = await db.all(`SELECT id FROM problems ORDER BY id ASC`)
     let nextId = 1001 // 从 1001 开始
@@ -701,10 +551,10 @@ app.post('/api/problems', async (req, res) => {
       title.trim(),
       difficulty || '入门',
       Array.isArray(tags) ? tags.join(',') : (tags || ''),
-      statement.trim(),
-      inputDesc || '',
-      outputDesc || '',
-      dataRange || '',
+      sanitizedStatement,
+      sanitizedInputDesc,
+      sanitizedOutputDesc,
+      sanitizedDataRange,
       JSON.stringify(samples),
       user.id,
       status || 'published',
@@ -751,12 +601,15 @@ app.post('/api/problems', async (req, res) => {
       }
     }
 
+    await db.exec('COMMIT')
+
     return res.json({
       message: '题目创建成功',
       problemId,
       slug
     })
   } catch (error) {
+    await db.exec('ROLLBACK').catch(() => undefined)
     console.error('创建题目失败:', error)
     return res.status(500).json({ message: '创建题目失败' })
   }
@@ -862,12 +715,16 @@ app.put('/api/problems/:id', async (req, res) => {
   }
 
   const { title, difficulty, tags, statement, inputDesc, outputDesc, dataRange, samples, testFiles, status } = req.body || {}
+  const sanitizedStatement = sanitizeProblemText(statement)
+  const sanitizedInputDesc = sanitizeProblemText(inputDesc)
+  const sanitizedOutputDesc = sanitizeProblemText(outputDesc)
+  const sanitizedDataRange = sanitizeProblemText(dataRange)
 
   if (!title || !title.trim()) {
     return res.status(400).json({ message: '请填写题目标题' })
   }
 
-  if (!statement || !statement.trim()) {
+  if (!sanitizedStatement) {
     return res.status(400).json({ message: '请填写题目描述' })
   }
 
@@ -878,6 +735,7 @@ app.put('/api/problems/:id', async (req, res) => {
   const now = new Date().toISOString()
 
   try {
+    await db.exec('BEGIN IMMEDIATE')
     // 更新题目
     await db.run(
       `UPDATE problems SET title = ?, difficulty = ?, tags = ?, statement = ?, input_desc = ?, output_desc = ?, data_range = ?, samples = ?, status = ?
@@ -885,10 +743,10 @@ app.put('/api/problems/:id', async (req, res) => {
       title.trim(),
       difficulty || '入门',
       Array.isArray(tags) ? tags.join(',') : (tags || ''),
-      statement.trim(),
-      inputDesc || '',
-      outputDesc || '',
-      dataRange || '',
+      sanitizedStatement,
+      sanitizedInputDesc,
+      sanitizedOutputDesc,
+      sanitizedDataRange,
       JSON.stringify(samples),
       status || 'published',
       problemId
@@ -933,11 +791,14 @@ app.put('/api/problems/:id', async (req, res) => {
       }
     }
 
+    await db.exec('COMMIT')
+
     return res.json({
       message: '题目更新成功',
       problemId
     })
   } catch (error) {
+    await db.exec('ROLLBACK').catch(() => undefined)
     console.error('更新题目失败:', error)
     return res.status(500).json({ message: '更新题目失败' })
   }
@@ -1223,7 +1084,7 @@ app.post('/api/oj/submissions', async (req, res) => {
     await updateRankings(db)
     // AC 后实时更新排行榜快照，让排名变化立即可见
     if (status === 'Accepted') {
-      saveLeaderboardHistory().catch(err => console.error('Failed to save leaderboard history after AC:', err))
+      queueLeaderboardHistorySave()
     }
   } catch (error) {
     console.error('Failed to update stats:', error)
@@ -1317,7 +1178,7 @@ app.post('/api/oj/submissions/stream', async (req, res) => {
     await checkAndUnlockAchievements(db, user.id, { id: submissionId, problemId: Number(problemId), status, createdAt })
     await updateRankings(db)
     if (status === 'Accepted') {
-      saveLeaderboardHistory().catch(err => console.error('Failed to save leaderboard history after AC:', err))
+      queueLeaderboardHistorySave()
     }
   } catch (error) {
     console.error('Failed to update stats:', error)
@@ -2219,29 +2080,17 @@ const messageRateLimits = new BoundedCache(5000, 3000) // 3 秒过期
 // Get or create conversation between two users
 const getOrCreateConversation = async (db, userId1, userId2) => {
   const [user1, user2] = userId1 < userId2 ? [userId1, userId2] : [userId2, userId1]
+  const now = new Date().toISOString()
+  await db.run(
+    `INSERT OR IGNORE INTO conversations (user1_id, user2_id, last_message_at, created_at)
+     VALUES (?, ?, ?, ?)`,
+    user1, user2, now, now
+  )
 
-  let conversation = await db.get(
+  return db.get(
     `SELECT * FROM conversations WHERE user1_id = ? AND user2_id = ?`,
     user1, user2
   )
-
-  if (!conversation) {
-    const now = new Date().toISOString()
-    const result = await db.run(
-      `INSERT INTO conversations (user1_id, user2_id, last_message_at, created_at)
-       VALUES (?, ?, ?, ?)`,
-      user1, user2, now, now
-    )
-    conversation = {
-      id: result.lastID,
-      user1_id: user1,
-      user2_id: user2,
-      last_message_at: now,
-      created_at: now
-    }
-  }
-
-  return conversation
 }
 
 // Get conversation list with last message and unread count
@@ -2819,8 +2668,14 @@ app.put('/api/problem-plan/:id/complete', async (req, res) => {
 // =============================================
 
 // === HTML Sanitizer for Discussion content (whitelist-based) ===
-const ALLOWED_TAGS = new Set(['p', 'br', 'strong', 'em', 'code', 'pre', 'a', 'ul', 'ol', 'li', 'b', 'i', 'div', 'span', 'h1', 'h2', 'h3', 'blockquote'])
-const ALLOWED_ATTR_MAP = { a: new Set(['href', 'target', 'rel']) }
+const ALLOWED_TAGS = new Set([
+  'p', 'br', 'strong', 'em', 'code', 'pre', 'a', 'ul', 'ol', 'li', 'b', 'i',
+  'div', 'span', 'h1', 'h2', 'h3', 'blockquote', 'hr', 'table', 'thead', 'tbody',
+  'tr', 'th', 'td',
+])
+const ALLOWED_ATTR_MAP = {
+  a: new Set(['href', 'target', 'rel']),
+}
 const SAFE_URL_RE = /^(?:https?:\/\/|mailto:|\/)/i
 
 function sanitizeHtml(html) {
@@ -2848,6 +2703,8 @@ function sanitizeHtml(html) {
       if (!allowedAttrs.has(attrName)) continue
       // href 必须是安全协议
       if (attrName === 'href' && !SAFE_URL_RE.test(attrVal.trim())) continue
+      if (attrName === 'target' && attrVal !== '_blank' && attrVal !== '_self') continue
+      if (attrName === 'rel') continue
       // 转义属性值中的引号
       const escaped = attrVal.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
       safeAttrs.push(`${attrName}="${escaped}"`)
@@ -2898,7 +2755,7 @@ app.get('/api/discussions', async (req, res) => {
 
     const offset = (page - 1) * pageSize
     const posts = await db.all(
-      `SELECT dp.id, dp.user_id, dp.title, dp.problem_id, dp.view_count, dp.like_count,
+      `SELECT dp.id, dp.user_id, dp.title, dp.content, dp.problem_id, dp.view_count, dp.like_count,
               dp.comment_count, dp.created_at, dp.updated_at,
               u.name as user_name, u.avatar as user_avatar,
               p.title as problem_title
@@ -2927,7 +2784,7 @@ app.get('/api/discussions', async (req, res) => {
     return res.json({
       posts: posts.map(p => ({
         id: p.id, userId: p.user_id, userName: p.user_name, userAvatar: p.user_avatar,
-        title: p.title, problemId: p.problem_id, problemTitle: p.problem_title,
+        title: p.title, content: p.content, problemId: p.problem_id, problemTitle: p.problem_title,
         viewCount: p.view_count, likeCount: p.like_count, commentCount: p.comment_count,
         liked: likedSet.has(p.id), createdAt: p.created_at, updatedAt: p.updated_at,
       })),
@@ -3650,12 +3507,43 @@ app.get('/api/oj/random-problem', async (req, res) => {
   }
 })
 
+const LEADERBOARD_HISTORY_MIN_INTERVAL_MS = 5 * 60 * 1000
+let leaderboardHistoryRunning = false
+let leaderboardHistoryQueued = false
+let leaderboardHistoryLastRunAt = 0
+let leaderboardHistoryTimer = null
+
+const queueLeaderboardHistorySave = (delayMs = 0) => {
+  if (leaderboardHistoryTimer) return
+  leaderboardHistoryTimer = setTimeout(() => {
+    leaderboardHistoryTimer = null
+    void saveLeaderboardHistory()
+  }, Math.max(0, delayMs))
+}
+
 // Save leaderboard history for tracking rank changes
-async function saveLeaderboardHistory() {
+async function saveLeaderboardHistory(force = false) {
+  if (leaderboardHistoryRunning) {
+    leaderboardHistoryQueued = true
+    return
+  }
+
+  const nowTs = Date.now()
+  const waitMs = LEADERBOARD_HISTORY_MIN_INTERVAL_MS - (nowTs - leaderboardHistoryLastRunAt)
+  if (!force && leaderboardHistoryLastRunAt > 0 && waitMs > 0) {
+    leaderboardHistoryQueued = true
+    queueLeaderboardHistorySave(waitMs)
+    return
+  }
+
+  leaderboardHistoryRunning = true
   try {
     const db = await getDb()
     const now = new Date()
     const today = now.toISOString().split('T')[0]
+    const recordedAt = now.toISOString()
+
+    await db.exec('BEGIN IMMEDIATE')
 
     // Save total leaderboard (daily)
     const totalLeaderboard = await db.all(
@@ -3674,7 +3562,7 @@ async function saveLeaderboardHistory() {
       await db.run(
         `INSERT OR REPLACE INTO leaderboard_history (user_id, period_type, period_key, rank, value, recorded_at)
          VALUES (?, 'total', ?, ?, ?, ?)`,
-        [entry.user_id, today, entry.rank, entry.value, now.toISOString()]
+        [entry.user_id, today, entry.rank, entry.value, recordedAt]
       )
     }
 
@@ -3701,7 +3589,7 @@ async function saveLeaderboardHistory() {
       await db.run(
         `INSERT OR REPLACE INTO leaderboard_history (user_id, period_type, period_key, rank, value, recorded_at)
          VALUES (?, 'weekly', ?, ?, ?, ?)`,
-        [entry.user_id, weekKey, entry.rank, entry.value, now.toISOString()]
+        [entry.user_id, weekKey, entry.rank, entry.value, recordedAt]
       )
     }
 
@@ -3728,13 +3616,25 @@ async function saveLeaderboardHistory() {
       await db.run(
         `INSERT OR REPLACE INTO leaderboard_history (user_id, period_type, period_key, rank, value, recorded_at)
          VALUES (?, 'monthly', ?, ?, ?, ?)`,
-        [entry.user_id, monthKey, entry.rank, entry.value, now.toISOString()]
+        [entry.user_id, monthKey, entry.rank, entry.value, recordedAt]
       )
     }
 
+    await db.exec('COMMIT')
+    leaderboardHistoryLastRunAt = Date.now()
     console.log('Leaderboard history saved successfully')
   } catch (error) {
+    const db = await getDb().catch(() => null)
+    if (db) {
+      await db.exec('ROLLBACK').catch(() => undefined)
+    }
     console.error('Failed to save leaderboard history:', error)
+  } finally {
+    leaderboardHistoryRunning = false
+    if (leaderboardHistoryQueued) {
+      leaderboardHistoryQueued = false
+      queueLeaderboardHistorySave(leaderboardHistoryLastRunAt === 0 ? 0 : LEADERBOARD_HISTORY_MIN_INTERVAL_MS)
+    }
   }
 }
 
@@ -3748,9 +3648,11 @@ function scheduleLeaderboardHistory() {
   const timeUntilMidnight = tomorrow - now
 
   setTimeout(() => {
-    saveLeaderboardHistory()
+    void saveLeaderboardHistory(true)
     // Run daily
-    setInterval(saveLeaderboardHistory, 24 * 60 * 60 * 1000)
+    setInterval(() => {
+      void saveLeaderboardHistory(true)
+    }, 24 * 60 * 60 * 1000)
   }, timeUntilMidnight)
 
   console.log('Leaderboard history scheduler initialized')
@@ -3764,7 +3666,7 @@ initDb()
       // Initialize leaderboard history scheduler
       scheduleLeaderboardHistory()
       // Save initial history
-      saveLeaderboardHistory()
+      void saveLeaderboardHistory(true)
     })
   })
   .catch((error) => {

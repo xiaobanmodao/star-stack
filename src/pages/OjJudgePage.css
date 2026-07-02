@@ -1,0 +1,399 @@
+/* Route-level diagnostics layout for the judge result page.
+   The legacy rocket/result animation base remains in App.css and is reused here. */
+.judge-page-v2 {
+  width: min(100%, 1120px);
+  margin: 0 auto;
+  gap: 14px;
+}
+
+.judge-page-v2 .ui-page-header {
+  margin-bottom: 0;
+}
+
+.judge-page-v2 .ui-page-title {
+  font-size: clamp(28px, 3.3vw, 38px);
+}
+
+.judge-page-v2 .ui-page-description {
+  max-width: 680px;
+  font-size: 13px;
+}
+
+.judge-overview {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+  padding: 14px !important;
+  border-color: var(--ss-color-border);
+  background:
+    linear-gradient(135deg, rgba(226, 232, 240, 0.055), rgba(15, 23, 42, 0.72)),
+    rgba(8, 13, 22, 0.84);
+  box-shadow: none !important;
+}
+
+.judge-visual {
+  position: relative;
+  min-height: 220px;
+  overflow: hidden;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-lg);
+  background:
+    radial-gradient(circle at 28% 18%, rgba(125, 211, 252, 0.16), transparent 34%),
+    linear-gradient(180deg, rgba(2, 6, 23, 0.1), rgba(2, 6, 23, 0.72));
+}
+
+.judge-visual .submit-anim {
+  height: 100%;
+  min-height: 220px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.judge-visual .fireworks span {
+  box-shadow: none;
+}
+
+.judge-orbit-label {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  padding: 5px 9px;
+  border: 1px solid rgba(226, 232, 240, 0.16);
+  border-radius: var(--ss-radius-sm);
+  background: rgba(2, 6, 23, 0.54);
+  color: var(--ss-color-text);
+  font-family: var(--ss-font-display);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.judge-overview-main {
+  display: grid;
+  align-content: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 6px;
+}
+
+.judge-overview-main .ui-badge {
+  justify-self: start;
+}
+
+.judge-overview-main h2,
+.judge-debug-panel h3,
+.judge-panel-head h3 {
+  margin: 0;
+  color: var(--ss-color-text);
+}
+
+.judge-overview-main h2 {
+  font-size: clamp(24px, 3.2vw, 38px);
+  line-height: 1.1;
+}
+
+.judge-overview-main p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--ss-color-text-muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.judge-progress-line {
+  height: 7px;
+  overflow: hidden;
+  border-radius: var(--ss-radius-pill);
+  background: rgba(226, 232, 240, 0.08);
+}
+
+.judge-progress-line span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--ss-color-accent), var(--ss-color-success));
+  transition: width var(--ss-motion-normal);
+}
+
+.judge-page-wrong .judge-progress-line span,
+.judge-page-runtime .judge-progress-line span,
+.judge-page-compile .judge-progress-line span {
+  background: linear-gradient(90deg, var(--ss-color-danger), #fb7185);
+}
+
+.judge-page-tle .judge-progress-line span {
+  background: linear-gradient(90deg, var(--ss-color-warning), #fbbf24);
+}
+
+.judge-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.judge-summary-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-md);
+  background: rgba(226, 232, 240, 0.045);
+}
+
+.judge-summary-card span,
+.judge-panel-kicker,
+.judge-first-fail span {
+  color: var(--ss-color-text-subtle);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.judge-summary-card strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ss-color-text);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.judge-status-message {
+  padding: 10px 12px;
+  border: 1px solid rgba(251, 113, 133, 0.22);
+  border-radius: var(--ss-radius-md);
+  background: rgba(251, 113, 133, 0.08);
+  color: rgba(254, 205, 211, 0.9);
+  font-family: var(--ss-font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.judge-page-accepted .judge-status-message {
+  border-color: rgba(74, 222, 128, 0.24);
+  background: rgba(34, 197, 94, 0.08);
+  color: rgba(187, 247, 208, 0.92);
+}
+
+.judge-debug-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  gap: 14px;
+  padding: 16px !important;
+  border-color: rgba(251, 113, 133, 0.22);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.judge-debug-main {
+  display: grid;
+  gap: 12px;
+}
+
+.judge-advice-list {
+  display: grid;
+  gap: 8px;
+}
+
+.judge-advice-item {
+  padding: 10px 12px;
+  border-left: 2px solid rgba(125, 211, 252, 0.64);
+  border-radius: 0 var(--ss-radius-sm) var(--ss-radius-sm) 0;
+  background: rgba(125, 211, 252, 0.055);
+  color: var(--ss-color-text-muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.judge-first-fail {
+  align-self: start;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(251, 113, 133, 0.28);
+  border-radius: var(--ss-radius-md);
+  background: rgba(127, 29, 29, 0.18);
+}
+
+.judge-first-fail strong {
+  color: #fecdd3;
+  font-size: 15px;
+}
+
+.judge-first-fail em {
+  color: var(--ss-color-text-muted);
+  font-style: normal;
+}
+
+.judge-first-fail p {
+  margin: 0;
+  color: var(--ss-color-text-muted);
+  font-family: var(--ss-font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.judge-live-progress {
+  padding: 14px !important;
+  background: rgba(8, 13, 22, 0.76);
+}
+
+.judge-panel-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.judge-panel-head > span {
+  color: var(--ss-color-text-subtle);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.judge-results-panel {
+  padding: 16px !important;
+}
+
+.judge-results-panel .submit-results-grid {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.judge-results-panel .submit-result {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 6px 10px;
+  min-height: 72px;
+  padding: 12px;
+  border-radius: var(--ss-radius-md);
+  background: rgba(226, 232, 240, 0.04);
+}
+
+.judge-results-panel .submit-result.ok {
+  border-color: rgba(74, 222, 128, 0.28);
+  background: rgba(34, 197, 94, 0.055);
+}
+
+.judge-results-panel .submit-result.bad {
+  border-color: rgba(251, 113, 133, 0.32);
+  background: rgba(244, 63, 94, 0.06);
+}
+
+.submit-result-index {
+  color: var(--ss-color-text-subtle);
+  font-family: var(--ss-font-mono);
+  font-size: 12px;
+}
+
+.submit-result-status {
+  min-width: 0;
+  color: var(--ss-color-text);
+  font-weight: 700;
+}
+
+.submit-result-time {
+  color: var(--ss-color-text-muted);
+  font-family: var(--ss-font-mono);
+  font-size: 12px;
+}
+
+.judge-results-panel .submit-result-message {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  color: var(--ss-color-text-muted);
+  font-family: var(--ss-font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.judge-code-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.judge-code-panel .submission-code {
+  max-height: 440px;
+  overflow: auto;
+}
+
+.judge-page-v2 .judge-celebration-panel {
+  margin-top: 0;
+  padding: 16px;
+  border-radius: var(--ss-radius-lg);
+  background:
+    radial-gradient(circle at top right, rgba(74, 222, 128, 0.1), transparent 26%),
+    rgba(8, 13, 22, 0.78);
+  box-shadow: none;
+}
+
+.judge-page-v2 .judge-celebration-copy h3 {
+  font-size: clamp(20px, 2.6vw, 28px);
+}
+
+.judge-page-v2 .judge-celebration-stat,
+.judge-page-v2 .judge-achievement-card {
+  border-radius: var(--ss-radius-md);
+  background: rgba(226, 232, 240, 0.04);
+}
+
+.low-performance-mode .judge-visual .fireworks span,
+.low-performance-mode .judge-visual .firework-core,
+.low-performance-mode .judge-visual .firework-halo,
+.low-performance-mode .judge-visual .firework-ring,
+.low-performance-mode .judge-visual .rocket,
+.low-performance-mode .judge-progress-line span {
+  animation: none !important;
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .judge-visual .fireworks span,
+  .judge-visual .firework-core,
+  .judge-visual .firework-halo,
+  .judge-visual .firework-ring,
+  .judge-visual .rocket,
+  .judge-progress-line span {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .judge-overview,
+  .judge-debug-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .judge-visual {
+    min-height: 180px;
+  }
+
+  .judge-visual .submit-anim {
+    min-height: 180px;
+  }
+
+  .judge-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .judge-summary-grid,
+  .judge-results-panel .submit-results-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .judge-panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

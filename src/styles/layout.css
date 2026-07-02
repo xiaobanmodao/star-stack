@@ -1,0 +1,29 @@
+.ss-page-shell {
+  width: min(100%, 1240px);
+  margin: 0 auto;
+}
+
+.ss-page-stack {
+  display: grid;
+  gap: var(--ss-space-5);
+}
+
+.ss-grid {
+  display: grid;
+  gap: var(--ss-space-4);
+}
+
+.ss-grid.two {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.42fr);
+}
+
+.ss-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 960px) {
+  .ss-grid.two,
+  .ss-grid.three {
+    grid-template-columns: 1fr;
+  }
+}

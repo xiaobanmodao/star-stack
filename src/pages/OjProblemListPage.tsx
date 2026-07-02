@@ -1,17 +1,26 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useCallback, type KeyboardEvent } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
+import CustomSelect from '../components/CustomSelect'
 import TagSelector from '../components/TagSelector'
+import { Button, DataList, DataListHead, DataListRow, EmptyState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
 import { DIFFICULTY_OPTIONS } from '../constants'
 import type { OjProblemSummary, ProblemsResponse } from '../types'
+import './OjProblemListPage.css'
+
+const LIST_COLUMNS = 'minmax(260px, 1fr) 96px minmax(180px, 0.72fr) 150px 94px'
 
 export default function OjProblemListPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { currentUser, addToPlan, problemPlan, removeFromPlan } = useAppContext()
-  const [search, setSearch] = useState('')
-  const [difficulty, setDifficulty] = useState('')
-  const [tag, setTag] = useState<string[]>([])
+  const [search, setSearch] = useState(() => searchParams.get('search') || '')
+  const [difficulty, setDifficulty] = useState(() => searchParams.get('difficulty') || '')
+  const [tag, setTag] = useState<string[]>(() => {
+    const tagParam = searchParams.get('tag')
+    return tagParam ? tagParam.split(',').map((item) => item.trim()).filter(Boolean) : []
+  })
   const [problemList, setProblemList] = useState<OjProblemSummary[]>([])
   const [problemLoading, setProblemLoading] = useState(false)
   const [problemError, setProblemError] = useState('')
@@ -19,13 +28,19 @@ export default function OjProblemListPage() {
   const [pageInput, setPageInput] = useState('1')
   const itemsPerPage = 20
 
-  const loadProblems = useCallback(async () => {
-    setProblemLoading(true)
-    setProblemError('')
+  const buildQueryParams = useCallback(() => {
     const params = new URLSearchParams()
     if (search.trim()) params.set('search', search.trim())
     if (difficulty) params.set('difficulty', difficulty)
     if (tag.length > 0) params.set('tag', tag.join(','))
+    return params
+  }, [difficulty, search, tag])
+
+  const loadProblems = useCallback(async () => {
+    setProblemLoading(true)
+    setProblemError('')
+    const params = buildQueryParams()
+    setSearchParams(params, { replace: true })
     const { response, data } = await fetchJson<ProblemsResponse>(`/api/oj/problems?${params.toString()}`)
     if (!response.ok) {
       setProblemError(data?.message || '无法加载题目')
@@ -36,12 +51,12 @@ export default function OjProblemListPage() {
     setProblemLoading(false)
     setCurrentPage(1)
     setPageInput('1')
-  }, [difficulty, search, tag])
+  }, [buildQueryParams, setSearchParams])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadProblems()
-    }, 0)
+    }, 220)
     return () => window.clearTimeout(timer)
   }, [loadProblems])
 
@@ -50,6 +65,25 @@ export default function OjProblemListPage() {
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
   const currentProblems = problemList.slice(startIndex, endIndex)
+  const acceptedProblems = problemList.filter((problem) => (problem.acCount ?? 0) > 0).length
+  const averagePassRate = problemList.length
+    ? Math.round(problemList.reduce((sum, problem) => sum + (problem.passRate ?? 0), 0) / problemList.length)
+    : 0
+  const visibleStart = problemList.length === 0 ? 0 : startIndex + 1
+  const visibleEnd = Math.min(endIndex, problemList.length)
+
+  const clearFilters = () => {
+    setSearch('')
+    setDifficulty('')
+    setTag([])
+  }
+
+  const handleProblemKeyDown = (event: KeyboardEvent<HTMLDivElement>, problemId: number) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      navigate(`/oj/p${problemId}`)
+    }
+  }
 
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= totalPages) {
@@ -101,105 +135,172 @@ export default function OjProblemListPage() {
   }
 
   return (
-    <div className="oj-page">
-      <div className="oj-filters">
+    <div className="oj-page oj-problem-library problem-library-v2">
+      <PageHeader
+        kicker="Problem Library"
+        title="题库"
+        description="按题号、标题、难度和标签找到下一道训练题。列表保持高密度展示，方便长时间刷题和快速比较。"
+        actions={
+          <Button variant="ghost" onClick={() => navigate('/oj')}>
+            返回评测首页
+          </Button>
+        }
+      />
+
+      <Panel className="problem-library-summary">
+        <div className="oj-library-stats" aria-label="当前筛选结果概览">
+          <div>
+            <strong>{problemList.length}</strong>
+            <span>结果</span>
+          </div>
+          <div>
+            <strong>{acceptedProblems}</strong>
+            <span>已有通过</span>
+          </div>
+          <div>
+            <strong>{averagePassRate}%</strong>
+            <span>平均通过率</span>
+          </div>
+        </div>
+        <div className="problem-library-range">
+          {problemLoading ? '正在加载题库' : `显示 ${visibleStart}-${visibleEnd} / ${problemList.length}`}
+        </div>
+      </Panel>
+
+      <Panel className="problem-library-toolbar">
         <input
           className="auth-input"
-          placeholder="搜索题目"
+          placeholder="搜索题号、标题或标签"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              void loadProblems()
+            }
+          }}
         />
-        <select
-          className="auth-input"
+        <CustomSelect
+          className="auth-input-like oj-filter-select"
           value={difficulty}
-          onChange={(event) => setDifficulty(event.target.value)}
-        >
-          <option value="">全部难度</option>
-          {DIFFICULTY_OPTIONS.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </select>
-        <button className="primary" onClick={loadProblems}>
+          onChange={setDifficulty}
+          options={[
+            { value: '', label: '全部难度' },
+            ...DIFFICULTY_OPTIONS.map((item) => ({ value: item, label: item })),
+          ]}
+          placeholder="全部难度"
+        />
+        <Button variant="primary" onClick={loadProblems} loading={problemLoading}>
           搜索
-        </button>
-      </div>
-      <div className="oj-tag-filter">
+        </Button>
+        <Button variant="ghost" onClick={clearFilters}>
+          重置
+        </Button>
+      </Panel>
+
+      <Panel className="problem-library-tagbar">
         <label className="filter-label">标签过滤</label>
         <TagSelector selectedTags={tag} onTagsChange={setTag} />
-      </div>
+      </Panel>
 
       {problemError && <div className="auth-error">{problemError}</div>}
 
-      <div className="oj-list">
+      <DataList className="oj-library-list problem-library-table">
+        <DataListHead columns={LIST_COLUMNS} className="oj-library-head" aria-hidden="true">
+          <span>题目</span>
+          <span>难度</span>
+          <span>标签</span>
+          <span>通过率</span>
+          <span>计划</span>
+        </DataListHead>
         {currentProblems.map((problem) => (
-          <div
+          <DataListRow
             key={problem.id}
-            className="oj-card"
+            columns={LIST_COLUMNS}
+            className="oj-library-row"
+            role="button"
+            tabIndex={0}
+            onClick={() => navigate(`/oj/p${problem.id}`)}
+            onKeyDown={(event) => handleProblemKeyDown(event, problem.id)}
           >
-            <div
-              className="oj-card-content"
-              onClick={() => navigate(`/oj/p${problem.id}`)}
-            >
-              <div className="oj-card-title">
-                <span className="oj-code-label">p{problem.id}</span>
-                {problem.title}
-              </div>
-              <div className="oj-card-meta">
-                <span className={`oj-badge ${problem.difficulty}`}>{problem.difficulty}</span>
-                <div className="oj-tags">
-                  {problem.tags.map((tagItem) => (
-                    <span key={tagItem} className="oj-tag">
-                      {tagItem}
-                    </span>
-                  ))}
-                </div>
-                {(problem.totalCount ?? 0) > 0 && (
-                  <div className="oj-pass-rate">
-                    <div className="oj-pass-rate-bar">
-                      <div className="oj-pass-rate-fill" style={{ width: `${problem.passRate ?? 0}%` }} />
-                    </div>
-                    <span>{problem.passRate}%</span>
-                  </div>
-                )}
-              </div>
+            <div className="oj-library-title">
+              <span className="oj-code-label">P{problem.id}</span>
+              <span>{problem.title}</span>
             </div>
-            {currentUser && (
-              <button
-                className="add-to-plan-btn"
-                onClick={async (e) => {
-                  e.stopPropagation()
-                  const inPlan = problemPlan.some(p => p.problem_id === problem.id)
-                  if (inPlan) {
-                    const plan = problemPlan.find(p => p.problem_id === problem.id)
-                    if (plan) await removeFromPlan(plan.id)
-                  } else {
-                    await addToPlan(problem.id)
-                  }
-                }}
-                title={problemPlan.some(p => p.problem_id === problem.id) ? "从计划中移除" : "加入做题计划"}
-              >
-                {problemPlan.some(p => p.problem_id === problem.id) ? '✓' : '+'}
-              </button>
+            <span className={`oj-badge ${problem.difficulty}`}>{problem.difficulty}</span>
+            <div className="oj-tags">
+              {problem.tags.length > 0 ? problem.tags.slice(0, 4).map((tagItem) => (
+                <span key={tagItem} className="oj-tag">
+                  {tagItem}
+                </span>
+              )) : (
+                <span className="oj-tag muted">未分类</span>
+              )}
+            </div>
+            {(problem.totalCount ?? 0) > 0 ? (
+              <div className="oj-pass-rate">
+                <div className="oj-pass-rate-bar">
+                  <div className="oj-pass-rate-fill" style={{ width: `${problem.passRate ?? 0}%` }} />
+                </div>
+                <span>{problem.passRate}%</span>
+                <em>{problem.acCount ?? 0}/{problem.totalCount ?? 0}</em>
+              </div>
+            ) : (
+              <div className="oj-pass-rate oj-pass-rate-empty">
+                <span>暂无提交</span>
+              </div>
             )}
-          </div>
+            <div className="problem-library-plan-cell">
+              {currentUser ? (
+                <Button
+                  variant={problemPlan.some(p => p.problem_id === problem.id) ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="problem-library-plan-btn"
+                  onClick={async (e) => {
+                    e.stopPropagation()
+                    const inPlan = problemPlan.some(p => p.problem_id === problem.id)
+                    if (inPlan) {
+                      const plan = problemPlan.find(p => p.problem_id === problem.id)
+                      if (plan) await removeFromPlan(plan.id)
+                    } else {
+                      await addToPlan(problem.id)
+                    }
+                  }}
+                  title={problemPlan.some(p => p.problem_id === problem.id) ? "从计划中移除" : "加入做题计划"}
+                >
+                  {problemPlan.some(p => p.problem_id === problem.id) ? '已加入' : '加入'}
+                </Button>
+              ) : (
+                <span className="problem-library-plan-guest">登录后加入</span>
+              )}
+            </div>
+          </DataListRow>
         ))}
-        {problemLoading && <div className="admin-empty">{Array.from({ length: 6 }, (_, i) => <div key={i} className="skeleton skeleton-card" />)}</div>}
-        {!problemLoading && problemList.length === 0 && (
-          <div className="admin-empty">暂无题目</div>
+        {problemLoading && currentProblems.length === 0 && (
+          <div className="problem-library-loading">
+            {Array.from({ length: 6 }, (_, i) => <div key={i} className="skeleton skeleton-row" />)}
+          </div>
         )}
-      </div>
+        {!problemLoading && problemList.length === 0 && (
+          <EmptyState
+            title="暂无题目"
+            description="换一个关键词或清空筛选条件试试。"
+          >
+            <Button variant="ghost" onClick={clearFilters}>清空筛选</Button>
+          </EmptyState>
+        )}
+      </DataList>
 
       {!problemLoading && totalPages > 1 && (
-        <div className="pagination">
-          <button
-            className="pagination-btn"
+        <div className="pagination problem-library-pagination">
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => handlePageChange(currentPage - 1)}
             disabled={currentPage === 1}
           >
             上一页
-          </button>
+          </Button>
 
           <div className="pagination-numbers">
             {renderPageNumbers().map((page, index) => (
@@ -219,13 +320,14 @@ export default function OjProblemListPage() {
             ))}
           </div>
 
-          <button
-            className="pagination-btn"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => handlePageChange(currentPage + 1)}
             disabled={currentPage === totalPages}
           >
             下一页
-          </button>
+          </Button>
 
           <div className="pagination-jump">
             <span>跳转到</span>
@@ -236,13 +338,12 @@ export default function OjProblemListPage() {
               onChange={(e) => handlePageInputChange(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handlePageInputSubmit()}
             />
-            <button className="pagination-go" onClick={handlePageInputSubmit}>
+            <Button variant="ghost" size="sm" onClick={handlePageInputSubmit}>
               GO
-            </button>
+            </Button>
           </div>
         </div>
       )}
     </div>
   )
 }
-

@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
+import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
 import type { OjProblemSummary, ProblemsResponse, ApiResponse } from '../types'
+import './CreatorAdminPages.css'
 
 export default function MyProblemsPage() {
   const navigate = useNavigate()
@@ -112,31 +114,63 @@ export default function MyProblemsPage() {
     return null
   }
 
+  const publishedCount = problems.length
+  const easyCount = problems.filter((problem) => ['入门', '普及-'].includes(problem.difficulty)).length
+  const advancedCount = problems.filter((problem) => ['提高+', '省选', 'NOI', '国集'].includes(problem.difficulty)).length
+
   return (
-    <div className="oj-page">
-      <div className="oj-header">
-        <h2>我的题目</h2>
-        <button className="primary" onClick={() => navigate('/create-problem')}>
-          创建题目
-        </button>
+    <div className="oj-page my-problems-v2">
+      <PageHeader
+        kicker="Creator Console"
+        title="我的题目"
+        description="管理你发布的题目，快速进入编辑、预览或继续创建新的训练素材。"
+        actions={
+          <Button variant="primary" onClick={() => navigate('/create-problem')}>
+            创建题目
+          </Button>
+        }
+      />
+
+      <div className="my-problems-summary">
+        <Panel>
+          <span>题目总数</span>
+          <strong>{publishedCount}</strong>
+        </Panel>
+        <Panel>
+          <span>入门训练</span>
+          <strong>{easyCount}</strong>
+        </Panel>
+        <Panel>
+          <span>进阶挑战</span>
+          <strong>{advancedCount}</strong>
+        </Panel>
       </div>
-      {loading && <div className="oj-loading">加载中...</div>}
+
+      {loading && (
+        <Panel>
+          <div className="oj-loading">加载中...</div>
+        </Panel>
+      )}
       {error && <div className="oj-error">{error}</div>}
       {!loading && !error && problems.length === 0 && (
-        <div className="oj-empty">
-          <p>还没有创建题目</p>
-          <button className="primary" onClick={() => navigate('/create-problem')}>
+        <Panel>
+          <EmptyState
+            title="还没有创建题目"
+            description="先从一道样例清晰、数据范围明确的小题开始，后续可以随时编辑。"
+          >
+            <Button variant="primary" onClick={() => navigate('/create-problem')}>
             创建第一个题目
-          </button>
-        </div>
+            </Button>
+          </EmptyState>
+        </Panel>
       )}
       {!loading && !error && problems.length > 0 && (
         <>
-          <div className="oj-problem-grid">
+          <div className="oj-problem-grid my-problems-grid">
             {currentProblems.map((problem) => (
             <div
               key={problem.id}
-              className="oj-card my-problem-card"
+              className="oj-card my-problem-card my-problem-card-v2"
               onClick={() => navigate(`/oj/p${problem.id}`)}
             >
               <div className="oj-card-title">
@@ -144,7 +178,7 @@ export default function MyProblemsPage() {
                 {problem.title}
               </div>
               <div className="oj-card-meta">
-                <span className={`oj-badge ${problem.difficulty}`}>{problem.difficulty}</span>
+                <Badge tone="info">{problem.difficulty}</Badge>
                 <div className="oj-tags">
                   {problem.tags.map((tag) => (
                     <span key={tag} className="oj-tag">
@@ -154,18 +188,20 @@ export default function MyProblemsPage() {
                 </div>
               </div>
               <div className="problem-actions">
-                <button
-                  className="ghost small"
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={(e) => handleEdit(problem.id, e)}
                 >
                   编辑
-                </button>
-                <button
-                  className="ghost small danger"
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
                   onClick={(e) => handleDelete(problem.id, e)}
                 >
                   删除
-                </button>
+                </Button>
               </div>
             </div>
           ))}
@@ -227,4 +263,3 @@ export default function MyProblemsPage() {
     </div>
   )
 }
-

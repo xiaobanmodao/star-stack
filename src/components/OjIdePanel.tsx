@@ -1,8 +1,123 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import Editor, { loader } from '@monaco-editor/react'
+import type * as Monaco from 'monaco-editor'
+import { conf as cppConf, language as baseCppLanguage } from 'monaco-editor/esm/vs/basic-languages/cpp/cpp.js'
+import CustomSelect from './CustomSelect'
 
 // Pre-configure Monaco loader to start fetching immediately on import
 loader.config({ 'vs/nls': { availableLanguages: { '*': '' } } })
+
+const CPP_STANDARD_TYPES = [
+  'string', 'wstring', 'u16string', 'u32string', 'vector', 'array', 'deque', 'list', 'forward_list',
+  'set', 'multiset', 'map', 'multimap', 'unordered_set', 'unordered_multiset', 'unordered_map',
+  'unordered_multimap', 'stack', 'queue', 'priority_queue', 'pair', 'tuple', 'optional', 'variant',
+  'any', 'bitset', 'complex', 'function', 'span', 'ranges', 'istream', 'ostream', 'stringstream',
+  'istringstream', 'ostringstream', 'ifstream', 'ofstream', 'fstream',
+]
+
+const CPP_STANDARD_STREAMS = [
+  'cin', 'cout', 'cerr', 'clog', 'wcin', 'wcout', 'wcerr', 'wclog',
+]
+
+const CPP_STANDARD_MANIPULATORS = [
+  'endl', 'flush', 'ws', 'fixed', 'scientific', 'setprecision', 'setw', 'setfill',
+  'left', 'right', 'boolalpha', 'noboolalpha',
+]
+
+const CPP_STANDARD_FUNCTIONS = [
+  'begin', 'end', 'sort', 'stable_sort', 'reverse', 'swap', 'max', 'min', 'abs', 'count', 'find',
+  'lower_bound', 'upper_bound', 'binary_search', 'next_permutation', 'prev_permutation', 'accumulate',
+  'iota', 'gcd', 'lcm', 'move', 'make_pair', 'make_tuple',
+]
+
+const CPP_STANDARD_NAMESPACES = ['std']
+
+const CPP_STANDARD_CONSTANTS = ['nullopt', 'monostate']
+
+let monacoEnhancementsReady = false
+
+const ensureMonacoEnhancements = (monaco: typeof Monaco) => {
+  if (monacoEnhancementsReady) return
+
+  const enhancedCppLanguage: Monaco.languages.IMonarchLanguage = {
+    ...(baseCppLanguage as Monaco.languages.IMonarchLanguage),
+    stlTypes: CPP_STANDARD_TYPES,
+    stlStreams: CPP_STANDARD_STREAMS,
+    stlManipulators: CPP_STANDARD_MANIPULATORS,
+    stlFunctions: CPP_STANDARD_FUNCTIONS,
+    stlNamespaces: CPP_STANDARD_NAMESPACES,
+    stlConstants: CPP_STANDARD_CONSTANTS,
+    tokenizer: {
+      ...(baseCppLanguage as Monaco.languages.IMonarchLanguage).tokenizer,
+      root: [
+        [/[a-zA-Z_]\w*/, {
+          cases: {
+            '@stlNamespaces': 'namespace.std',
+            '@stlStreams': 'predefined.stream',
+            '@stlManipulators': 'predefined.manipulator',
+            '@stlTypes': 'type.identifier',
+            '@stlFunctions': 'predefined.function',
+            '@stlConstants': 'constant.language',
+            '@keywords': { token: 'keyword.$0' },
+            '@default': 'identifier',
+          },
+        }],
+        ...(((baseCppLanguage as Monaco.languages.IMonarchLanguage).tokenizer?.root ?? []).slice(1)),
+      ],
+    },
+  }
+
+  monaco.languages.setLanguageConfiguration('cpp', cppConf)
+  monaco.languages.setMonarchTokensProvider('cpp', enhancedCppLanguage)
+  monaco.languages.registerCompletionItemProvider('cpp', {
+    provideCompletionItems(model, position) {
+      const word = model.getWordUntilPosition(position)
+      const range = {
+        startLineNumber: position.lineNumber,
+        endLineNumber: position.lineNumber,
+        startColumn: word.startColumn,
+        endColumn: word.endColumn,
+      }
+      const makeSuggestion = (
+        label: string,
+        kind: Monaco.languages.CompletionItemKind,
+        detail: string,
+        insertText = label
+      ) => ({ label, kind, detail, insertText, range })
+      return {
+        suggestions: [
+          ...CPP_STANDARD_STREAMS.map((item) => makeSuggestion(item, monaco.languages.CompletionItemKind.Variable, 'C++ stream object')),
+          ...CPP_STANDARD_MANIPULATORS.map((item) => makeSuggestion(item, monaco.languages.CompletionItemKind.Function, 'C++ stream manipulator')),
+          ...CPP_STANDARD_TYPES.map((item) => makeSuggestion(item, monaco.languages.CompletionItemKind.Class, 'C++ standard library type')),
+          ...CPP_STANDARD_FUNCTIONS.map((item) => makeSuggestion(item, monaco.languages.CompletionItemKind.Function, 'C++ standard library function')),
+          makeSuggestion('std', monaco.languages.CompletionItemKind.Module, 'C++ standard namespace'),
+        ],
+      }
+    },
+  })
+  monaco.editor.defineTheme('starstack-oj', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'keyword', foreground: '5ea7ff' },
+      { token: 'namespace.std', foreground: '4ec9b0' },
+      { token: 'type.identifier', foreground: '4ec9b0' },
+      { token: 'predefined.stream', foreground: '9cdcfe', fontStyle: 'bold' },
+      { token: 'predefined.manipulator', foreground: 'dcdcaa' },
+      { token: 'predefined.function', foreground: 'c586c0' },
+      { token: 'constant.language', foreground: 'ffd76a' },
+    ],
+    colors: {
+      'editor.background': '#09111f',
+      'editorLineNumber.foreground': '#506684',
+      'editorLineNumber.activeForeground': '#b8d2f0',
+      'editorCursor.foreground': '#8ad7ff',
+      'editor.selectionBackground': '#173154',
+      'editor.inactiveSelectionBackground': '#10253f',
+    },
+  })
+  monacoEnhancementsReady = true
+}
 
 type LanguageOption = {
   label: string
@@ -65,8 +180,8 @@ const OjIdePanel = ({
 }: OjIdePanelProps) => {
   const defaultLanguage = languageOptions[0]?.value || 'C++'
 
+  const [initialCode] = useState(() => initialDraft?.code || '')
   const [language, setLanguage] = useState(initialDraft?.language || defaultLanguage)
-  const [code, setCode] = useState(initialDraft?.code || '')
   const [submitError, setSubmitError] = useState('')
   const [runBusy, setRunBusy] = useState(false)
   const [runStatus, setRunStatus] = useState('')
@@ -77,10 +192,58 @@ const OjIdePanel = ({
   const [runExpected, setRunExpected] = useState(initialDraft?.runExpected || '')
 
   const userEditedRef = useRef(false)
+  const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
+  const monacoRef = useRef<typeof Monaco | null>(null)
+  const codeRef = useRef(initialCode)
+  const draftSyncTimerRef = useRef<number | null>(null)
+
+  const flushDraft = useCallback(() => {
+    onDraftChange(problem.id, {
+      language,
+      code: codeRef.current,
+      runInput,
+      runExpected,
+    })
+  }, [language, onDraftChange, problem.id, runExpected, runInput])
+
+  const scheduleDraftSync = useCallback(() => {
+    if (draftSyncTimerRef.current) {
+      clearTimeout(draftSyncTimerRef.current)
+    }
+    draftSyncTimerRef.current = window.setTimeout(() => {
+      draftSyncTimerRef.current = null
+      flushDraft()
+    }, 120)
+  }, [flushDraft])
 
   useEffect(() => {
-    onDraftChange(problem.id, { language, code, runInput, runExpected })
-  }, [code, language, onDraftChange, problem.id, runExpected, runInput])
+    const editor = editorRef.current
+    if (!editor) return
+    const currentValue = editor.getValue()
+    if (currentValue === codeRef.current) return
+    editor.setValue(codeRef.current)
+  }, [])
+
+  useEffect(() => {
+    scheduleDraftSync()
+  }, [language, runInput, runExpected, scheduleDraftSync])
+
+  useEffect(() => {
+    const flushBeforeLeaving = () => {
+      if (draftSyncTimerRef.current) {
+        clearTimeout(draftSyncTimerRef.current)
+        draftSyncTimerRef.current = null
+      }
+      flushDraft()
+    }
+
+    window.addEventListener('beforeunload', flushBeforeLeaving)
+    document.addEventListener('visibilitychange', flushBeforeLeaving)
+    return () => {
+      window.removeEventListener('beforeunload', flushBeforeLeaving)
+      document.removeEventListener('visibilitychange', flushBeforeLeaving)
+    }
+  }, [flushDraft])
 
   useEffect(() => {
     if (!currentUser) return
@@ -91,25 +254,47 @@ const OjIdePanel = ({
       if (cancelled || userEditedRef.current) return
       if (submission?.code) {
         setLanguage(submission.language || language)
-        setCode(submission.code)
+        codeRef.current = submission.code
+        const editor = editorRef.current
+        if (editor && editor.getValue() !== submission.code) {
+          editor.setValue(submission.code)
+        }
+        scheduleDraftSync()
       }
     })()
     return () => { cancelled = true }
-  }, [currentUser, initialDraft?.code, language, loadLatestSubmissionForIde, problem.id])
+  }, [currentUser, initialDraft?.code, language, loadLatestSubmissionForIde, problem.id, scheduleDraftSync])
+
+  useEffect(() => {
+    return () => {
+      if (draftSyncTimerRef.current) {
+        clearTimeout(draftSyncTimerRef.current)
+        draftSyncTimerRef.current = null
+      }
+    }
+  }, [])
 
   const updateLanguage = useCallback((next: string) => {
     userEditedRef.current = true
+    const editor = editorRef.current
+    const monaco = monacoRef.current
+    const model = editor?.getModel()
+    if (editor && monaco && model) {
+      monaco.editor.setModelLanguage(model, getLanguageConfig(next).monaco)
+    }
     setLanguage(next)
-  }, [])
+  }, [getLanguageConfig])
 
   const handleSubmit = useCallback(() => {
+    const currentCode = editorRef.current?.getValue() ?? codeRef.current
     if (!currentUser) { openAuth('login'); return }
-    if (!code.trim()) { setSubmitError('请填写代码'); return }
+    if (!currentCode.trim()) { setSubmitError('请填写代码'); return }
     setSubmitError('')
-    onSubmitJudge({ problemId: problem.id, problemTitle: problem.title, language, code })
-  }, [code, currentUser, language, onSubmitJudge, openAuth, problem.id, problem.title])
+    onSubmitJudge({ problemId: problem.id, problemTitle: problem.title, language, code: currentCode })
+  }, [currentUser, language, onSubmitJudge, openAuth, problem.id, problem.title])
 
   const handleRunCustom = useCallback(async (input: string, expected = '') => {
+    const currentCode = editorRef.current?.getValue() ?? codeRef.current
     if (!currentUser) { openAuth('login'); return }
     setRunBusy(true)
     setRunStatus('运行中')
@@ -118,7 +303,7 @@ const OjIdePanel = ({
     setRunOutput('')
     const { response, data } = await fetchJson<{ status?: string; message?: string; output?: string; timeMs?: number }>('/api/oj/run-custom', {
       method: 'POST',
-      body: JSON.stringify({ problemId: problem.id, language, code, input, expected }),
+      body: JSON.stringify({ problemId: problem.id, language, code: currentCode, input, expected }),
     })
     if (!response.ok) {
       setRunStatus('失败')
@@ -131,7 +316,7 @@ const OjIdePanel = ({
     setRunOutput(data?.output || '')
     setRunTime(data?.timeMs ?? null)
     setRunBusy(false)
-  }, [code, currentUser, fetchJson, language, openAuth, problem.id])
+  }, [currentUser, fetchJson, language, openAuth, problem.id])
 
   const runSample = useCallback(async (index: number) => {
     const sample = problem.samples?.[index]
@@ -162,15 +347,14 @@ const OjIdePanel = ({
       <div className="ide-panel side">
         <div className="ide-header">
           <div className="ide-header-left">
-            <select
-              className="ide-lang-select"
+            <CustomSelect
+              className="ide-lang-select-wrap"
+              buttonClassName="ide-lang-select"
+              menuClassName="ide-lang-menu"
               value={language}
-              onChange={(event) => updateLanguage(event.target.value)}
-            >
-              {languageOptions.map((item) => (
-                <option key={item.value} value={item.value}>{item.label}</option>
-              ))}
-            </select>
+              onChange={updateLanguage}
+              options={languageOptions.map((item) => ({ value: item.value, label: item.label }))}
+            />
           </div>
           <div className="ide-header-right">
             <button className="ide-btn ide-btn-primary" onClick={handleSubmit} title="Ctrl+Enter">
@@ -184,9 +368,16 @@ const OjIdePanel = ({
             <Editor
               height="100%"
               language={getLanguageConfig(language).monaco}
-              value={code}
-              onChange={(value) => { userEditedRef.current = true; setCode(value ?? '') }}
-              onMount={(editor) => {
+              defaultValue={initialCode}
+              onMount={(editor, monaco) => {
+                ensureMonacoEnhancements(monaco)
+                editorRef.current = editor
+                monacoRef.current = monaco
+                editor.onDidChangeModelContent(() => {
+                  userEditedRef.current = true
+                  codeRef.current = editor.getValue()
+                  scheduleDraftSync()
+                })
                 editor.addAction({ id: 'starstack-submit', label: 'Submit', keybindings: [2048 | 3], run: () => { handleSubmit() } })
                 editor.addAction({ id: 'starstack-save', label: 'Save', keybindings: [2048 | 49], run: () => {} })
                 editor.focus()

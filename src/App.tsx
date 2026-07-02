@@ -1,12 +1,9 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import './App.css'
-import 'katex/dist/katex.min.css'
-import { AutoTranslateScope, type UiLanguage } from './components/AutoTranslateScope'
-import { StarBotGettingStartedView, StarBotPageView } from './components/StarBotPages'
 import { AppContext } from './context/AppContext'
-import { TOKEN_KEY, UI_LANGUAGE_KEY, TRANSLATION_WARMUP_TEXTS } from './constants'
-import { fetchJson, preloadOjIdeAssets } from './utils'
+import { TOKEN_KEY } from './constants'
+import { fetchJson } from './utils'
 import type {
   UserRecord, ProblemPlan, AuthMode, AuthPageProps,
   UserResponse, AuthResponse, UnreadCountResponse, ApiResponse,
@@ -201,34 +198,15 @@ const UserMenu = ({ currentUser, initial, navigate, location, openLogoutConfirm 
 
 function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const translateRootRef = useRef<HTMLDivElement | null>(null)
   const appRef = useRef<HTMLDivElement | null>(null)
   const topbarRef = useRef<HTMLElement | null>(null)
-  const langSwitchRef = useRef<HTMLDivElement | null>(null)
   const navigate = useNavigate()
   const location = useLocation()
   const isAuthPage = location.pathname === '/auth'
   const isOjDetailOrJudgePage = location.pathname.match(/^\/oj\/(p\d+|judge)/)
-  const isOjProblemDetailPage = /^\/oj\/p\/?\d+$/.test(location.pathname)
   const [homeEnter, setHomeEnter] = useState(false)
   const homeEnteredRef = useRef(false)
-  const translateBusyRef = useRef(false)
-  const translationWarmupDoneRef = useRef<Set<UiLanguage>>(new Set(['zh']))
-  const translationRevealWindowUntilRef = useRef(0)
-
-  useEffect(() => {
-    if (!location.pathname.startsWith('/oj')) return
-    void preloadOjIdeAssets().catch(() => undefined)
-  }, [location.pathname])
-
-  const [uiLanguage, setUiLanguage] = useState<UiLanguage>(() => {
-    const saved = localStorage.getItem(UI_LANGUAGE_KEY)
-    return saved === 'en' ? 'en' : 'zh'
-  })
-  const [langMenuOpen, setLangMenuOpen] = useState(false)
-  const [pendingLanguageSwitchTarget, setPendingLanguageSwitchTarget] = useState<UiLanguage | null>(null)
-  const [pageLanguageSwitchBlocking, setPageLanguageSwitchBlocking] = useState(false)
-  const [problemLanguageSwitchBlocking, setProblemLanguageSwitchBlocking] = useState(false)
+  const [lowPerformanceMode, setLowPerformanceMode] = useState(false)
 
   const [authMode, setAuthMode] = useState<AuthMode>('login')
   const [authError, setAuthError] = useState('')
@@ -247,123 +225,30 @@ function App() {
   const [formConfirm, setFormConfirm] = useState('')
 
   useEffect(() => {
-    localStorage.setItem(UI_LANGUAGE_KEY, uiLanguage)
-    document.documentElement.lang = uiLanguage === 'en' ? 'en' : 'zh-CN'
-  }, [uiLanguage])
-
-  const prefetchLanguageWarmup = useCallback(async (target: UiLanguage) => {
-    if (target !== 'en') return
-    if (translationWarmupDoneRef.current.has(target)) return
-    translationWarmupDoneRef.current.add(target)
-    try {
-      await fetch('/api/translate/batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sourceLang: 'auto',
-          targetLang: 'en',
-          texts: [...TRANSLATION_WARMUP_TEXTS],
-        }),
-      })
-    } catch {
-      // Ignore warmup failures
-    }
-  }, [])
-
-  const beginTranslationRevealBlock = useCallback((target: UiLanguage) => {
-    if (target !== 'en') {
-      translationRevealWindowUntilRef.current = 0
-      setPageLanguageSwitchBlocking(false)
-      return
-    }
-    translationRevealWindowUntilRef.current = Date.now() + 1800
-    setPageLanguageSwitchBlocking(true)
-  }, [])
-
-  const changeUiLanguage = useCallback((next: UiLanguage) => {
-    if (next === uiLanguage) {
-      setLangMenuOpen(false)
-      return
-    }
-    if (next === 'en') {
-      void prefetchLanguageWarmup('en')
-    }
-    beginTranslationRevealBlock(next)
-    setPendingLanguageSwitchTarget(next)
-    setProblemLanguageSwitchBlocking(isOjProblemDetailPage && next === 'en')
-    setUiLanguage(next)
-    setLangMenuOpen(false)
-  }, [beginTranslationRevealBlock, isOjProblemDetailPage, prefetchLanguageWarmup, uiLanguage])
-
-  const handleTranslateBusyChange = useCallback((busy: boolean) => {
-    translateBusyRef.current = busy
-    if (busy && Date.now() < translationRevealWindowUntilRef.current) {
-      setPageLanguageSwitchBlocking(true)
-      if (isOjProblemDetailPage) {
-        setProblemLanguageSwitchBlocking(true)
-      }
-    }
-  }, [isOjProblemDetailPage])
-
-  const handleTranslateSettled = useCallback((language: UiLanguage) => {
-    setPendingLanguageSwitchTarget((prev) => (prev === language ? null : prev))
-    if (language === 'en') {
-      setPageLanguageSwitchBlocking(false)
-      setProblemLanguageSwitchBlocking(false)
-      return
-    }
-    setPageLanguageSwitchBlocking(false)
-    setProblemLanguageSwitchBlocking(false)
+    document.documentElement.lang = 'zh-CN'
   }, [])
 
   useEffect(() => {
-    if (uiLanguage === 'en') {
-      void prefetchLanguageWarmup('en')
+    if (typeof window === 'undefined') return
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const runtimeNavigator = navigator as Navigator & {
+      connection?: { saveData?: boolean }
+      deviceMemory?: number
     }
-  }, [prefetchLanguageWarmup, uiLanguage])
+    const connection = runtimeNavigator.connection
+    const evaluate = () => {
+      const lowMemory = typeof runtimeNavigator.deviceMemory === 'number' && runtimeNavigator.deviceMemory <= 4
+      const lowCpu = typeof runtimeNavigator.hardwareConcurrency === 'number' && runtimeNavigator.hardwareConcurrency <= 4
+      const saveData = Boolean(connection?.saveData)
+      setLowPerformanceMode(media.matches || lowMemory || lowCpu || saveData)
+    }
 
-  useEffect(() => {
-    if (!langMenuOpen) return
-    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
-      const target = event.target
-      if (!(target instanceof Node)) return
-      if (langSwitchRef.current?.contains(target)) return
-      setLangMenuOpen(false)
-    }
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setLangMenuOpen(false)
-    }
-    document.addEventListener('mousedown', handlePointerDown)
-    document.addEventListener('touchstart', handlePointerDown, { passive: true })
-    window.addEventListener('keydown', handleKeyDown)
+    evaluate()
+    media.addEventListener?.('change', evaluate)
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown)
-      document.removeEventListener('touchstart', handlePointerDown)
-      window.removeEventListener('keydown', handleKeyDown)
+      media.removeEventListener?.('change', evaluate)
     }
-  }, [langMenuOpen])
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setLangMenuOpen(false)
-      if (uiLanguage !== 'en') {
-        setPageLanguageSwitchBlocking(false)
-        return
-      }
-      beginTranslationRevealBlock('en')
-      if (isOjProblemDetailPage) {
-        setProblemLanguageSwitchBlocking(true)
-      }
-    }, 0)
-    return () => window.clearTimeout(timer)
-  }, [beginTranslationRevealBlock, isOjProblemDetailPage, location.pathname, uiLanguage])
-
-  useEffect(() => {
-    if (!isOjProblemDetailPage) {
-      const timer = window.setTimeout(() => setProblemLanguageSwitchBlocking(false), 0)
-      return () => window.clearTimeout(timer)
-    }
-  }, [isOjProblemDetailPage])
+  }, [])
 
   useEffect(() => {
     if (location.pathname !== '/') {
@@ -445,53 +330,17 @@ function App() {
       return () => window.clearTimeout(timer)
     }
 
-    const token = localStorage.getItem(TOKEN_KEY)
-    let es: EventSource | null = null
-    let fallbackInterval: ReturnType<typeof setInterval> | null = null
-    let pollingKickoffTimer: ReturnType<typeof setTimeout> | null = null
-    const startSSE = () => {
-      try {
-        es = new EventSource(`/api/messages/unread-stream?token=${encodeURIComponent(token || '')}`)
-        es.onmessage = (event) => {
-          try {
-            const payload = JSON.parse(event.data)
-            if (typeof payload.unreadCount === 'number') {
-              setUnreadMessageCount(payload.unreadCount)
-            }
-          } catch {
-            return undefined
-          }
-        }
-        es.onerror = () => {
-          es?.close()
-          es = null
-          startPolling()
-        }
-      } catch {
-        startPolling()
-      }
-    }
-
-    const startPolling = () => {
-      if (fallbackInterval) return
-      pollingKickoffTimer = window.setTimeout(() => {
-        void fetchUnreadCount()
-      }, 0)
-      fallbackInterval = setInterval(() => {
-        if (!isPollingPageVisible()) return
-        void fetchUnreadCount()
-      }, 20000)
-    }
-
-    startSSE()
+    const pollingKickoffTimer = window.setTimeout(() => {
+      void fetchUnreadCount()
+    }, 0)
+    const pollingInterval = setInterval(() => {
+      if (!isPollingPageVisible()) return
+      void fetchUnreadCount()
+    }, 20000)
 
     return () => {
-      if (pollingKickoffTimer) {
-        clearTimeout(pollingKickoffTimer)
-        pollingKickoffTimer = null
-      }
-      if (es) { es.close(); es = null }
-      if (fallbackInterval) { clearInterval(fallbackInterval); fallbackInterval = null }
+      clearTimeout(pollingKickoffTimer)
+      clearInterval(pollingInterval)
     }
   }, [currentUser, fetchUnreadCount])
 
@@ -514,7 +363,9 @@ function App() {
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height
-        document.documentElement.style.setProperty('--topbar-offset', `${height}px`)
+        const offset = `${height}px`
+        document.documentElement.style.setProperty('--topbar-offset', offset)
+        appRef.current?.style.setProperty('--topbar-offset', offset)
       }
     })
     observer.observe(topbar)
@@ -658,7 +509,9 @@ function App() {
     if (!ctx) return
 
     const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const shouldAnimate = !prefersReduced && !lowPerformanceMode
     let animationId = 0
+    let isVisible = typeof document === 'undefined' || document.visibilityState === 'visible'
     let stars: { x: number; y: number; r: number; alpha: number; twinkle: number; vx: number; vy: number; color: string }[] = []
     let microStars: { x: number; y: number; r: number; alpha: number; twinkle: number }[] = []
     let nebulae: Array<{ x: number; y: number; r: number; color: string; alpha: number }> = []
@@ -676,8 +529,8 @@ function App() {
     let height = 0
 
     const createStars = () => {
-      const density = 1800
-      const count = Math.max(240, Math.floor((width * height) / density))
+      const density = lowPerformanceMode ? 4200 : 1800
+      const count = lowPerformanceMode ? Math.max(90, Math.floor((width * height) / density)) : Math.max(240, Math.floor((width * height) / density))
       const palette = ['255, 255, 255', '196, 220, 255', '255, 236, 210', '180, 255, 240', '255, 210, 240']
       stars = Array.from({ length: count }, () => {
         const bright = Math.random() > 0.9
@@ -691,21 +544,21 @@ function App() {
           color: bright ? color : '255, 255, 255',
         }
       })
-      const microDensity = 560
-      const microCount = Math.max(360, Math.floor((width * height) / microDensity))
+      const microDensity = lowPerformanceMode ? 1800 : 560
+      const microCount = lowPerformanceMode ? Math.max(100, Math.floor((width * height) / microDensity)) : Math.max(360, Math.floor((width * height) / microDensity))
       microStars = Array.from({ length: microCount }, () => ({
         x: Math.random() * width, y: Math.random() * height,
         r: Math.random() * 0.95 + 0.15, alpha: Math.random() * 0.45 + 0.14,
         twinkle: (Math.random() * 0.013 + 0.002) * (Math.random() > 0.5 ? 1 : -1),
       }))
-      nebulae = Array.from({ length: 4 }, () => ({
+      nebulae = Array.from({ length: lowPerformanceMode ? 2 : 4 }, () => ({
         x: Math.random() * width,
         y: Math.random() * height * 0.72,
         r: Math.min(width, height) * (0.16 + Math.random() * 0.12),
         color: ['88, 160, 255', '170, 132, 255', '112, 228, 255', '255, 204, 128'][Math.floor(Math.random() * 4)],
         alpha: 0.09 + Math.random() * 0.07,
       }))
-      bodies = Array.from({ length: 4 }, (_, index) => ({
+      bodies = Array.from({ length: lowPerformanceMode ? 2 : 4 }, (_, index) => ({
         x: width * (0.18 + index * 0.32) + (Math.random() - 0.5) * width * 0.08,
         y: height * (0.18 + Math.random() * 0.28),
         r: Math.min(width, height) * (0.022 + Math.random() * 0.04),
@@ -725,6 +578,7 @@ function App() {
     }
 
     const draw = () => {
+      if (!isVisible) return
       ctx.clearRect(0, 0, width, height)
       for (const nebula of nebulae) {
         const gradient = ctx.createRadialGradient(nebula.x, nebula.y, 0, nebula.x, nebula.y, nebula.r)
@@ -784,8 +638,8 @@ function App() {
         ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2)
         ctx.fill()
       }
-      const spawnChance = prefersReduced ? 0.006 : 0.07
-      const maxMeteors = prefersReduced ? 1 : 4
+      const spawnChance = shouldAnimate ? 0.05 : 0
+      const maxMeteors = shouldAnimate ? 2 : 0
       if (meteors.length < maxMeteors && Math.random() < spawnChance) {
         const startX = Math.random() * width * 0.9 + width * 0.05
         const startY = Math.random() * height * 0.26
@@ -831,47 +685,42 @@ function App() {
         ctx.fill()
         return true
       })
-      animationId = requestAnimationFrame(draw)
+      if (shouldAnimate) {
+        animationId = requestAnimationFrame(draw)
+      }
     }
 
     resize()
     draw()
 
-    if (prefersReduced) {
-      cancelAnimationFrame(animationId)
-      return undefined
+    const handleVisibilityChange = () => {
+      isVisible = document.visibilityState === 'visible'
+      if (isVisible) {
+        cancelAnimationFrame(animationId)
+        draw()
+      }
     }
-
     window.addEventListener('resize', resize)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
       cancelAnimationFrame(animationId)
       window.removeEventListener('resize', resize)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [])
+  }, [lowPerformanceMode])
 
   const appClassName = [
     'app',
+    lowPerformanceMode ? 'low-performance-mode' : '',
     isOjDetailOrJudgePage ? 'sidebar-overlay' : '',
   ].filter(Boolean).join(' ')
 
   const initial = currentUser?.name?.trim()?.[0] || currentUser?.id?.[0] || '★'
 
-  const uiLanguageEntries: Array<{ value: UiLanguage; label: string; menuLabel: string; flag: string }> = [
-    { value: 'zh', label: '中文', menuLabel: '中文（简体）', flag: '🇨🇳' },
-    { value: 'en', label: 'English', menuLabel: 'English', flag: '🇺🇸' },
-  ]
-  const currentUiLanguageEntry = uiLanguageEntries.find((item) => item.value === uiLanguage) ?? uiLanguageEntries[0]
-  const showLanguageSwitchOverlay =
-    uiLanguage === 'en' &&
-    pageLanguageSwitchBlocking &&
-    pendingLanguageSwitchTarget !== 'zh'
-
   const contextValue = {
     currentUser,
     setCurrentUser,
-    uiLanguage,
     problemPlan,
-    problemLanguageSwitchBlocking,
     openAuth,
     addToPlan,
     removeFromPlan,
@@ -882,16 +731,9 @@ function App() {
 
   return (
     <>
-      <canvas ref={canvasRef} className="starfield" />
-      <div ref={translateRootRef}>
-        <AutoTranslateScope
-          rootRef={translateRootRef}
-          language={uiLanguage}
-          onBusyChange={handleTranslateBusyChange}
-          onSettled={handleTranslateSettled}
-        />
+      <canvas ref={canvasRef} className={`starfield ${isAuthPage ? 'auth-starfield' : ''}`} />
       {isAuthPage ? (
-        <div className="auth-shell">
+        <div className="auth-shell quiet-auth">
           <main className="auth-main">
             <Routes>
               <Route
@@ -923,45 +765,22 @@ function App() {
         <AppContext.Provider value={contextValue}>
         <div className={appClassName} ref={appRef}>
           <header className="topbar" ref={topbarRef}>
-            <div className="topbar-left" data-no-auto-translate>
+            <div className="topbar-left">
               <div className="topbar-title">星栈</div>
               <div className="topbar-badge">STARSTACK</div>
             </div>
+            <nav className="topbar-nav" aria-label="核心导航">
+              <button className={location.pathname.startsWith('/oj') ? 'active' : ''} type="button" onClick={() => navigate('/oj/list')}>
+                题库
+              </button>
+              <button className={location.pathname.startsWith('/leaderboard') ? 'active' : ''} type="button" onClick={() => navigate('/leaderboard')}>
+                排行榜
+              </button>
+              <button className={location.pathname.startsWith('/discussions') ? 'active' : ''} type="button" onClick={() => navigate('/discussions')}>
+                讨论
+              </button>
+            </nav>
             <div className="topbar-actions">
-              <div className={`lang-switch ${langMenuOpen ? 'open' : ''}`} ref={langSwitchRef} data-no-auto-translate>
-                <button
-                  type="button"
-                  className="lang-switch-trigger"
-                  aria-haspopup="menu"
-                  aria-expanded={langMenuOpen}
-                  title="切换语言 / Switch language"
-                  onClick={() => setLangMenuOpen((prev) => !prev)}
-                >
-                  <span className="lang-switch-flag" aria-hidden="true">{currentUiLanguageEntry.flag}</span>
-                  <span className="lang-switch-current">{currentUiLanguageEntry.label}</span>
-                  <svg className="lang-switch-chevron" viewBox="0 0 20 20" aria-hidden="true">
-                    <path d="M5.5 7.5 10 12l4.5-4.5" />
-                  </svg>
-                </button>
-                {langMenuOpen && (
-                  <div className="lang-switch-menu" role="menu" aria-label="Language menu">
-                    {uiLanguageEntries.map((item) => (
-                      <button
-                        key={item.value}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={uiLanguage === item.value}
-                        className={`lang-switch-item ${uiLanguage === item.value ? 'active' : ''}`}
-                        onClick={() => changeUiLanguage(item.value)}
-                      >
-                        <span className="lang-switch-flag" aria-hidden="true">{item.flag}</span>
-                        <span className="lang-switch-item-label">{item.menuLabel}</span>
-                        {uiLanguage === item.value && <span className="lang-switch-check" aria-hidden="true">{item.flag}</span>}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
               {logoutNotice && (
                 <div className="logout-notice" role="status">{logoutNotice}</div>
               )}
@@ -1013,12 +832,6 @@ function App() {
                   </span>
                   <span className="nav-label">讨论</span>
                 </button>
-                <button className={`nav-link ${location.pathname.startsWith('/starbot') ? 'active' : ''}`} onClick={() => navigate('/starbot')}>
-                  <span className="nav-icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24"><rect x="6" y="8" width="12" height="9" rx="2" /><circle cx="10" cy="12.5" r="1" /><circle cx="14" cy="12.5" r="1" /><path d="M12 8V5" /><path d="M9 5h6" /></svg>
-                  </span>
-                  <span className="nav-label">StarBot</span>
-                </button>
                 {currentUser?.isAdmin && (
                   <button className={`nav-link ${location.pathname.startsWith('/admin') ? 'active' : ''}`} onClick={() => navigate('/admin')}>
                     <span className="nav-icon" aria-hidden="true">
@@ -1036,19 +849,9 @@ function App() {
 
             <div className="content">
               <main className={`main ${location.pathname === '/' ? 'home' : ''} ${homeEnter ? 'home-enter' : ''}`}>
-                {showLanguageSwitchOverlay && (
-                  <div className="language-switch-overlay" role="status" aria-live="polite" data-no-auto-translate>
-                    <div className="language-switch-overlay-card">
-                      <span className="language-switch-spinner" aria-hidden="true" />
-                      <span>{isOjProblemDetailPage && problemLanguageSwitchBlocking ? '正在切换语言并预加载题目内容...' : '正在切换语言并预加载页面内容...'}</span>
-                    </div>
-                  </div>
-                )}
                 <Suspense fallback={<div className="oj-loading">加载中...</div>}>
                 <Routes>
                   <Route path="/" element={<HomePage />} />
-                  <Route path="/starbot" element={<StarBotPageView />} />
-                  <Route path="/starbot/get-started" element={<StarBotGettingStartedView />} />
                   <Route path="/account" element={<AccountPage />} />
                   <Route path="/leaderboard" element={<LeaderboardPage />} />
                   <Route path="/discussions" element={<DiscussionListPage />} />
@@ -1074,6 +877,32 @@ function App() {
               </main>
             </div>
           </div>
+          <nav className="mobile-tabbar" aria-label="移动端导航">
+            <button className={location.pathname === '/' ? 'active' : ''} type="button" onClick={() => navigate('/')}>
+              <span className="mobile-tabbar-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5" /><path d="M5.5 10.8V20h5v-5h3v5h5v-9.2" /></svg>
+              </span>
+              首页
+            </button>
+            <button className={location.pathname.startsWith('/oj') ? 'active' : ''} type="button" onClick={() => navigate('/oj/list')}>
+              <span className="mobile-tabbar-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M7.5 7 3.5 12l4 5" /><path d="M16.5 7 20.5 12l-4 5" /><path d="M10 17l4-10" /></svg>
+              </span>
+              题库
+            </button>
+            <button className={location.pathname.startsWith('/leaderboard') ? 'active' : ''} type="button" onClick={() => navigate('/leaderboard')}>
+              <span className="mobile-tabbar-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M8 20V10h3v10H8Z" /><path d="M14.5 20V4h3v16h-3Z" /><path d="M2 20v-6h3v6H2Z" /></svg>
+              </span>
+              榜单
+            </button>
+            <button className={location.pathname.startsWith('/discussions') ? 'active' : ''} type="button" onClick={() => navigate('/discussions')}>
+              <span className="mobile-tabbar-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
+              </span>
+              讨论
+            </button>
+          </nav>
           {showLogoutConfirm && (
             <div className="confirm-backdrop" role="dialog" aria-modal="true" onClick={closeLogoutConfirm}>
               <div className="confirm-panel" onClick={(event) => event.stopPropagation()}>
@@ -1093,7 +922,6 @@ function App() {
         </div>
         </AppContext.Provider>
       )}
-      </div>
     </>
   )
 }

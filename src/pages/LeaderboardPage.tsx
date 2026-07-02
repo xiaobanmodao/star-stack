@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
 import type { LeaderboardEntry, LeaderboardResponse } from '../types'
 import { fetchJson } from '../utils'
+import './OpsPages.css'
+
+const leaderboardTabs: { value: 'total' | 'weekly' | 'monthly'; label: string; hint: string }[] = [
+  { value: 'total', label: '总榜', hint: '长期实力' },
+  { value: 'weekly', label: '周榜', hint: '本周冲刺' },
+  { value: 'monthly', label: '月榜', hint: '月度节奏' },
+]
 
 export default function LeaderboardPage() {
   const navigate = useNavigate()
@@ -48,11 +56,9 @@ export default function LeaderboardPage() {
     void loadLeaderboard()
   }, [loadLeaderboard])
 
-  const getRankMedal = (rank: number) => {
-    if (rank === 1) return '🥇'
-    if (rank === 2) return '🥈'
-    if (rank === 3) return '🥉'
-    return rank
+  const getRankLabel = (rank: number) => {
+    if (rank <= 3) return `TOP ${rank}`
+    return `#${rank}`
   }
 
   const getRankChange = (rankChange: number | null) => {
@@ -125,152 +131,131 @@ export default function LeaderboardPage() {
   }
 
   const periodLabel = formatPeriodLabel()
+  const topUser = leaderboard[0]
+  const currentRankLabel = currentUserRank ? `#${currentUserRank.rank}` : '--'
+  const typeLabel = leaderboardTabs.find((tab) => tab.value === leaderboardType)?.label ?? '总榜'
 
   return (
-    <section className="section">
-      <div className="section-header">
-        <h2>排行榜</h2>
+    <section className="ops-page-v2 leaderboard-v2">
+      <PageHeader
+        kicker="Rank Observatory"
+        title="排行榜"
+        description="把长期实力、周榜冲刺和月度节奏放在同一个观测台里，用户能更快看到自己和头部选手的距离。"
+      />
+
+      <div className="leaderboard-hero-grid">
+        <Panel className="leaderboard-focus-card">
+          <Badge tone="info">{typeLabel}</Badge>
+          <h2>{topUser ? topUser.userName : '等待第一位上榜者'}</h2>
+          <p>
+            {topUser
+              ? `${topUser.userName} 当前位于 ${typeLabel} 第一，继续追赶可以把刷题节奏拉起来。`
+              : getEmptyMessage()}
+          </p>
+          <div className="leaderboard-focus-stats">
+            <div>
+              <strong>{leaderboardTotal}</strong>
+              <span>参与排行</span>
+            </div>
+            <div>
+              <strong>{currentRankLabel}</strong>
+              <span>我的排名</span>
+            </div>
+            <div>
+              <strong>{periodLabel || '全周期'}</strong>
+              <span>统计区间</span>
+            </div>
+          </div>
+        </Panel>
+
+        <Panel className="leaderboard-switch-card">
+          <span className="ops-section-label">榜单切换</span>
+          <div className="leaderboard-tabs-v2">
+            {leaderboardTabs.map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                className={leaderboardType === tab.value ? 'active' : ''}
+                onClick={() => {
+                  setLeaderboardType(tab.value)
+                  setLeaderboardPage(1)
+                  setLeaderboardPageInput('1')
+                }}
+              >
+                <strong>{tab.label}</strong>
+                <span>{tab.hint}</span>
+              </button>
+            ))}
+          </div>
+        </Panel>
       </div>
 
-      <div className="leaderboard-filters">
-        <button
-          className={`filter-tab ${leaderboardType === 'total' ? 'active' : ''}`}
-          onClick={() => {
-            setLeaderboardType('total')
-            setLeaderboardPage(1)
-            setLeaderboardPageInput('1')
-          }}
-        >
-          <span className="filter-icon">🏆</span>
-          <span>总榜</span>
-        </button>
-        <button
-          className={`filter-tab ${leaderboardType === 'weekly' ? 'active' : ''}`}
-          onClick={() => {
-            setLeaderboardType('weekly')
-            setLeaderboardPage(1)
-            setLeaderboardPageInput('1')
-          }}
-        >
-          <span className="filter-icon">📅</span>
-          <span>周榜</span>
-        </button>
-        <button
-          className={`filter-tab ${leaderboardType === 'monthly' ? 'active' : ''}`}
-          onClick={() => {
-            setLeaderboardType('monthly')
-            setLeaderboardPage(1)
-            setLeaderboardPageInput('1')
-          }}
-        >
-          <span className="filter-icon">🗓</span>
-          <span>月榜</span>
-        </button>
-      </div>
-
-      {periodLabel && <div className="leaderboard-period">{periodLabel}</div>}
-
-      {loading ? (
-        <div>{Array.from({ length: 10 }, (_, index) => <div key={index} className="skeleton skeleton-row" />)}</div>
-      ) : leaderboard.length === 0 ? (
-        <div className="leaderboard-empty">
-          <div className="leaderboard-empty-icon">{leaderboardType === 'total' ? '🏆' : leaderboardType === 'weekly' ? '📅' : '🗓'}</div>
-          <p>{getEmptyMessage()}</p>
+      <Panel className="leaderboard-list-panel">
+        <div className="ops-panel-head">
+          <div>
+            <Badge tone="info">Leaderboard</Badge>
+            <h2>{typeLabel}</h2>
+          </div>
+          <span>
+            {periodLabel ? `${periodLabel} · ` : ''}
+            共 {leaderboardTotal} 位用户
+          </span>
         </div>
-      ) : (
-        <>
-          <div className="leaderboard-meta">
-            共有 {leaderboardTotal} 位用户参与{leaderboardType === 'weekly' ? '本周' : leaderboardType === 'monthly' ? '本月' : ''}排行
+
+        {loading ? (
+          <div className="ops-skeleton-list">
+            {Array.from({ length: 8 }, (_, index) => <div key={index} className="skeleton skeleton-row" />)}
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="leaderboard-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '80px' }}>排名</th>
-                  <th>用户</th>
-                  {leaderboardType === 'total' ? (
-                    <>
-                      <th style={{ textAlign: 'right' }}>等级分</th>
-                      <th style={{ textAlign: 'right' }}>解题数</th>
-                    </>
-                  ) : (
-                    <th style={{ textAlign: 'right' }}>通过题目</th>
-                  )}
-                  <th style={{ textAlign: 'center', width: '100px' }}>变化</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leaderboard.map((user) => (
-                  <tr
-                    key={user.userId}
-                    className={`leaderboard-row ${currentUserRank?.userId === user.userId ? 'current-user' : ''} ${user.rank <= 3 ? `top-${user.rank}` : ''}`}
-                  >
-                    <td>
-                      <span className="rank-medal">{getRankMedal(user.rank)}</span>
-                    </td>
-                    <td>
-                      <div
-                        className="leaderboard-user-cell"
-                        style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
-                        onClick={() => navigate(`/account?user=${user.userId}`)}
-                      >
-                        <div
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: '50%',
-                            background: user.avatar ? 'transparent' : 'rgba(79, 195, 247, 0.25)',
-                            display: 'grid',
-                            placeItems: 'center',
-                            fontSize: '14px',
-                            fontWeight: 600,
-                            color: '#d8f2ff',
-                            overflow: 'hidden',
-                            flexShrink: 0
-                          }}
-                        >
-                          {user.avatar ? (
-                            <img src={user.avatar} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : (
-                            user.userName.charAt(0).toUpperCase()
-                          )}
-                        </div>
-                        <div>
-                          <div className="leaderboard-user-name" data-user-name style={{ fontWeight: 500 }}>{user.userName}</div>
-                          <div className="leaderboard-user-id" data-user-id style={{ fontSize: '12px', color: 'var(--muted)' }}>@{user.userId}</div>
-                        </div>
-                      </div>
-                    </td>
-                    {leaderboardType === 'total' ? (
-                      <>
-                        <td style={{ textAlign: 'right', fontWeight: 600, color: '#4fc3f7' }}>
-                          {user.value?.toFixed(1)}
-                        </td>
-                        <td style={{ textAlign: 'right', color: 'var(--muted)' }}>
-                          {(user as LeaderboardEntry & { solvedCount?: number }).solvedCount ?? '-'}
-                        </td>
-                      </>
+        ) : leaderboard.length === 0 ? (
+          <EmptyState title="暂无排行数据" description={getEmptyMessage()} />
+        ) : (
+          <div className="leaderboard-list-v2">
+            <div className="leaderboard-row-v2 head">
+              <span>排名</span>
+              <span>用户</span>
+              <span>{leaderboardType === 'total' ? '等级分' : '通过题目'}</span>
+              <span>{leaderboardType === 'total' ? '解题数' : '周期'}</span>
+              <span>变化</span>
+            </div>
+            {leaderboard.map((user) => (
+              <button
+                key={user.userId}
+                type="button"
+                className={`leaderboard-row-v2 ${currentUserRank?.userId === user.userId ? 'current-user' : ''} ${user.rank <= 3 ? `top-${user.rank}` : ''}`}
+                onClick={() => navigate(`/account?user=${user.userId}`)}
+              >
+                <span className="rank-token">{getRankLabel(user.rank)}</span>
+                <span className="leaderboard-user-cell">
+                  <span className="leaderboard-avatar">
+                    {user.avatar ? (
+                      <img src={user.avatar} alt="" loading="lazy" />
                     ) : (
-                      <td style={{ textAlign: 'right', fontWeight: 600, color: '#4fc3f7' }}>
-                        {user.value}
-                      </td>
+                      user.userName.charAt(0).toUpperCase()
                     )}
-                    <td style={{ textAlign: 'center' }}>
-                      {getRankChange(user.rankChange)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                  </span>
+                  <span>
+                    <strong className="leaderboard-user-name" data-user-name>{user.userName}</strong>
+                    <em className="leaderboard-user-id" data-user-id>@{user.userId}</em>
+                  </span>
+                </span>
+                <span className="leaderboard-value">
+                  {leaderboardType === 'total' ? user.value?.toFixed(1) : user.value}
+                </span>
+                <span className="leaderboard-muted-value">
+                  {leaderboardType === 'total' ? (user.solvedCount ?? '-') : (periodLabel || typeLabel)}
+                </span>
+                <span>{getRankChange(user.rankChange)}</span>
+              </button>
+            ))}
           </div>
-        </>
-      )}
+        )}
+      </Panel>
 
       {!loading && leaderboardTotalPages > 1 && (
         <div className="pagination">
-          <button className="pagination-btn" onClick={() => handleLeaderboardPageChange(leaderboardPage - 1)} disabled={leaderboardPage === 1}>
+          <Button variant="secondary" size="sm" onClick={() => handleLeaderboardPageChange(leaderboardPage - 1)} disabled={leaderboardPage === 1}>
             上一页
-          </button>
+          </Button>
 
           <div className="pagination-numbers">
             {renderLeaderboardPageNumbers().map((page, index) => (
@@ -288,9 +273,9 @@ export default function LeaderboardPage() {
             ))}
           </div>
 
-          <button className="pagination-btn" onClick={() => handleLeaderboardPageChange(leaderboardPage + 1)} disabled={leaderboardPage === leaderboardTotalPages}>
+          <Button variant="secondary" size="sm" onClick={() => handleLeaderboardPageChange(leaderboardPage + 1)} disabled={leaderboardPage === leaderboardTotalPages}>
             下一页
-          </button>
+          </Button>
 
           <div className="pagination-jump">
             <span>跳转到</span>
@@ -301,7 +286,7 @@ export default function LeaderboardPage() {
               onChange={(event) => setLeaderboardPageInput(event.target.value)}
               onKeyDown={(event) => event.key === 'Enter' && handleLeaderboardPageInputSubmit()}
             />
-            <button className="pagination-go" onClick={handleLeaderboardPageInputSubmit}>前往</button>
+            <Button variant="ghost" size="sm" onClick={handleLeaderboardPageInputSubmit}>前往</Button>
           </div>
         </div>
       )}

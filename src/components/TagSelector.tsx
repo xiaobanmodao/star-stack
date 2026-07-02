@@ -1,4 +1,4 @@
-import { useMemo, useState, type MouseEvent } from 'react'
+import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { PRESET_TAGS } from '../constants'
 
 type TagSelectorProps = {
@@ -9,6 +9,15 @@ type TagSelectorProps = {
 export default function TagSelector({ selectedTags, onTagsChange }: TagSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false)
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen])
 
   const filteredTags = useMemo(() => {
     if (!searchQuery.trim()) {

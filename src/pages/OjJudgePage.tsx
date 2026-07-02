@@ -1,11 +1,155 @@
 import { useState, useEffect, useCallback, useRef, useMemo, type CSSProperties } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
+import { useAppContext } from '../context/AppContext'
 import { fetchJson } from '../utils'
 import { TOKEN_KEY } from '../constants'
-import type { OjSubmission, SubmissionResponse } from '../types'
+import type { Achievement, OjSubmission, ProfileStatsResponse, SubmissionResponse } from '../types'
+import { Badge, Button, PageHeader, Panel } from '../components/ui'
+import './OjJudgePage.css'
+
+type JudgeCelebrationStats = {
+  acceptedCount?: number
+  solvedProblems?: number
+  currentStreak?: number
+  rank?: number
+  acceptanceRate?: number
+}
+
+type JudgeStage = 'idle' | 'running' | 'success' | 'fail'
+
+type JudgeStatusMeta = {
+  label: string
+  shortLabel: string
+  tone: 'neutral' | 'success' | 'warning' | 'danger' | 'info'
+  kind: 'idle' | 'running' | 'accepted' | 'wrong' | 'tle' | 'runtime' | 'compile'
+  title: string
+  description: string
+}
+
+const getAchievementDescription = (achievement: Achievement) =>
+  achievement.description || achievement.desc || ''
+
+const getJudgeStatusMeta = (status: string | undefined, stage: JudgeStage): JudgeStatusMeta => {
+  if (stage === 'running') {
+    return {
+      label: '评测中',
+      shortLabel: 'RUN',
+      tone: 'info',
+      kind: 'running',
+      title: '正在运行测试点',
+      description: '系统正在逐个执行测试点，结果会实时出现在下方。',
+    }
+  }
+
+  if (!status) {
+    return {
+      label: '等待提交',
+      shortLabel: 'WAIT',
+      tone: 'neutral',
+      kind: 'idle',
+      title: '等待提交数据',
+      description: '请从题目页发起提交，或打开已有提交记录查看结果。',
+    }
+  }
+
+  if (status === 'Accepted') {
+    return {
+      label: 'Accepted',
+      shortLabel: 'AC',
+      tone: 'success',
+      kind: 'accepted',
+      title: '通过了，解题航线稳定入轨',
+      description: '这次提交已经通过当前题目的测试点，可以回到题目复盘，也可以查看成长记录。',
+    }
+  }
+
+  if (status === 'Time Limit Exceeded') {
+    return {
+      label: 'Time Limit Exceeded',
+      shortLabel: 'TLE',
+      tone: 'warning',
+      kind: 'tle',
+      title: '运行超时，先检查复杂度',
+      description: '优先确认循环边界、递归状态和数据结构复杂度，必要时用极限数据压测。',
+    }
+  }
+
+  if (status === 'Runtime Error') {
+    return {
+      label: 'Runtime Error',
+      shortLabel: 'RE',
+      tone: 'danger',
+      kind: 'runtime',
+      title: '运行时错误，先排查边界数据',
+      description: '重点检查数组越界、空指针、除零、递归爆栈和输入读取是否匹配。',
+    }
+  }
+
+  if (status === 'Compile Error') {
+    return {
+      label: 'Compile Error',
+      shortLabel: 'CE',
+      tone: 'danger',
+      kind: 'compile',
+      title: '编译失败，先看第一条错误',
+      description: '编译器通常从第一处错误开始连锁报错，先修第一条最有效。',
+    }
+  }
+
+  return {
+    label: status === 'Wrong Answer' ? 'Wrong Answer' : status,
+    shortLabel: status === 'Wrong Answer' ? 'WA' : 'ERR',
+    tone: 'danger',
+    kind: 'wrong',
+    title: '答案不匹配，先定位第一个失败点',
+    description: '建议从样例、边界值和输出格式开始排查，再对照第一个失败测试点的信息。',
+  }
+}
+
+const getJudgeAdvice = (submission: OjSubmission | null): string[] => {
+  if (!submission) return ['从题目页重新提交代码，或打开一条历史提交记录查看详情。']
+
+  if (submission.status === 'Accepted') {
+    return [
+      '回到题目页复盘关键思路，把容易错的边界写进笔记。',
+      '如果这题有讨论，可以看看其他做法，补充自己的算法工具箱。',
+    ]
+  }
+
+  if (submission.status === 'Compile Error') {
+    return [
+      '先读编译信息的第一行和第一个行号，通常那里才是根因。',
+      '确认选择的语言和代码模板一致，例如 C++17、Python 3、Java 17。',
+      '检查头文件、类名、main 函数和分号这类低成本问题。',
+    ]
+  }
+
+  if (submission.status === 'Time Limit Exceeded') {
+    return [
+      '估算最坏数据范围下的时间复杂度，先看是否存在 O(n^2) 或指数级分支。',
+      '检查循环是否可能不收敛，递归是否缺少剪枝或记忆化。',
+      '用自定义输入构造大数据，观察耗时集中在哪一段逻辑。',
+    ]
+  }
+
+  if (submission.status === 'Runtime Error') {
+    return [
+      '检查数组下标、字符串访问、空容器取值、除零和递归深度。',
+      '确认输入读取数量和题目格式一致，避免读空或错位。',
+      '把边界样例单独运行，例如 n=0、n=1、最大值和重复值。',
+    ]
+  }
+
+  return [
+    '先用样例和最小反例复现，再扩大到边界数据。',
+    '确认输出格式是否多空格、少换行或精度不满足要求。',
+    '如果算法思路没问题，优先检查初始化、排序方向和比较条件。',
+  ]
+}
 
 export default function OjJudgePage() {
   const navigate = useNavigate()
+  const { currentUser } = useAppContext()
   const params = useParams()
   const location = useLocation()
   const locationState = (location.state || {}) as {
@@ -17,11 +161,13 @@ export default function OjJudgePage() {
   const submissionId = params.id ? Number(params.id) : null
   const [submission, setSubmission] = useState<OjSubmission | null>(null)
   const [error, setError] = useState('')
-  const [stage, setStage] = useState<'idle' | 'running' | 'success' | 'fail'>('idle')
+  const [stage, setStage] = useState<JudgeStage>('idle')
   const [showResults, setShowResults] = useState(false)
   const submitRef = useRef(false)
   const [streamResults, setStreamResults] = useState<{ index: number; status: string; message: string; timeMs: number }[]>([])
   const [totalCases, setTotalCases] = useState(0)
+  const [celebrationStats, setCelebrationStats] = useState<JudgeCelebrationStats | null>(null)
+  const [recentAchievements, setRecentAchievements] = useState<Achievement[]>([])
 
   const loadSubmission = useCallback(async (idValue: number) => {
     const { response, data } = await fetchJson<SubmissionResponse>(`/api/oj/submissions/${idValue}`)
@@ -47,6 +193,8 @@ export default function OjJudgePage() {
     setShowResults(false)
     setStreamResults([])
     setTotalCases(0)
+    setCelebrationStats(null)
+    setRecentAchievements([])
 
     try {
       const token = localStorage.getItem(TOKEN_KEY)
@@ -151,6 +299,44 @@ export default function OjJudgePage() {
     submitJudge,
   ])
 
+  useEffect(() => {
+    if (stage !== 'success' || !submission || !currentUser?.id) return
+
+    let cancelled = false
+    ;(async () => {
+      const [profileRes, achievementsRes] = await Promise.all([
+        fetchJson<ProfileStatsResponse>(`/api/user/profile/${currentUser.id}`),
+        fetchJson<{ achievements: Achievement[] }>(`/api/user/achievements/${currentUser.id}`),
+      ])
+
+      if (cancelled) return
+
+      if (profileRes.response.ok && profileRes.data?.stats) {
+        setCelebrationStats({
+          acceptedCount: profileRes.data.stats.acceptedCount,
+          solvedProblems: profileRes.data.stats.solvedProblems,
+          currentStreak: profileRes.data.stats.currentStreak,
+          rank: profileRes.data.stats.rank,
+          acceptanceRate: profileRes.data.stats.acceptanceRate,
+        })
+      }
+
+      if (achievementsRes.response.ok && achievementsRes.data?.achievements) {
+        const baseTime = submission.createdAt ? new Date(submission.createdAt).getTime() : Date.now()
+        const unlocked = achievementsRes.data.achievements.filter((achievement) => {
+          if (!achievement.unlockedAt) return false
+          const unlockedTime = new Date(achievement.unlockedAt).getTime()
+          return Math.abs(unlockedTime - baseTime) <= 2 * 60 * 1000
+        })
+        setRecentAchievements(unlocked.slice(0, 3))
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentUser?.id, stage, submission])
+
   const results = submission?.results || []
   const animClass =
     stage === 'running' ? 'launch' : stage === 'success' ? 'success' : stage === 'fail' ? 'fail' : ''
@@ -170,80 +356,211 @@ export default function OjJudgePage() {
     []
   )
 
+  const problemId = submission?.problemId || locationState.problemId
+  const problemTitle = submission?.problemTitle || locationState.problemTitle || (problemId ? `P${problemId}` : '提交结果')
+  const statusMeta = getJudgeStatusMeta(submission?.status, stage)
+  const passedCases = results.filter((item) => item.status === 'Accepted').length
+  const firstFailedCase = results.find((item) => item.status !== 'Accepted')
+  const resultCaseCount = results.length || totalCases
+  const visibleProgress = resultCaseCount > 0
+    ? Math.round(((stage === 'running' ? streamResults.length : passedCases) / resultCaseCount) * 100)
+    : 0
+  const adviceItems = getJudgeAdvice(submission)
+  const resultSummary = [
+    {
+      label: '得分',
+      value: submission?.score !== undefined ? `${submission.score} / 100` : stage === 'running' ? '计算中' : '--',
+    },
+    {
+      label: '测试点',
+      value: resultCaseCount > 0 ? `${stage === 'running' ? streamResults.length : passedCases} / ${resultCaseCount}` : '--',
+    },
+    {
+      label: '运行耗时',
+      value: submission?.timeMs !== undefined && submission.timeMs !== null ? `${submission.timeMs} ms` : '--',
+    },
+    {
+      label: '语言',
+      value: submission?.language || locationState.language || '--',
+    },
+  ]
+
   return (
-    <section className="section">
-      <div className="section-header">
-        <h2>评测结果</h2>
-        {submission?.problemId && (
-          <button
-            className="primary"
-            onClick={() => navigate(`/oj/p${submission.problemId}`)}
-          >
-            返回题目
-          </button>
+    <section className={`section judge-page-v2 judge-page-${statusMeta.kind}`}>
+      <PageHeader
+        kicker="Judge Result"
+        title={problemTitle}
+        description="提交后的状态、测试点和调试线索集中在这里，方便你快速决定下一步。"
+        actions={(
+          <>
+            {problemId && (
+              <Button variant="primary" onClick={() => navigate(`/oj/p${problemId}`)}>
+                返回题目
+              </Button>
+            )}
+            <Button variant="ghost" onClick={() => navigate('/oj/submissions')}>
+              提交记录
+            </Button>
+          </>
         )}
-      </div>
+      />
       {error && <div className="auth-error">{error}</div>}
-      <div className="judge-hero">
-        <div className={`submit-anim ${animClass}`}>
-          <div className="rocket">
-            <div className="rocket-body">
-              <div className="rocket-window" />
-              <div className="rocket-fin left" />
-              <div className="rocket-fin right" />
+
+      <Panel className="judge-overview" elevated>
+        <div className={`judge-visual ${statusMeta.kind}`}>
+          <div className={`submit-anim ${animClass}`}>
+            <div className="rocket">
+              <div className="rocket-body">
+                <div className="rocket-window" />
+                <div className="rocket-fin left" />
+                <div className="rocket-fin right" />
+              </div>
+              <div className="rocket-flame" />
+              <div className="rocket-trail" />
             </div>
-            <div className="rocket-flame" />
-            <div className="rocket-trail" />
+            <div className="fireworks">
+              <div className="firework-core" />
+              <div className="firework-ring ring-a" />
+              <div className="firework-ring ring-b" />
+              <div className="firework-halo" />
+              {fireworkParticles.map((particle: { dx: number; dy: number; size: number; delay: number; hue: number }, index: number) => (
+                <span
+                  key={index}
+                  style={
+                    {
+                      '--dx': `${particle.dx}px`,
+                      '--dy': `${particle.dy}px`,
+                      '--size': `${particle.size}px`,
+                      '--delay': `${particle.delay}s`,
+                      '--hue': particle.hue,
+                    } as CSSProperties
+                  }
+                />
+              ))}
+            </div>
+            <div className="crash-smoke">
+              <span />
+              <span />
+              <span />
+            </div>
+            {stage === 'success' && showResults && (
+              <div className="judge-result-text accepted">ACCEPTED</div>
+            )}
+            {stage === 'fail' && showResults && (
+              <div className="judge-result-text wrong">{statusMeta.shortLabel}</div>
+            )}
           </div>
-          <div className="fireworks">
-            <div className="firework-core" />
-            <div className="firework-ring ring-a" />
-            <div className="firework-ring ring-b" />
-            <div className="firework-halo" />
-            {fireworkParticles.map((particle: { dx: number; dy: number; size: number; delay: number; hue: number }, index: number) => (
-              <span
-                key={index}
-                style={
-                  {
-                    '--dx': `${particle.dx}px`,
-                    '--dy': `${particle.dy}px`,
-                    '--size': `${particle.size}px`,
-                    '--delay': `${particle.delay}s`,
-                    '--hue': particle.hue,
-                  } as CSSProperties
-                }
-              />
+          <div className="judge-orbit-label">{statusMeta.shortLabel}</div>
+        </div>
+
+        <div className="judge-overview-main">
+          <Badge tone={statusMeta.tone}>{statusMeta.label}</Badge>
+          <h2>{statusMeta.title}</h2>
+          <p>{statusMeta.description}</p>
+          {submission?.message && <div className="judge-status-message">{submission.message}</div>}
+          <div className="judge-progress-line" aria-label={`评测进度 ${visibleProgress}%`}>
+            <span style={{ width: `${visibleProgress}%` }} />
+          </div>
+          <div className="judge-summary-grid">
+            {resultSummary.map((item) => (
+              <div key={item.label} className="judge-summary-card">
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
             ))}
           </div>
-          <div className="crash-smoke">
-            <span />
-            <span />
-            <span />
-          </div>
-          {stage === 'success' && showResults && (
-            <div className="judge-result-text accepted">ACCEPTED</div>
-          )}
-          {stage === 'fail' && showResults && (
-            <div className="judge-result-text wrong">WRONG</div>
-          )}
+          {!submission && stage === 'running' && <div className="judge-status-wait">正在判题，测试点会陆续点亮。</div>}
         </div>
-        <div className="judge-status">
-          <div className="judge-status-title">状态</div>
-          <div className="judge-status-main">
-            {submission?.status || (stage === 'running' ? '评测中' : '等待提交')}
+      </Panel>
+
+      {showResults && stage !== 'success' && (
+        <Panel className="judge-debug-panel">
+          <div className="judge-debug-main">
+            <div>
+              <div className="judge-panel-kicker">Debug Guide</div>
+              <h3>建议下一步</h3>
+            </div>
+            <div className="judge-advice-list">
+              {adviceItems.map((item) => (
+                <div key={item} className="judge-advice-item">{item}</div>
+              ))}
+            </div>
           </div>
-          {submission?.message && <div className="judge-status-message">{submission.message}</div>}
-          {submission?.score !== undefined && (
-            <div className={`judge-status-score ${submission.score === 100 ? 'score-perfect' : 'score-partial'}`}>
-              得分: {submission.score}
+          {firstFailedCase && (
+            <div className="judge-first-fail">
+              <span>第一个失败点</span>
+              <strong>#{firstFailedCase.index + 1} · {firstFailedCase.status}</strong>
+              {firstFailedCase.timeMs !== undefined && <em>{firstFailedCase.timeMs}ms</em>}
+              {firstFailedCase.message && <p>{firstFailedCase.message}</p>}
             </div>
           )}
-          {!submission && stage === 'running' && <div className="judge-status-wait">正在判题</div>}
+        </Panel>
+      )}
+
+      {stage === 'success' && submission && (
+        <div className="judge-celebration-panel">
+          <div className="judge-celebration-copy">
+            <div className="judge-celebration-kicker">本次通过</div>
+            <h3>{submission.score === 100 ? '这次提交非常干净，已经稳稳拿下。' : '这次提交通过了，继续保持这个节奏。'}</h3>
+            <p>
+              {submission.timeMs !== undefined && submission.timeMs !== null
+                ? `本次运行用时 ${submission.timeMs}ms。`
+                : '这次提交已经成功进入通过记录。'}
+              {celebrationStats?.currentStreak ? ` 你当前已经连续做题 ${celebrationStats.currentStreak} 天。` : ''}
+            </p>
+          </div>
+          <div className="judge-celebration-stats">
+            <div className="judge-celebration-stat">
+              <span>通过次数</span>
+              <strong>{celebrationStats?.acceptedCount ?? '--'}</strong>
+            </div>
+            <div className="judge-celebration-stat">
+              <span>已解题目</span>
+              <strong>{celebrationStats?.solvedProblems ?? '--'}</strong>
+            </div>
+            <div className="judge-celebration-stat">
+              <span>当前连续天数</span>
+              <strong>{celebrationStats?.currentStreak ?? '--'}</strong>
+            </div>
+            <div className="judge-celebration-stat">
+              <span>当前通过率</span>
+              <strong>{celebrationStats?.acceptanceRate !== undefined ? `${celebrationStats.acceptanceRate.toFixed(1)}%` : '--'}</strong>
+            </div>
+          </div>
+          <div className="judge-celebration-actions">
+            {submission.problemId && (
+              <Button variant="ghost" onClick={() => navigate(`/oj/p${submission.problemId}`)}>
+                返回题目
+              </Button>
+            )}
+            <Button variant="ghost" onClick={() => navigate('/oj/submissions')}>
+              查看我的提交
+            </Button>
+            <Button variant="primary" onClick={() => navigate('/account')}>
+              查看成长记录
+            </Button>
+          </div>
+          {recentAchievements.length > 0 && (
+            <div className="judge-achievement-strip">
+              <div className="judge-achievement-strip-title">刚刚解锁的成就</div>
+              <div className="judge-achievement-list">
+                {recentAchievements.map((achievement) => (
+                  <div key={`${achievement.id}-${achievement.unlockedAt}`} className="judge-achievement-card">
+                    <div className="judge-achievement-icon" aria-hidden="true">{achievement.icon || '🏅'}</div>
+                    <div>
+                      <div className="judge-achievement-name">{achievement.name}</div>
+                      <div className="judge-achievement-desc">{getAchievementDescription(achievement)}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {stage === 'running' && totalCases > 0 && (
-        <div className="sse-progress">
+        <Panel className="sse-progress judge-live-progress">
           <div className="sse-progress-bar">
             <div className="sse-progress-fill" style={{ width: `${(streamResults.length / totalCases) * 100}%` }} />
           </div>
@@ -256,12 +573,18 @@ export default function OjJudgePage() {
               <span key={`pending-${i}`} className="sse-tc-dot pending" />
             ))}
           </div>
-        </div>
+        </Panel>
       )}
 
       {showResults && (
-        <div className="submit-results">
-          <div className="submit-results-title">测试点结果</div>
+        <Panel className="submit-results judge-results-panel">
+          <div className="judge-panel-head">
+            <div>
+              <div className="judge-panel-kicker">Test Cases</div>
+              <h3>测试点结果</h3>
+            </div>
+            <span>{passedCases} / {results.length || 0} Accepted</span>
+          </div>
           <div className="submit-results-grid">
             {results.length === 0 && <div className="admin-empty">暂无测试点结果</div>}
             {results.map((item) => (
@@ -269,24 +592,26 @@ export default function OjJudgePage() {
                 key={`${item.index}-${item.status}`}
                 className={`submit-result ${item.status === 'Accepted' ? 'ok' : 'bad'}`}
               >
-                <div>测试点 {item.index + 1}</div>
-                <div>{item.status}</div>
-                {item.timeMs !== undefined && <div>{item.timeMs}ms</div>}
+                <div className="submit-result-index">#{item.index + 1}</div>
+                <div className="submit-result-status">{item.status}</div>
+                {item.timeMs !== undefined && <div className="submit-result-time">{item.timeMs}ms</div>}
                 {item.message && <div className="submit-result-message">{item.message}</div>}
               </div>
             ))}
           </div>
           {submission?.canViewCode && submission?.code && (
-            <>
-              <div className="submit-results-title" style={{ marginTop: '20px' }}>
-                源代码
+            <div className="judge-code-panel">
+              <div className="judge-panel-head">
+                <div>
+                  <div className="judge-panel-kicker">Source</div>
+                  <h3>源代码</h3>
+                </div>
               </div>
               <pre className="submission-code">{submission.code}</pre>
-            </>
+            </div>
           )}
-        </div>
+        </Panel>
       )}
     </section>
   )
 }
-

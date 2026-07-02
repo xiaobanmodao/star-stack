@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useAppContext } from '../context/AppContext'
 import type {
   Achievement,
   AchievementsResponse,
+  DifficultyStats,
   HeatmapData,
   HeatmapResponse,
   ProfileStats,
@@ -10,6 +11,27 @@ import type {
   UserResponse,
 } from '../types'
 import { fetchJson } from '../utils'
+import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import './AccountPage.css'
+
+const getDifficultySolved = (value: DifficultyStats) => value.solved ?? 0
+const getDifficultyTried = (value: DifficultyStats) => value.tried ?? value.solved ?? 0
+
+const getHeatmapLevel = (count: number) => {
+  if (count === 0) return 0
+  if (count <= 2) return 1
+  if (count <= 5) return 2
+  if (count <= 10) return 3
+  return 4
+}
+
+const getRecentActiveDays = (heatmap: HeatmapData[]) =>
+  heatmap.slice(-30).filter((day) => day.count > 0).length
+
+const getRatingDelta = (history: { date: string; rating: number }[]) => {
+  if (history.length < 2) return 0
+  return history[history.length - 1].rating - history[0].rating
+}
 
 export default function AccountPage() {
   const { currentUser, setCurrentUser, openAuth } = useAppContext()
@@ -113,41 +135,44 @@ export default function AccountPage() {
 
   if (!currentUser) {
     return (
-      <section className="section">
-        <div className="section-header">
-          <h2>个人中心</h2>
-        </div>
-        <p>登录后可以查看做题数据、成长轨迹和个人成就。</p>
-        <button className="primary" onClick={() => openAuth('login')}>
-          去登录
-        </button>
+      <section className="section profile-v2 profile-guest">
+        <PageHeader
+          kicker="Star Profile"
+          title="个人中心"
+          description="登录后可以查看做题数据、成长轨迹和个人成就。"
+          actions={<Button variant="primary" onClick={() => openAuth('login')}>去登录</Button>}
+        />
+        <EmptyState
+          title="还没有连接到你的星栈账号"
+          description="登录后，这里会展示你的刷题航线、连续天数、成就和 Rating 变化。"
+        />
       </section>
     )
   }
 
   if (loading) {
     return (
-      <div className="profile-container">
+      <div className="profile-container profile-v2">
         <div className="profile-left">
-          <div className="profile-card">
+          <Panel className="profile-card">
             <div className="skeleton skeleton-avatar" style={{ width: 80, height: 80, margin: '0 auto 12px' }} />
             <div className="skeleton skeleton-title" style={{ margin: '0 auto 8px' }} />
             <div className="skeleton skeleton-line" style={{ width: '40%', margin: '0 auto' }} />
-          </div>
+          </Panel>
         </div>
         <div className="profile-right">
           <div className="stats-grid">
             {[1, 2, 3, 4, 5, 6].map((item) => (
-              <div key={item} className="stat-card">
+              <Panel key={item} className="stat-card">
                 <div className="skeleton skeleton-line" style={{ width: '50%', height: 20 }} />
                 <div className="skeleton skeleton-line" style={{ width: '70%', height: 14 }} />
-              </div>
+              </Panel>
             ))}
           </div>
-          <div className="heatmap-container" style={{ minHeight: '200px' }}>
+          <Panel className="heatmap-container" style={{ minHeight: '200px' }}>
             <div className="heatmap-title">做题热力图</div>
             <div className="skeleton" style={{ height: 120, marginTop: 12 }} />
-          </div>
+          </Panel>
         </div>
       </div>
     )
@@ -155,30 +180,83 @@ export default function AccountPage() {
 
   const stats = profileStats?.stats || {}
   const difficultyStats = profileStats?.difficultyStats || {}
+  const solvedProblems = stats.solvedProblems ?? stats.totalSolved ?? 0
+  const totalTried = stats.totalTried ?? solvedProblems
+  const acceptedCount = stats.acceptedCount ?? 0
+  const totalSubmissions = stats.totalSubmissions ?? 0
+  const acceptanceRate = stats.acceptanceRate ?? 0
+  const recentActiveDays = getRecentActiveDays(heatmapData)
+  const latestRating = ratingHistory.at(-1)?.rating
+  const ratingDelta = getRatingDelta(ratingHistory)
+  const difficultyEntries = Object.entries(difficultyStats)
+  const maxDifficultySolved = Math.max(...difficultyEntries.map(([, item]) => getDifficultySolved(item)), 1)
+  const starNodes = [
+    ...difficultyEntries.slice(0, 7).map(([difficulty, item], index) => ({
+      id: `difficulty-${difficulty}`,
+      label: difficulty,
+      value: getDifficultySolved(item),
+      x: 14 + ((index * 23) % 72),
+      y: 20 + ((index * 31) % 58),
+      level: Math.min(4, Math.max(1, Math.ceil((getDifficultySolved(item) / maxDifficultySolved) * 4))),
+    })),
+    ...achievements.slice(0, 4).map((achievement, index) => ({
+      id: `achievement-${achievement.id}`,
+      label: achievement.name,
+      value: 1,
+      x: 18 + ((index * 29 + 12) % 68),
+      y: 24 + ((index * 19 + 8) % 52),
+      level: 4,
+    })),
+  ].slice(0, 10)
+  const visibleStarNodes = starNodes.length > 0
+    ? starNodes
+    : [{ id: 'empty-course', label: '等待启航', value: 0, x: 50, y: 48, level: 1 }]
 
   return (
-    <div className="profile-container">
-      <div className="profile-left">
-        <div className="profile-card">
-          <div
-            className={`profile-avatar-large ${uploading ? 'uploading' : ''}`}
-            onClick={handleAvatarClick}
-            style={{ cursor: 'pointer' }}
-            title="点击更换头像"
-          >
-            {currentUser.avatar ? (
-              <img src={currentUser.avatar} alt="头像" loading="lazy" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
-            ) : (
-              initial
-            )}
+    <div className="profile-container profile-v2">
+      <aside className="profile-left">
+        <Panel className="profile-card profile-identity-card">
+          <div className="profile-avatar-shell">
+            <div
+              className={`profile-avatar-large ${uploading ? 'uploading' : ''}`}
+              onClick={handleAvatarClick}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') handleAvatarClick()
+              }}
+              style={{ cursor: 'pointer' }}
+              title="点击更换头像"
+            >
+              {currentUser.avatar ? (
+                <img src={currentUser.avatar} alt="头像" loading="lazy" />
+              ) : (
+                initial
+              )}
+            </div>
           </div>
-          <div className="account-name" data-user-name style={{ fontSize: '20px', fontWeight: 600 }}>{currentUser.name}</div>
-          <div className="account-id" data-user-id style={{ color: 'var(--muted)' }}>@{currentUser.id}</div>
+          <div className="profile-user-copy">
+            <div className="account-name" data-user-name>{currentUser.name}</div>
+            <div className="account-id" data-user-id>@{currentUser.id}</div>
+          </div>
           {stats.rank && stats.rank > 0 && (
-            <div className="profile-rank-badge">全站排名 #{stats.rank}</div>
+            <Badge tone="info" className="profile-rank-badge">全站排名 #{stats.rank}</Badge>
           )}
-          {uploadError && <div className="auth-error" style={{ marginTop: '8px', fontSize: '12px' }}>{uploadError}</div>}
-          {uploading && <div style={{ color: 'var(--muted)', marginTop: '8px', fontSize: '12px' }}>正在上传头像...</div>}
+          <div className="profile-identity-metrics">
+            <div>
+              <span>连续</span>
+              <strong>{stats.currentStreak || 0} 天</strong>
+            </div>
+            <div>
+              <span>最长</span>
+              <strong>{stats.maxStreak || 0} 天</strong>
+            </div>
+          </div>
+          <Button variant="ghost" size="sm" onClick={handleAvatarClick} loading={uploading}>
+            更换头像
+          </Button>
+          {uploadError && <div className="auth-error profile-upload-error">{uploadError}</div>}
+          {uploading && <div className="profile-upload-hint">正在上传头像...</div>}
           <input
             ref={fileInputRef}
             type="file"
@@ -186,88 +264,147 @@ export default function AccountPage() {
             style={{ display: 'none' }}
             onChange={handleFileChange}
           />
-        </div>
-      </div>
+        </Panel>
 
-      <div className="profile-right">
-        <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-value">{stats.totalSubmissions || 0}</div>
+        <Panel className="profile-side-note">
+          <div className="profile-side-note-title">本月活动</div>
+          <strong>{recentActiveDays}</strong>
+          <span>近 30 天有提交记录的天数</span>
+        </Panel>
+      </aside>
+
+      <main className="profile-right">
+        <Panel className="profile-command-panel" elevated>
+          <div className="profile-command-copy">
+            <div className="profile-kicker">Growth Route</div>
+            <h1>成长航线</h1>
+            <p>
+              把提交、通过、难度和成就收束成一张轻量星图。这里应该让用户一眼看到自己正在变强，而不是只看到一组数字。
+            </p>
+            <div className="profile-command-actions">
+              <Badge tone="success">已解决 {solvedProblems} 题</Badge>
+              <Badge tone="info">尝试 {totalTried} 题</Badge>
+              {latestRating !== undefined && <Badge tone="warning">Rating {latestRating}</Badge>}
+            </div>
+          </div>
+
+          <div className="profile-star-map" aria-label="成长星图">
+            <div className="profile-star-path" />
+            {visibleStarNodes.map((node) => (
+              <span
+                key={node.id}
+                className={`profile-star-node level-${node.level}`}
+                style={{ '--x': `${node.x}%`, '--y': `${node.y}%` } as CSSProperties}
+                title={`${node.label}：${node.value}`}
+              >
+                <span>{node.value > 0 ? node.value : '·'}</span>
+              </span>
+            ))}
+          </div>
+        </Panel>
+
+        <div className="stats-grid profile-stats-grid">
+          <Panel className="stat-card">
+            <div className="stat-value">{totalSubmissions}</div>
             <div className="stat-label">总提交</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{stats.acceptedCount || 0}</div>
+          </Panel>
+          <Panel className="stat-card">
+            <div className="stat-value">{acceptedCount}</div>
             <div className="stat-label">通过次数</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{stats.solvedProblems || 0}</div>
+          </Panel>
+          <Panel className="stat-card">
+            <div className="stat-value">{solvedProblems}</div>
             <div className="stat-label">已解决题目</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{stats.acceptanceRate?.toFixed(1) || 0}%</div>
+          </Panel>
+          <Panel className="stat-card">
+            <div className="stat-value">{acceptanceRate.toFixed(1)}%</div>
             <div className="stat-label">通过率</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{stats.currentStreak || 0}</div>
-            <div className="stat-label">当前连续天数</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{stats.maxStreak || 0}</div>
-            <div className="stat-label">最长连续天数</div>
-          </div>
+          </Panel>
         </div>
 
-        <div className="heatmap-container">
-          <div className="heatmap-title">做题热力图</div>
+        <Panel className="heatmap-container profile-activity-panel">
+          <div className="profile-panel-head">
+            <div>
+              <div className="profile-kicker">Activity</div>
+              <h2>做题热力图</h2>
+            </div>
+            <span>最近 {heatmapData.length || 0} 天</span>
+          </div>
           <div className="heatmap-grid">
-            {heatmapData.map((day, index) => {
-              const level = day.count === 0 ? 0 : day.count <= 2 ? 1 : day.count <= 5 ? 2 : day.count <= 10 ? 3 : 4
-              return (
-                <div
-                  key={index}
-                  className="heatmap-cell"
-                  data-level={level}
-                  data-tip={`${day.date}：提交 ${day.count} 次，AC ${day.accepted} 次`}
-                />
-              )
-            })}
+            {heatmapData.map((day, index) => (
+              <div
+                key={`${day.date}-${index}`}
+                className="heatmap-cell"
+                data-level={getHeatmapLevel(day.count)}
+                data-tip={`${day.date}：提交 ${day.count} 次，AC ${day.accepted ?? 0} 次`}
+              />
+            ))}
           </div>
-        </div>
+        </Panel>
 
-        {Object.keys(difficultyStats).length > 0 && (
-          <div className="difficulty-section">
-            <div className="heatmap-title">难度分布</div>
-            <div className="difficulty-grid">
-              {Object.entries(difficultyStats).map(([difficulty, count]) => (
-                <div key={difficulty} className="difficulty-card">
-                  <div className="difficulty-header">
-                    <span className={`difficulty-tag ${difficulty}`}>{difficulty}</span>
-                    <strong>{typeof count === 'number' ? count : Object.keys(count || {}).length}</strong>
+        {difficultyEntries.length > 0 && (
+          <Panel className="difficulty-section profile-difficulty-panel">
+            <div className="profile-panel-head">
+              <div>
+                <div className="profile-kicker">Difficulty</div>
+                <h2>难度分布</h2>
+              </div>
+            </div>
+            <div className="difficulty-grid profile-difficulty-grid">
+              {difficultyEntries.map(([difficulty, count]) => {
+                const solved = getDifficultySolved(count)
+                const tried = getDifficultyTried(count)
+                const ratio = Math.min(100, (solved / Math.max(maxDifficultySolved, 1)) * 100)
+                return (
+                  <div key={difficulty} className="difficulty-card profile-difficulty-card">
+                    <div className="difficulty-header">
+                      <span className={`difficulty-tag ${difficulty}`}>{difficulty}</span>
+                      <strong>{solved}</strong>
+                    </div>
+                    <div className="profile-difficulty-track">
+                      <span style={{ width: `${ratio}%` }} />
+                    </div>
+                    <em>尝试 {tried} 题</em>
+                  </div>
+                )
+              })}
+            </div>
+          </Panel>
+        )}
+
+        {achievements.length > 0 && (
+          <Panel className="achievements-section profile-achievements-panel">
+            <div className="profile-panel-head">
+              <div>
+                <div className="profile-kicker">Achievements</div>
+                <h2>成就轨道</h2>
+              </div>
+              <span>{achievements.length} 个已解锁</span>
+            </div>
+            <div className="achievements-grid profile-achievements-grid">
+              {achievements.map((achievement) => (
+                <div key={achievement.id} className="achievement-card profile-achievement-card">
+                  <div className="profile-achievement-icon" aria-hidden="true">{achievement.icon || '★'}</div>
+                  <div>
+                    <div className="achievement-name">{achievement.name}</div>
+                    <div className="achievement-desc">{achievement.description}</div>
                   </div>
                 </div>
               ))}
             </div>
-          </div>
-        )}
-
-        {achievements.length > 0 && (
-          <div className="achievements-section">
-            <div className="heatmap-title">成就</div>
-            <div className="achievements-grid">
-              {achievements.map((achievement) => (
-                <div key={achievement.id} className="achievement-card">
-                  <div className="achievement-name">{achievement.name}</div>
-                  <div className="achievement-desc">{achievement.description}</div>
-                </div>
-              ))}
-            </div>
-          </div>
+          </Panel>
         )}
 
         {ratingHistory.length > 0 && (
-          <div className="rating-chart">
-            <div className="rating-chart-title">等级分走势</div>
-            <svg viewBox="0 0 100 40" preserveAspectRatio="none">
+          <Panel className="rating-chart profile-rating-panel">
+            <div className="profile-panel-head">
+              <div>
+                <div className="profile-kicker">Rating</div>
+                <h2>等级分走势</h2>
+              </div>
+              <span>{ratingDelta >= 0 ? '+' : ''}{ratingDelta}</span>
+            </div>
+            <svg viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
               {(() => {
                 const values = ratingHistory.map((item) => item.rating)
                 const min = Math.min(...values)
@@ -278,12 +415,12 @@ export default function AccountPage() {
                   const y = 36 - ((item.rating - min) / range) * 30
                   return `${x},${y}`
                 }).join(' ')
-                return <polyline fill="none" stroke="#7dd3fc" strokeWidth="1.8" points={points} />
+                return <polyline fill="none" stroke="currentColor" strokeWidth="1.8" points={points} />
               })()}
             </svg>
-          </div>
+          </Panel>
         )}
-      </div>
+      </main>
     </div>
   )
 }

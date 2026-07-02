@@ -1,11 +1,45 @@
+import 'katex/dist/katex.min.css'
 import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
-import { fetchJson, renderLatex, preloadOjIdeAssets } from '../utils'
+import { fetchJson, preloadOjIdeAssets } from '../utils'
+import { renderLatex } from '../latex'
 import { LANGUAGE_OPTIONS, getLanguageConfig } from '../constants'
-import type { OjProblemDetail, ProblemResponse, OjSubmission, SubmissionResponse } from '../types'
+import type { DiscussionListResponse, DiscussionPost, OjProblemDetail, ProblemResponse, OjSubmission, SubmissionResponse } from '../types'
+import './OjDetailPage.css'
 
 const LazyOjIdePanel = lazy(() => import('../components/OjIdePanel'))
+
+const IDE_DRAFT_STORAGE_KEY = 'starstack:oj-ide-drafts'
+const IDE_OPEN_STORAGE_PREFIX = 'starstack:oj-ide-open:'
+
+type IdeDraftCache = Record<number, {
+  language: string
+  code: string
+  runInput: string
+  runExpected: string
+}>
+
+const readIdeDraftCache = (): IdeDraftCache => {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(IDE_DRAFT_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+const writeIdeDraftCache = (drafts: IdeDraftCache) => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(IDE_DRAFT_STORAGE_KEY, JSON.stringify(drafts))
+  } catch {
+    // localStorage may be unavailable in restricted browser modes.
+  }
+}
 
 export default function OjDetailPage() {
   const navigate = useNavigate()
@@ -21,12 +55,10 @@ export default function OjDetailPage() {
   const [error, setError] = useState('')
   const [ideOpen, setIdeOpen] = useState(false)
   const [pendingSampleRunIndex, setPendingSampleRunIndex] = useState<number | null>(null)
-  const [ideDraftCache, setIdeDraftCache] = useState<Record<number, {
-    language: string
-    code: string
-    runInput: string
-    runExpected: string
-  }>>({})
+  const [ideDraftCache, setIdeDraftCache] = useState<IdeDraftCache>(() => readIdeDraftCache())
+  const [relatedPosts, setRelatedPosts] = useState<DiscussionPost[]>([])
+  const [discussionTotal, setDiscussionTotal] = useState(0)
+  const [discussionLoading, setDiscussionLoading] = useState(false)
   const latestIdeSubmissionCacheRef = useRef<{ problemId: number; submission: OjSubmission | null } | null>(null)
 
   const preloadOjIde = useCallback(() => {
@@ -49,16 +81,23 @@ export default function OjDetailPage() {
     if (!problem) return
     preloadOjIde()
     setIdeOpen(true)
+    try {
+      window.localStorage.setItem(`${IDE_OPEN_STORAGE_PREFIX}${problem.id}`, '1')
+    } catch {
+      // Ignore persistence failures.
+    }
   }, [preloadOjIde, problem])
 
   const loadProblem = useCallback(async () => {
     if (!id) return
     setLoading(true)
+    setDiscussionLoading(true)
     setError('')
     const { response, data } = await fetchJson<ProblemResponse>(`/api/oj/problems/${id}`)
     if (!response.ok) {
       setError(data?.message || '无法加载题目')
       setLoading(false)
+      setDiscussionLoading(false)
       return
     }
     if (data?.problem) {
@@ -85,6 +124,48 @@ export default function OjDetailPage() {
     return () => window.clearTimeout(timer)
   }, [currentUser, loadLatestSubmissionForIde, preloadOjIde, problem])
 
+  useEffect(() => {
+    if (!problem?.id) return
+    let shouldOpen = false
+    try {
+      shouldOpen = window.localStorage.getItem(`${IDE_OPEN_STORAGE_PREFIX}${problem.id}`) === '1'
+    } catch {
+      // Ignore persistence failures.
+    }
+    if (!shouldOpen) return
+    const timer = window.setTimeout(() => {
+      setIdeOpen(true)
+      preloadOjIde()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [preloadOjIde, problem?.id])
+
+  useEffect(() => {
+    if (!problem?.id) return
+    let cancelled = false
+    ;(async () => {
+      const params = new URLSearchParams({
+        problemId: String(problem.id),
+        pageSize: '3',
+        sort: 'hot',
+      })
+      const { response, data } = await fetchJson<DiscussionListResponse>(`/api/discussions?${params}`)
+      if (cancelled) return
+      if (response.ok && data) {
+        setRelatedPosts(data.posts || [])
+        setDiscussionTotal(data.total || 0)
+      } else {
+        setRelatedPosts([])
+        setDiscussionTotal(0)
+      }
+      setDiscussionLoading(false)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [problem?.id])
+
   const handleSubmitJudge = useCallback((payload: {
     problemId: number
     problemTitle: string
@@ -100,6 +181,11 @@ export default function OjDetailPage() {
     if (!sample) return
     preloadOjIde()
     setIdeOpen(true)
+    try {
+      window.localStorage.setItem(`${IDE_OPEN_STORAGE_PREFIX}${problem.id}`, '1')
+    } catch {
+      // Ignore persistence failures.
+    }
     setPendingSampleRunIndex(index)
   }
 
@@ -159,25 +245,32 @@ export default function OjDetailPage() {
                   className="ghost small"
                   onMouseEnter={preloadOjIde}
                   onFocus={preloadOjIde}
-                  onClick={ideOpen ? () => setIdeOpen(false) : openIde}
+                  onClick={ideOpen ? () => {
+                    setIdeOpen(false)
+                    try {
+                      window.localStorage.removeItem(`${IDE_OPEN_STORAGE_PREFIX}${problem.id}`)
+                    } catch {
+                      // Ignore persistence failures.
+                    }
+                  } : openIde}
                 >
                   {ideOpen ? '关闭提交' : '提交'}
                 </button>
               </div>
             </div>
-            <div dangerouslySetInnerHTML={{ __html: renderLatex(problem.statement) }} />
+            <div className="oj-problem-richtext" dangerouslySetInnerHTML={{ __html: renderLatex(problem.statement) }} />
           </section>
 
           {/* 输入说明 */}
           <section className="oj-section">
             <h3>输入格式</h3>
-            <div dangerouslySetInnerHTML={{ __html: renderLatex(problem.input) }} />
+            <div className="oj-problem-richtext" dangerouslySetInnerHTML={{ __html: renderLatex(problem.input) }} />
           </section>
 
           {/* 输出说明 */}
           <section className="oj-section">
             <h3>输出格式</h3>
-            <div dangerouslySetInnerHTML={{ __html: renderLatex(problem.output) }} />
+            <div className="oj-problem-richtext" dangerouslySetInnerHTML={{ __html: renderLatex(problem.output) }} />
           </section>
 
           {/* 样例 */}
@@ -213,9 +306,10 @@ export default function OjDetailPage() {
           {problem.dataRange && (
             <section className="oj-section">
               <h3>数据范围</h3>
-              <div dangerouslySetInnerHTML={{ __html: renderLatex(problem.dataRange) }} />
+              <div className="oj-problem-richtext" dangerouslySetInnerHTML={{ __html: renderLatex(problem.dataRange) }} />
             </section>
           )}
+
         </div>
 
         {/* 右侧边栏 */}
@@ -251,6 +345,55 @@ export default function OjDetailPage() {
                 提交记录
               </button>
             </div>
+
+            <div className="oj-sidebar-section oj-sidebar-discussion-section">
+              <div className="oj-sidebar-discussion-header">
+                <div className="oj-sidebar-label">题目讨论</div>
+                <div className="oj-sidebar-discussion-count">{discussionTotal} 条</div>
+              </div>
+              {discussionLoading ? (
+                <div className="discussion-loading">
+                  {Array.from({ length: 2 }, (_, index) => <div key={index} className="skeleton skeleton-card" />)}
+                </div>
+              ) : relatedPosts.length === 0 ? (
+                <div className="oj-sidebar-discussion-empty">
+                  <div className="oj-discussion-empty-title">还没有讨论</div>
+                  <div className="oj-discussion-empty-copy">这道题的题解、提问和坑点会显示在这里。</div>
+                </div>
+              ) : (
+                <div className="oj-sidebar-discussion-list">
+                  {relatedPosts.map((post) => (
+                    <button
+                      key={post.id}
+                      type="button"
+                      className="oj-sidebar-discussion-item"
+                      onClick={() => navigate(`/discussions/${post.id}`, { state: { fromProblemId: problem.id } })}
+                    >
+                      <span className="oj-sidebar-discussion-title">{post.title}</span>
+                      <span className="oj-sidebar-discussion-meta">
+                        {post.commentCount} 评论 · {post.likeCount} 赞
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="oj-sidebar-discussion-actions">
+                <button
+                  className="oj-sidebar-button"
+                  onClick={() => navigate(`/discussions?problemId=${problem.id}`, { state: { fromProblemId: problem.id } })}
+                >
+                  查看全部讨论
+                </button>
+                {currentUser && (
+                  <button
+                    className="ghost small"
+                    onClick={() => navigate(`/discussions/create?problemId=${problem.id}`)}
+                  >
+                    发起讨论
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -268,7 +411,11 @@ export default function OjDetailPage() {
             key={problem.id}
             initialDraft={ideDraftCache[problem.id] ?? null}
             onDraftChange={(problemId, draft) => {
-              setIdeDraftCache((prev) => ({ ...prev, [problemId]: draft }))
+              const persistedDrafts = { ...readIdeDraftCache(), [problemId]: draft }
+              writeIdeDraftCache(persistedDrafts)
+              setIdeDraftCache((prev) => {
+                return { ...prev, [problemId]: draft }
+              })
             }}
             onSubmitJudge={handleSubmitJudge}
             pendingSampleRunIndex={pendingSampleRunIndex}
@@ -279,4 +426,3 @@ export default function OjDetailPage() {
     </div>
   )
 }
-

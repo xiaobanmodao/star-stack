@@ -1,7 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
 import { fetchJson, formatTime } from '../utils'
 import type { OjSubmission, SubmissionsResponse } from '../types'
+import './OpsPages.css'
+
+const getSubmissionTone = (status: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' => {
+  if (status === 'Accepted' || status === 'AC') return 'success'
+  if (status === 'Compile Error' || status === 'CE') return 'warning'
+  if (status === 'Time Limit Exceeded' || status === 'TLE') return 'warning'
+  if (status === 'Wrong Answer' || status === 'Runtime Error' || status === 'WA' || status === 'RE') return 'danger'
+  return 'info'
+}
 
 export default function OjSubmissionsPage() {
   const navigate = useNavigate()
@@ -82,41 +92,98 @@ export default function OjSubmissionsPage() {
     return pages
   }
 
+  const acceptedCount = submissions.filter((record) => record.status === 'Accepted' || record.status === 'AC').length
+  const bestScore = submissions.reduce((best, record) => Math.max(best, record.score ?? 0), 0)
+  const latestSubmission = submissions[0]
+
   return (
-    <section className="section">
-      <div className="section-header">
-        <h2>我的提交</h2>
-        <span className="tag">Submissions</span>
+    <section className="ops-page-v2 submissions-v2">
+      <PageHeader
+        kicker="Submission Log"
+        title="我的提交"
+        description="把每次提交当成一次可复盘的飞行记录，快速回看状态、分数、语言和耗时。"
+        actions={
+          <Button variant="ghost" onClick={() => navigate('/oj')}>
+            返回训练台
+          </Button>
+        }
+      />
+
+      <div className="ops-summary-grid">
+        <Panel>
+          <span>提交总数</span>
+          <strong>{submissions.length}</strong>
+        </Panel>
+        <Panel>
+          <span>Accepted</span>
+          <strong>{acceptedCount}</strong>
+        </Panel>
+        <Panel>
+          <span>最高得分</span>
+          <strong>{bestScore}</strong>
+        </Panel>
+        <Panel>
+          <span>最近提交</span>
+          <strong>{latestSubmission ? formatTime(latestSubmission.createdAt) : '--'}</strong>
+        </Panel>
       </div>
+
       {error && <div className="auth-error">{error}</div>}
-      <div className="oj-submissions">
-        {currentSubmissions.map((record) => (
-          <div
-            key={record.id}
-            className="oj-submission clickable"
-            onClick={() => handleSubmissionClick(record.id)}
-          >
-            <div>{formatTime(record.createdAt)}</div>
-            <div>{record.problemTitle}</div>
-            <div>{record.language}</div>
-            <div>{record.status}</div>
-            <div className={record.score === 100 ? 'score-perfect' : 'score-partial'}>{record.score ?? 0}分</div>
-            <div>{record.timeMs ? `${record.timeMs}ms` : '-'}</div>
+
+      <Panel className="ops-list-panel">
+        <div className="ops-panel-head">
+          <div>
+            <Badge tone="info">Submissions</Badge>
+            <h2>提交记录</h2>
           </div>
-        ))}
-        {loading && <div className="admin-empty">加载中...</div>}
-        {!loading && submissions.length === 0 && <div className="admin-empty">暂无提交记录</div>}
-      </div>
+          <span>点击任意记录查看判题详情</span>
+        </div>
+
+        {loading ? (
+          <div className="ops-skeleton-list">
+            {Array.from({ length: 8 }, (_, index) => <div key={index} className="skeleton skeleton-row" />)}
+          </div>
+        ) : submissions.length === 0 ? (
+          <EmptyState title="暂无提交记录" description="完成一次提交后，这里会出现可复盘的判题记录。" />
+        ) : (
+          <div className="submission-list-v2">
+            <div className="submission-row-v2 head">
+              <span>时间</span>
+              <span>题目</span>
+              <span>语言</span>
+              <span>状态</span>
+              <span>分数</span>
+              <span>耗时</span>
+            </div>
+            {currentSubmissions.map((record) => (
+              <button
+                key={record.id}
+                type="button"
+                className="submission-row-v2"
+                onClick={() => handleSubmissionClick(record.id)}
+              >
+                <span>{formatTime(record.createdAt)}</span>
+                <strong>{record.problemTitle || `P${record.problemId}`}</strong>
+                <span>{record.language}</span>
+                <Badge tone={getSubmissionTone(record.status)}>{record.status}</Badge>
+                <span className={record.score === 100 ? 'score-perfect' : 'score-partial'}>{record.score ?? 0} 分</span>
+                <span>{record.timeMs ? `${record.timeMs}ms` : '-'}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </Panel>
 
       {submissionsTotalPages > 1 && (
         <div className="pagination">
-          <button
-            className="pagination-btn"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => handleSubmissionsPageChange(submissionsPage - 1)}
             disabled={submissionsPage === 1}
           >
             上一页
-          </button>
+          </Button>
 
           <div className="pagination-numbers">
             {renderSubmissionsPageNumbers().map((page, index) => (
@@ -136,13 +203,14 @@ export default function OjSubmissionsPage() {
             ))}
           </div>
 
-          <button
-            className="pagination-btn"
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => handleSubmissionsPageChange(submissionsPage + 1)}
             disabled={submissionsPage === submissionsTotalPages}
           >
             下一页
-          </button>
+          </Button>
 
           <div className="pagination-jump">
             <span>跳转到</span>
@@ -153,9 +221,9 @@ export default function OjSubmissionsPage() {
               onChange={(e) => handleSubmissionsPageInputChange(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSubmissionsPageInputSubmit()}
             />
-            <button className="pagination-go" onClick={handleSubmissionsPageInputSubmit}>
+            <Button variant="ghost" size="sm" onClick={handleSubmissionsPageInputSubmit}>
               GO
-            </button>
+            </Button>
           </div>
         </div>
       )}

@@ -1,0 +1,449 @@
+/* Route-level styles for creator, editor, my-problems and admin consoles. */
+/* Stage 8: creator/admin console */
+.problem-editor-v2,
+.my-problems-v2,
+.admin-console-v2 {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+  display: grid;
+  gap: 14px;
+}
+
+.problem-editor-v2 .ui-page-header,
+.my-problems-v2 .ui-page-header,
+.admin-console-v2 .ui-page-header {
+  padding: 18px;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-xl);
+  background:
+    linear-gradient(135deg, rgba(125, 211, 252, 0.08), transparent 44%),
+    rgba(8, 13, 22, 0.72);
+}
+
+.problem-editor-form {
+  max-width: none;
+  margin: 0;
+  gap: 0;
+}
+
+.problem-editor-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 292px;
+  gap: 14px;
+  align-items: start;
+}
+
+.problem-editor-main {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+
+.problem-editor-card {
+  display: grid;
+  gap: 16px;
+  border-radius: var(--ss-radius-xl) !important;
+  background:
+    linear-gradient(180deg, rgba(226, 232, 240, 0.045), transparent),
+    rgba(8, 13, 22, 0.74) !important;
+  box-shadow: none !important;
+}
+
+.problem-editor-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--ss-color-border);
+}
+
+.problem-editor-card-head > div {
+  display: grid;
+  gap: 8px;
+}
+
+.problem-editor-card-head h2 {
+  margin: 0;
+  color: var(--ss-color-text);
+  font-size: 22px;
+  letter-spacing: -0.03em;
+}
+
+.problem-editor-card-head > span {
+  max-width: 320px;
+  color: var(--ss-color-text-muted);
+  font-size: 13px;
+  line-height: 1.65;
+  text-align: right;
+}
+
+.problem-editor-v2 .form-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.problem-editor-v2 .form-section {
+  gap: 8px;
+}
+
+.problem-editor-v2 .form-label {
+  color: var(--ss-color-text);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+
+.problem-editor-v2 .form-hint {
+  color: var(--ss-color-text-subtle);
+}
+
+.problem-editor-v2 .auth-input,
+.admin-console-v2 .auth-input {
+  width: 100%;
+  border-color: var(--ss-color-border);
+  border-radius: var(--ss-radius-md);
+  background: rgba(226, 232, 240, 0.04);
+  color: var(--ss-color-text);
+  box-shadow: none;
+}
+
+.problem-editor-v2 .auth-input:focus,
+.admin-console-v2 .auth-input:focus {
+  border-color: rgba(125, 211, 252, 0.36);
+  box-shadow: var(--ss-focus-ring);
+}
+
+.problem-editor-v2 textarea.auth-input {
+  resize: vertical;
+}
+
+.problem-editor-v2 .problem-textarea {
+  min-height: 230px;
+  font-family: var(--ss-font-mono);
+}
+
+.problem-editor-v2 .sample-group {
+  margin: 0;
+  border-color: var(--ss-color-border);
+  border-radius: var(--ss-radius-lg);
+  background: rgba(2, 6, 23, 0.24);
+}
+
+.problem-editor-v2 .sample-group + .sample-group {
+  margin-top: 10px;
+}
+
+.problem-editor-v2 .sample-header {
+  color: var(--ss-color-text);
+}
+
+.problem-editor-v2 .file-input {
+  width: 100%;
+  border-color: var(--ss-color-border);
+  border-radius: var(--ss-radius-lg);
+  background: rgba(2, 6, 23, 0.24);
+  color: var(--ss-color-text-muted);
+}
+
+.problem-editor-v2 .test-file-item {
+  border-color: var(--ss-color-border);
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.problem-editor-v2 .custom-select {
+  z-index: 5;
+}
+
+.problem-editor-v2 .custom-select.open {
+  z-index: 10040;
+}
+
+.problem-editor-v2 .custom-select-menu {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.problem-editor-v2 .tag-selector-modal {
+  z-index: 10050;
+}
+
+.problem-editor-actions {
+  align-items: center;
+  justify-content: flex-end;
+  padding: 14px 0 0;
+}
+
+.problem-editor-aside {
+  position: sticky;
+  top: 88px;
+}
+
+.problem-editor-guide,
+.problem-editor-loading {
+  display: grid;
+  gap: 14px;
+  border-radius: var(--ss-radius-xl) !important;
+  background: rgba(8, 13, 22, 0.74) !important;
+  box-shadow: none !important;
+}
+
+.problem-editor-guide-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.problem-editor-guide-head strong {
+  color: var(--ss-color-text);
+}
+
+.problem-editor-checks {
+  display: grid;
+  gap: 8px;
+}
+
+.problem-editor-checks span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-md);
+  background: rgba(226, 232, 240, 0.035);
+  color: var(--ss-color-text-muted);
+  font-size: 13px;
+}
+
+.problem-editor-checks span::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ss-color-text-subtle);
+}
+
+.problem-editor-checks span.done {
+  border-color: rgba(94, 230, 168, 0.24);
+  color: var(--ss-color-text);
+}
+
+.problem-editor-checks span.done::before {
+  background: var(--ss-color-success);
+}
+
+.problem-editor-guide-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.problem-editor-guide-metrics div {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-md);
+  background: rgba(226, 232, 240, 0.04);
+}
+
+.problem-editor-guide-metrics strong {
+  color: var(--ss-color-text);
+  font-family: var(--ss-font-display);
+  font-size: 22px;
+}
+
+.problem-editor-guide-metrics span,
+.problem-editor-guide p {
+  margin: 0;
+  color: var(--ss-color-text-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.my-problems-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.my-problems-summary .ui-panel {
+  display: grid;
+  gap: 4px;
+  border-radius: var(--ss-radius-lg);
+  background: rgba(8, 13, 22, 0.72);
+  box-shadow: none;
+}
+
+.my-problems-summary span {
+  color: var(--ss-color-text-subtle);
+  font-size: 12px;
+}
+
+.my-problems-summary strong {
+  color: var(--ss-color-text);
+  font-family: var(--ss-font-display);
+  font-size: 30px;
+}
+
+.my-problems-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 10px;
+}
+
+.my-problem-card-v2 {
+  border-color: var(--ss-color-border);
+  background:
+    linear-gradient(180deg, rgba(226, 232, 240, 0.045), transparent),
+    rgba(8, 13, 22, 0.72);
+  box-shadow: none;
+  transition: border-color var(--ss-motion-normal), background-color var(--ss-motion-normal);
+}
+
+.my-problem-card-v2:hover {
+  border-color: rgba(125, 211, 252, 0.26);
+  background-color: rgba(226, 232, 240, 0.04);
+  transform: none;
+}
+
+.my-problem-card-v2 .problem-actions {
+  gap: 8px;
+}
+
+.my-problem-card-v2 .problem-actions .ui-button {
+  flex: 1;
+  min-width: 104px;
+}
+
+.admin-console-v2 .admin-summary-v2 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.admin-console-v2 .admin-metric-card {
+  border-radius: var(--ss-radius-lg);
+  background: rgba(8, 13, 22, 0.72);
+  box-shadow: none;
+}
+
+.admin-console-v2 .admin-users-panel {
+  display: grid;
+  gap: 14px;
+  border-color: var(--ss-color-border);
+  border-radius: var(--ss-radius-xl);
+  background: rgba(8, 13, 22, 0.72);
+}
+
+.admin-console-v2 .admin-list-header {
+  color: var(--ss-color-text);
+}
+
+.admin-console-v2 .admin-list-header > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-console-v2 .admin-list-header > span {
+  color: var(--ss-color-text-subtle);
+  font-size: 13px;
+}
+
+.admin-form-v2 {
+  grid-template-columns: minmax(120px, 0.9fr) minmax(140px, 1fr) minmax(140px, 1fr) auto auto;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-lg);
+  background: rgba(2, 6, 23, 0.22);
+}
+
+.admin-form-v2 label {
+  display: grid;
+  gap: 7px;
+  color: var(--ss-color-text-muted);
+  font-size: 12px;
+}
+
+.admin-form-v2 .admin-checkbox {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  padding: 0 4px;
+}
+
+.admin-table-v2 {
+  overflow-x: auto;
+  border-color: var(--ss-color-border);
+  background: rgba(2, 6, 23, 0.22);
+}
+
+.admin-table-v2 .admin-row {
+  min-width: 920px;
+  grid-template-columns: 1fr 1fr 0.74fr 0.74fr 1.28fr 1.6fr;
+}
+
+.admin-table-v2 .admin-row-head {
+  color: var(--ss-color-text-subtle);
+  background: rgba(226, 232, 240, 0.045);
+}
+
+.admin-table-v2 .admin-row-actions {
+  justify-content: flex-start;
+}
+
+.admin-table-v2 .ui-empty-state {
+  min-width: 0;
+}
+
+@media (max-width: 980px) {
+  .problem-editor-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .problem-editor-aside {
+    position: static;
+  }
+
+  .problem-editor-card-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .problem-editor-card-head > span {
+    max-width: none;
+    text-align: left;
+  }
+
+  .admin-form-v2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .problem-editor-v2 .form-row,
+  .problem-editor-v2 .sample-row,
+  .my-problems-summary,
+  .admin-console-v2 .admin-summary-v2,
+  .admin-form-v2 {
+    grid-template-columns: 1fr;
+  }
+
+  .problem-editor-v2 .ui-page-header,
+  .my-problems-v2 .ui-page-header,
+  .admin-console-v2 .ui-page-header {
+    padding: 14px;
+  }
+
+  .problem-editor-actions,
+  .my-problem-card-v2 .problem-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .problem-editor-actions .ui-button,
+  .my-problem-card-v2 .problem-actions .ui-button {
+    width: 100%;
+  }
+}

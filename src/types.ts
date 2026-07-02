@@ -1,5 +1,3 @@
-import type { UiLanguage } from './components/AutoTranslateScope'
-
 export type UserRecord = {
   id: string
   name: string
@@ -79,6 +77,7 @@ export type Achievement = {
   id: string
   name: string
   description: string
+  desc?: string
   icon: string
   unlockedAt?: string
 }
@@ -258,9 +257,7 @@ export type AuthPageProps = {
 export type AppContextType = {
   currentUser: UserRecord | null
   setCurrentUser: (user: UserRecord | null) => void
-  uiLanguage: UiLanguage
   problemPlan: ProblemPlan[]
-  problemLanguageSwitchBlocking: boolean
   openAuth: (mode: AuthMode) => void
   addToPlan: (problemId: number) => Promise<{ success: boolean; message?: string }>
   removeFromPlan: (planId: number) => Promise<{ success: boolean; message?: string }>
