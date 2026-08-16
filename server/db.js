@@ -762,6 +762,22 @@ export const initDb = async () => {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
+    -- 前端错误上报（基础错误监控）
+    CREATE TABLE IF NOT EXISTS client_errors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT,
+      message TEXT NOT NULL,
+      source TEXT,
+      line INTEGER,
+      column INTEGER,
+      stack TEXT,
+      url TEXT,
+      user_agent TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_client_errors_created ON client_errors(created_at);
+
     -- 每日签到（独立于 AC 连击）
     CREATE TABLE IF NOT EXISTS daily_checkins (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

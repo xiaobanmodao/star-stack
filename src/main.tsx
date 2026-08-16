@@ -13,6 +13,51 @@ import App from './App.tsx'
   applyAccent(readSavedAccent())
 })()
 
+// 基础前端错误监控：把运行时错误上报到后端 client_errors
+let lastClientErrorReportAt = 0
+const reportClientError = (message: string, source = '', line = 0, column = 0, error?: unknown) => {
+  try {
+    const now = Date.now()
+    if (now - lastClientErrorReportAt < 2000) return
+    lastClientErrorReportAt = now
+    const token = localStorage.getItem('starstack_token')
+    const stack = error instanceof Error ? error.stack : undefined
+    void fetch('/api/client-errors', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        message: String(message).slice(0, 500),
+        source: String(source).slice(0, 500),
+        line,
+        column,
+        stack: stack ? String(stack).slice(0, 2000) : undefined,
+        url: window.location.href,
+        userAgent: navigator.userAgent,
+      }),
+    }).catch(() => {})
+  } catch {
+    // 上报失败不能影响页面运行
+  }
+}
+
+window.addEventListener('error', (event) => {
+  reportClientError(event.message, event.filename, event.lineno, event.colno, event.error)
+})
+
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason
+  reportClientError(
+    reason instanceof Error ? reason.message : String(reason),
+    '',
+    0,
+    0,
+    reason instanceof Error ? reason : undefined
+  )
+})
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>

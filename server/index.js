@@ -215,6 +215,40 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true })
 })
 
+// 前端错误上报（基础错误监控）
+app.post('/api/client-errors', async (req, res) => {
+  try {
+    const db = await getDb()
+    const { message, source, line, column, stack, url, userAgent } = req.body || {}
+    if (!message) return res.status(400).json({ message: '缺少错误信息' })
+
+    let userId = null
+    const token = getAuthToken(req)
+    if (token) {
+      const user = await getUserByToken(db, token)
+      if (user) userId = user.id
+    }
+
+    await db.run(
+      `INSERT INTO client_errors (user_id, message, source, line, column, stack, url, user_agent, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      userId,
+      String(message).slice(0, 1000),
+      source ? String(source).slice(0, 500) : null,
+      Number.isFinite(Number(line)) ? Number(line) : null,
+      Number.isFinite(Number(column)) ? Number(column) : null,
+      stack ? String(stack).slice(0, 3000) : null,
+      url ? String(url).slice(0, 1000) : null,
+      userAgent ? String(userAgent).slice(0, 300) : null,
+      new Date().toISOString()
+    )
+    return res.json({ success: true })
+  } catch (error) {
+    console.error('Failed to report client error:', error)
+    return res.status(500).json({ message: '错误上报失败' })
+  }
+})
+
 app.get('/api/stats', async (req, res) => {
   const db = await getDb()
 
@@ -4274,69 +4308,6 @@ app.get('/api/chat/channels', async (req, res) => {
     console.error('Failed to list channels:', error)
     return res.status(500).json({ message: '获取频道失败' })
   }
-})
-
-app.get('/api/chat/channels/:key/messages', async (req, res) => {
-  const auth = await requireUser(req, res)
-  if (!auth) return
-  const { db, user } = auth
-  try {
-    const key = req.params.key
-    if (!CHAT_VALID_MODULES.has(key)) return res.status(404).json({ message: '频道不存在' })
-    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50))
-    const beforeId = req.query.before ? parseInt(req.query.before) : null
-    const rows = await loadChatMessageRows(db, 'cm.channel_key = ?', [key], limit + 1, beforeId)
-    const hasMore = rows.length > limit
-    const messages = await attachReactions(db, rows.slice(0, limit), user.id)
-    return res.json({ messages: messages.map((m) => formatChatMessage(m, user.id)), hasMore })
-  } catch (error) {
-    console.error('Failed to load channel messages:', error)
-    return res.status(500).json({ message: '获取消息失败' })
-  }
-})
-
-app.post('/api/chat/channels/:key/messages', async (req, res) => {
-  const auth = await requireUser(req, res)
-  if (!auth) return
-  const { db, user } = auth
-  try {
-    const key = req.params.key
-    if (!CHAT_VALID_MODULES.has(key)) return res.status(404).json({ message: '频道不存在' })
-    const { content } = req.body || {}
-    const text = String(content ?? '').trim()
-    if (!text) return res.status(400).json({ message: '消息不能为空' })
-    if (text.length > 8000) return res.status(400).json({ message: '消息不能超过8000字符' })
-    if (chatRateLimits.has(user.id)) return res.status(429).json({ message: '发送过快，请稍后再试' })
-    chatRateLimits.set(user.id, Date.now())
-
-    const result = await db.run(
-      `INSERT INTO chat_messages (channel_key, room_id, sender_id, content, created_at)
-       VALUES (?, NULL, ?, ?, ?)`,
-      key, user.id, text, new Date().toISOString()
-    )
-    await touchPresence(db, user.id)
-    const rows = await db.all(
-      `SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar
-       FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id
-       WHERE cm.id = ?`, result.lastID
-    )
-    await bumpChatStat(db, user.id, { field: 'message_count', points: 1 })
-    await addXp(db, user.id, 2)
-    const message = formatChatMessage(rows[0], user.id)
-    await notifyMentions(
-      db, text, user.id, 'mention', 'channel', null,
-      (id) => `在 #${key} 频道中提到了你（@${id}）`
-    )
-    broadcastToScope(`channel:${key}`, { type: 'message', message })
-    return res.json({ message })
-  } catch (error) {
-    console.error('Failed to send channel message:', error)
-    return res.status(500).json({ message: '发送失败' })
-  }
-})
-
-app.get('/api/chat/channels/:key/stream', (req, res) => {
-  void openChatStream(req, res, `channel:${req.params.key}`)
 })
 
 // ---------- 聊天室 ----------
