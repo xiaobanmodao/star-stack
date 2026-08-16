@@ -4,7 +4,7 @@ import { useAppContext } from '../context/AppContext'
 import CustomSelect from '../components/CustomSelect'
 import TagSelector from '../components/TagSelector'
 import { Badge, Button, DataList, DataListHead, DataListRow, EmptyState, PageHeader, Panel } from '../components/ui'
-import { fetchJson } from '../utils'
+import { fetchJson, openInNewTab } from '../utils'
 import { DIFFICULTY_OPTIONS } from '../constants'
 import type { OjProblemSummary, ProblemsResponse } from '../types'
 import './OjProblemListPage.css'
@@ -105,7 +105,7 @@ export default function OjProblemListPage() {
   const handleProblemKeyDown = (event: KeyboardEvent<HTMLDivElement>, problemId: number) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
-      navigate(`/oj/p${problemId}`)
+      openInNewTab(`/oj/p${problemId}`)
     }
   }
 
@@ -210,7 +210,7 @@ export default function OjProblemListPage() {
           )}
           <Button
             variant={daily?.problem?.solved ? 'secondary' : 'primary'}
-            onClick={() => daily?.problem && navigate(`/oj/${daily.problem.id}`)}
+            onClick={() => daily?.problem && openInNewTab(`/oj/${daily.problem.id}`)}
             disabled={!daily?.problem}
           >
             {daily?.problem?.solved ? '再刷一遍' : '去挑战 →'}
@@ -291,7 +291,7 @@ export default function OjProblemListPage() {
             className="oj-library-row"
             role="button"
             tabIndex={0}
-            onClick={() => navigate(`/oj/p${problem.id}`)}
+            onClick={() => openInNewTab(`/oj/p${problem.id}`)}
             onKeyDown={(event) => handleProblemKeyDown(event, problem.id)}
           >
             <div className="oj-library-title">

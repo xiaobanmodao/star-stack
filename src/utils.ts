@@ -15,6 +15,10 @@ export const formatTime = (dateString?: string): string => {
   return `${year}-${month}-${day} ${hours}:${minutes}`
 }
 
+export const openInNewTab = (url: string) => {
+  window.open(url, '_blank', 'noopener,noreferrer')
+}
+
 export const decodeHtmlEntities = (value = ''): string => {
   if (!value) return ''
   if (typeof document !== 'undefined') {

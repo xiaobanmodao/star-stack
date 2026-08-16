@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import RichTextEditor from '../../components/RichTextEditor'
 import type { DiscussionListResponse, DiscussionPost, ChatModuleKey } from '../../types'
-import { fetchJson } from '../../utils'
+import { fetchJson, openInNewTab } from '../../utils'
 import { MODULE_KEYS, MODULE_META } from '../../components/chat/chatMeta'
 import './ChatHub.css'
 
@@ -304,7 +304,7 @@ export default function PostBoard({ module = 'all' }: { module?: ChatModuleKey |
               key={post.id}
               type="button"
               className="plaza-post"
-              onClick={() => navigate(`/chat/p/${post.id}`, { state: { from: location.pathname + location.search } })}
+              onClick={() => openInNewTab(`/chat/p/${post.id}`)}
             >
               <div className="plaza-post-head">
                 <span className={`plaza-module-badge ${post.moduleKey || 'general'}`}>

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import CheckinBanner from '../components/CheckinBanner'
 import type { OjProblemSummary } from '../types'
-import { fetchJson } from '../utils'
+import { fetchJson, openInNewTab } from '../utils'
 import { Badge, Button, EmptyState, Panel } from '../components/ui'
 import './EntryPages.css'
 
@@ -66,7 +66,7 @@ export default function OjHomePage() {
   const handleRandomProblem = async () => {
     const { data } = await fetchJson<{ problem: OjProblemSummary }>('/api/oj/random-problem')
     if (data?.problem) {
-      navigate(`/oj/p${data.problem.id}`)
+      openInNewTab(`/oj/p${data.problem.id}`)
     }
   }
 
@@ -87,7 +87,7 @@ export default function OjHomePage() {
               进入题库
             </Button>
             {continueProblem && (
-              <Button variant="ghost" size="lg" onClick={() => navigate(`/oj/p${continueProblem.id}`)}>
+              <Button variant="ghost" size="lg" onClick={() => openInNewTab(`/oj/p${continueProblem.id}`)}>
                 继续 P{continueProblem.id}
               </Button>
             )}
@@ -167,7 +167,7 @@ export default function OjHomePage() {
           </div>
           <div className="oj-workbench-list">
             {(hotProblems.length > 0 ? hotProblems : []).map((problem) => (
-              <button key={problem.id} type="button" onClick={() => navigate(`/oj/p${problem.id}`)}>
+              <button key={problem.id} type="button" onClick={() => openInNewTab(`/oj/p${problem.id}`)}>
                 <span>P{problem.id}</span>
                 <strong>{problem.title}</strong>
                 <em>{problem.submission_count ?? 0} 次提交</em>
@@ -207,7 +207,7 @@ export default function OjHomePage() {
           </div>
           <div className="oj-workbench-list">
             {recentAc.slice(0, 5).map((item) => (
-              <button key={`${item.problem_id}-${item.created_at}`} type="button" onClick={() => navigate(`/oj/p${item.problem_id}`)}>
+              <button key={`${item.problem_id}-${item.created_at}`} type="button" onClick={() => openInNewTab(`/oj/p${item.problem_id}`)}>
                 <span>{item.user_name}</span>
                 <strong>P{item.problem_id} {item.problem_title}</strong>
                 <em>Accepted</em>
