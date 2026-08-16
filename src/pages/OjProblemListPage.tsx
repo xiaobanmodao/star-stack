@@ -210,7 +210,7 @@ export default function OjProblemListPage() {
           )}
           <Button
             variant={daily?.problem?.solved ? 'secondary' : 'primary'}
-            onClick={() => daily?.problem && openInNewTab(`/oj/${daily.problem.id}`)}
+            onClick={() => daily?.problem && openInNewTab(`/oj/p${daily.problem.id}`)}
             disabled={!daily?.problem}
           >
             {daily?.problem?.solved ? '再刷一遍' : '去挑战 →'}

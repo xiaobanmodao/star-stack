@@ -177,7 +177,7 @@ export type DiscussionPost = {
   problemId?: number; problemTitle?: string
   moduleKey?: ChatModuleKey
   viewCount: number; likeCount: number; commentCount: number
-  liked?: boolean; createdAt: string; updatedAt: string
+  isPinned?: boolean; liked?: boolean; createdAt: string; updatedAt: string
 }
 
 export type DiscussionComment = {

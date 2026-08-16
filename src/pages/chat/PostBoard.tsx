@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { useAppContext } from '../../context/AppContext'
 import RichTextEditor from '../../components/RichTextEditor'
 import type { DiscussionListResponse, DiscussionPost, ChatModuleKey } from '../../types'
 import { fetchJson, openInNewTab } from '../../utils'
@@ -145,6 +146,7 @@ function CreatePostModal({ defaultModule, initialProblemId, onClose, onCreated }
 export default function PostBoard({ module = 'all' }: { module?: ChatModuleKey | 'all' }) {
   const navigate = useNavigate()
   const location = useLocation()
+  const { currentUser } = useAppContext()
   const [posts, setPosts] = useState<DiscussionPost[]>([])
   const [loading, setLoading] = useState(true)
   const [activeModule, setActiveModule] = useState<ChatModuleKey | 'all'>(module)
@@ -228,6 +230,15 @@ export default function PostBoard({ module = 'all' }: { module?: ChatModuleKey |
     return () => window.clearTimeout(timer)
   }, [activeModule])
 
+  const handleTogglePin = async (post: DiscussionPost) => {
+    const { response } = await fetchJson(`/api/discussions/${post.id}/pin`, {
+      method: post.isPinned ? 'DELETE' : 'POST',
+    })
+    if (response.ok) {
+      setPosts((prev) => prev.map((item) => item.id === post.id ? { ...item, isPinned: !item.isPinned } : item))
+    }
+  }
+
   const boardTitle = activeModule === 'all'
     ? { icon: '📌', title: '公共广场', desc: '发布帖子，和大家讨论各个模块的内容' }
     : { icon: MODULE_META[activeModule].icon, title: `#${MODULE_META[activeModule].label}`, desc: MODULE_META[activeModule].label }
@@ -300,18 +311,28 @@ export default function PostBoard({ module = 'all' }: { module?: ChatModuleKey |
           <div className="chat-empty">这个区域还没有帖子，来发第一帖吧 ✨</div>
         ) : (
           posts.map((post) => (
-            <button
+            <div
               key={post.id}
-              type="button"
+              role="button"
+              tabIndex={0}
               className="plaza-post"
               onClick={() => openInNewTab(`/chat/p/${post.id}`)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  openInNewTab(`/chat/p/${post.id}`)
+                }
+              }}
             >
               <div className="plaza-post-head">
                 <span className={`plaza-module-badge ${post.moduleKey || 'general'}`}>
                   {MODULE_META[(post.moduleKey as ChatModuleKey) || 'general']?.icon}{' '}
                   {MODULE_META[(post.moduleKey as ChatModuleKey) || 'general']?.label || '杂谈'}
                 </span>
-                <span className="plaza-post-time">{formatPostTime(post.createdAt)}</span>
+                <span className="plaza-post-head-right">
+                  {post.isPinned && <span className="plaza-pin-badge">置顶</span>}
+                  <span className="plaza-post-time">{formatPostTime(post.createdAt)}</span>
+                </span>
               </div>
               <strong className="plaza-post-title">{post.title}</strong>
               {post.problemTitle && <span className="plaza-post-problem">题：{post.problemTitle}</span>}
@@ -332,13 +353,27 @@ export default function PostBoard({ module = 'all' }: { module?: ChatModuleKey |
                   )}
                   {post.userName}
                 </span>
-                <span className="plaza-post-metrics">
-                  <em>👍 {post.likeCount}</em>
-                  <em>💬 {post.commentCount}</em>
-                  <em>👁 {post.viewCount}</em>
+                <span className="plaza-post-foot-right">
+                  {currentUser?.isAdmin && (
+                    <button
+                      type="button"
+                      className="plaza-pin-btn"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void handleTogglePin(post)
+                      }}
+                    >
+                      {post.isPinned ? '取消置顶' : '置顶'}
+                    </button>
+                  )}
+                  <span className="plaza-post-metrics">
+                    <em>👍 {post.likeCount}</em>
+                    <em>💬 {post.commentCount}</em>
+                    <em>👁 {post.viewCount}</em>
+                  </span>
                 </span>
               </div>
-            </button>
+            </div>
           ))
         )}
       </div>

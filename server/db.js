@@ -453,6 +453,8 @@ export const initDb = async () => {
       view_count INTEGER DEFAULT 0,
       like_count INTEGER DEFAULT 0,
       comment_count INTEGER DEFAULT 0,
+      is_pinned INTEGER DEFAULT 0,
+      pinned_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -803,6 +805,18 @@ export const initDb = async () => {
   if (!userColumns.some((col) => col.name === 'bio')) {
     await db.exec(`ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''`)
   }
+
+  // Migration: discussion_posts.is_pinned / pinned_at（帖子置顶）
+  const discussionPostColumns = await db.all(`PRAGMA table_info(discussion_posts)`)
+  if (!discussionPostColumns.some((col) => col.name === 'is_pinned')) {
+    await db.exec(`ALTER TABLE discussion_posts ADD COLUMN is_pinned INTEGER DEFAULT 0`)
+  }
+  if (!discussionPostColumns.some((col) => col.name === 'pinned_at')) {
+    await db.exec(`ALTER TABLE discussion_posts ADD COLUMN pinned_at TEXT`)
+  }
+  await db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_posts_pinned ON discussion_posts(is_pinned, created_at)`
+  )
 
   // Initialize user_stats for existing users
   const existingUsers = await db.all(`SELECT id FROM users`)

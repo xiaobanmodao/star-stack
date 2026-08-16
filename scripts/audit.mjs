@@ -27,7 +27,7 @@ const MIN_CONTRAST = 4.5
 const DEFAULT_PAGES = [
   '/',                  // 首页（项目大厅）
   '/oj/list',           // 题库
-  '/oj/1001',           // 题目详情
+  '/oj/p1001',          // 题目详情
   '/oj/judge',          // 评测页
   '/chat/plaza',        // 讨论广场
   '/chat/dm/astro10',   // 私信

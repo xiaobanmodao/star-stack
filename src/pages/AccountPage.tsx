@@ -54,6 +54,8 @@ export default function AccountPage() {
   const [checkin, setCheckin] = useState<CheckinResponse | null>(null)
   const [checkingIn, setCheckingIn] = useState(false)
   const [checkinError, setCheckinError] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
   const loadedUserIdRef = useRef<string | null>(null)
   const initial = currentUser?.name?.trim()?.[0] || currentUser?.id?.[0] || '★'
 
@@ -119,6 +121,32 @@ export default function AccountPage() {
       return
     }
     setCheckin(data)
+  }
+
+  const handleExportData = async () => {
+    if (!currentUser || exporting) return
+    setExporting(true)
+    setExportError('')
+    try {
+      const { response, data } = await fetchJson<Record<string, unknown>>('/api/me/export')
+      if (!response.ok || !data) {
+        setExportError('导出失败，请稍后重试。')
+        return
+      }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `starstack-${currentUser.id}-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      setExportError('导出失败，请稍后重试。')
+    } finally {
+      setExporting(false)
+    }
   }
 
   useEffect(() => {
@@ -316,6 +344,10 @@ export default function AccountPage() {
           <Button variant="ghost" size="sm" onClick={handleAvatarClick} loading={uploading}>
             更换头像
           </Button>
+          <Button variant="ghost" size="sm" onClick={handleExportData} loading={exporting}>
+            导出我的数据
+          </Button>
+          {exportError && <div className="auth-error profile-upload-error">{exportError}</div>}
           {uploadError && <div className="auth-error profile-upload-error">{uploadError}</div>}
           {uploading && <div className="profile-upload-hint">正在上传头像...</div>}
           <input

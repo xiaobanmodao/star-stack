@@ -2931,8 +2931,8 @@ app.get('/api/discussions', async (req, res) => {
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''
     const orderSql = sort === 'hot'
-      ? 'ORDER BY (dp.like_count * 3 + dp.comment_count * 2 + dp.view_count * 0.1) DESC, dp.created_at DESC'
-      : 'ORDER BY dp.created_at DESC'
+      ? 'ORDER BY dp.is_pinned DESC, (dp.like_count * 3 + dp.comment_count * 2 + dp.view_count * 0.1) DESC, dp.created_at DESC'
+      : 'ORDER BY dp.is_pinned DESC, dp.created_at DESC'
 
     const countRow = await db.get(
       `SELECT COUNT(*) as count FROM discussion_posts dp ${whereSql}`,
@@ -2943,7 +2943,7 @@ app.get('/api/discussions', async (req, res) => {
     const offset = (page - 1) * pageSize
     const posts = await db.all(
       `SELECT dp.id, dp.user_id, dp.title, dp.content, dp.problem_id, dp.module_key, dp.view_count, dp.like_count,
-              dp.comment_count, dp.created_at, dp.updated_at,
+              dp.comment_count, dp.is_pinned, dp.created_at, dp.updated_at,
               u.name as user_name, u.avatar as user_avatar,
               p.title as problem_title
        FROM discussion_posts dp
@@ -2974,7 +2974,8 @@ app.get('/api/discussions', async (req, res) => {
         title: p.title, content: p.content, problemId: p.problem_id, problemTitle: p.problem_title,
         moduleKey: p.module_key || 'general',
         viewCount: p.view_count, likeCount: p.like_count, commentCount: p.comment_count,
-        liked: likedSet.has(p.id), createdAt: p.created_at, updatedAt: p.updated_at,
+        isPinned: Boolean(p.is_pinned), liked: likedSet.has(p.id),
+        createdAt: p.created_at, updatedAt: p.updated_at,
       })),
       total,
       page,
@@ -3087,7 +3088,8 @@ app.get('/api/discussions/:id', async (req, res) => {
         problemId: post.problem_id, problemTitle: post.problem_title,
         moduleKey: post.module_key,
         viewCount: post.view_count, likeCount: post.like_count,
-        commentCount: post.comment_count, liked: postLiked,
+        commentCount: post.comment_count, isPinned: Boolean(post.is_pinned),
+        liked: postLiked,
         createdAt: post.created_at, updatedAt: post.updated_at,
       },
       comments: topComments,
@@ -3216,6 +3218,49 @@ app.delete('/api/discussions/:id', async (req, res) => {
   } catch (error) {
     console.error('Failed to delete discussion:', error)
     return res.status(500).json({ message: '删除失败' })
+  }
+})
+
+// POST /api/discussions/:id/pin - 管理员置顶帖子
+app.post('/api/discussions/:id/pin', async (req, res) => {
+  const auth = await requireAdmin(req, res)
+  if (!auth) return
+  const { db } = auth
+  try {
+    const postId = parseInt(req.params.id)
+    if (!postId) return res.status(400).json({ message: '无效的帖子ID' })
+    const post = await db.get(`SELECT id FROM discussion_posts WHERE id = ?`, postId)
+    if (!post) return res.status(404).json({ message: '帖子不存在' })
+    await db.run(
+      `UPDATE discussion_posts SET is_pinned = 1, pinned_at = ? WHERE id = ?`,
+      new Date().toISOString(),
+      postId
+    )
+    return res.json({ success: true, isPinned: true })
+  } catch (error) {
+    console.error('Failed to pin discussion:', error)
+    return res.status(500).json({ message: '置顶失败' })
+  }
+})
+
+// DELETE /api/discussions/:id/pin - 管理员取消置顶帖子
+app.delete('/api/discussions/:id/pin', async (req, res) => {
+  const auth = await requireAdmin(req, res)
+  if (!auth) return
+  const { db } = auth
+  try {
+    const postId = parseInt(req.params.id)
+    if (!postId) return res.status(400).json({ message: '无效的帖子ID' })
+    const post = await db.get(`SELECT id FROM discussion_posts WHERE id = ?`, postId)
+    if (!post) return res.status(404).json({ message: '帖子不存在' })
+    await db.run(
+      `UPDATE discussion_posts SET is_pinned = 0, pinned_at = NULL WHERE id = ?`,
+      postId
+    )
+    return res.json({ success: true, isPinned: false })
+  } catch (error) {
+    console.error('Failed to unpin discussion:', error)
+    return res.status(500).json({ message: '取消置顶失败' })
   }
 })
 
@@ -5079,6 +5124,107 @@ app.put('/api/me/bio', async (req, res) => {
   } catch (error) {
     console.error('Failed to update bio:', error)
     return res.status(500).json({ message: '更新失败' })
+  }
+})
+
+// ---------- 数据导出 ----------
+
+app.get('/api/me/export', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const [posts, comments, conversations, privateMessages, chatMessages, bookmarks] = await Promise.all([
+      db.all(
+        `SELECT id, title, content, module_key, problem_id, created_at, updated_at
+         FROM discussion_posts WHERE user_id = ? ORDER BY created_at DESC`,
+        user.id
+      ),
+      db.all(
+        `SELECT id, post_id, content, parent_id, created_at
+         FROM discussion_comments WHERE user_id = ? ORDER BY created_at DESC`,
+        user.id
+      ),
+      db.all(
+        `SELECT id, user1_id, user2_id, created_at
+         FROM conversations WHERE user1_id = ? OR user2_id = ? ORDER BY created_at DESC`,
+        user.id, user.id
+      ),
+      db.all(
+        `SELECT m.id, m.conversation_id, m.sender_id, m.content, m.is_read, m.created_at
+         FROM messages m
+         JOIN conversations c ON m.conversation_id = c.id
+         WHERE c.user1_id = ? OR c.user2_id = ?
+         ORDER BY m.created_at ASC`,
+        user.id, user.id
+      ),
+      db.all(
+        `SELECT id, channel_key, room_id, content, created_at
+         FROM chat_messages WHERE sender_id = ? ORDER BY created_at ASC`,
+        user.id
+      ),
+      db.all(
+        `SELECT target_type, target_id, created_at
+         FROM bookmarks WHERE user_id = ? ORDER BY created_at DESC`,
+        user.id
+      ),
+    ])
+
+    return res.json({
+      exportedAt: new Date().toISOString(),
+      user: {
+        id: user.id,
+        name: user.name,
+        avatar: user.avatar,
+        bio: user.bio || '',
+        createdAt: user.created_at,
+      },
+      posts: posts.map((p) => ({
+        id: p.id,
+        title: p.title,
+        content: p.content,
+        moduleKey: p.module_key,
+        problemId: p.problem_id,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
+      })),
+      comments: comments.map((c) => ({
+        id: c.id,
+        postId: c.post_id,
+        content: c.content,
+        parentId: c.parent_id,
+        createdAt: c.created_at,
+      })),
+      conversations: conversations.map((c) => ({
+        id: c.id,
+        user1Id: c.user1_id,
+        user2Id: c.user2_id,
+        createdAt: c.created_at,
+      })),
+      privateMessages: privateMessages.map((m) => ({
+        id: m.id,
+        conversationId: m.conversation_id,
+        senderId: m.sender_id,
+        content: m.content,
+        isRead: Boolean(m.is_read),
+        createdAt: m.created_at,
+      })),
+      chatMessages: chatMessages.map((m) => ({
+        id: m.id,
+        channelKey: m.channel_key,
+        roomId: m.room_id,
+        content: m.content,
+        createdAt: m.created_at,
+      })),
+      bookmarks: bookmarks.map((b) => ({
+        targetType: b.target_type,
+        targetId: b.target_id,
+        createdAt: b.created_at,
+      })),
+    })
+  } catch (error) {
+    console.error('Failed to export user data:', error)
+    return res.status(500).json({ message: '导出失败' })
   }
 })
 

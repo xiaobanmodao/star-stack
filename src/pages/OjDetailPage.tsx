@@ -2,7 +2,7 @@ import 'katex/dist/katex.min.css'
 import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
-import { fetchJson, preloadOjIdeAssets } from '../utils'
+import { fetchJson, openInNewTab, preloadOjIdeAssets } from '../utils'
 import { renderLatex } from '../latex'
 import { LANGUAGE_OPTIONS, getLanguageConfig } from '../constants'
 import type { DiscussionListResponse, DiscussionPost, OjProblemDetail, ProblemResponse, OjSubmission, SubmissionResponse } from '../types'
@@ -367,7 +367,7 @@ export default function OjDetailPage() {
                       key={post.id}
                       type="button"
                       className="oj-sidebar-discussion-item"
-                      onClick={() => navigate(`/chat/p/${post.id}`, { state: { fromProblemId: problem.id } })}
+                      onClick={() => openInNewTab(`/chat/p/${post.id}`)}
                     >
                       <span className="oj-sidebar-discussion-title">{post.title}</span>
                       <span className="oj-sidebar-discussion-meta">
@@ -380,14 +380,14 @@ export default function OjDetailPage() {
               <div className="oj-sidebar-discussion-actions">
                 <button
                   className="oj-sidebar-button"
-                  onClick={() => navigate(`/chat/plaza?problemId=${problem.id}`)}
+                  onClick={() => openInNewTab(`/chat/plaza?problemId=${problem.id}`)}
                 >
                   查看全部讨论
                 </button>
                 {currentUser && (
                   <button
                     className="ghost small"
-                    onClick={() => navigate(`/chat/plaza?create=1&problemId=${problem.id}`)}
+                    onClick={() => openInNewTab(`/chat/plaza?create=1&problemId=${problem.id}`)}
                   >
                     发起讨论
                   </button>
