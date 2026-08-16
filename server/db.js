@@ -757,6 +757,17 @@ export const initDb = async () => {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
+    -- 每日签到（独立于 AC 连击）
+    CREATE TABLE IF NOT EXISTS daily_checkins (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      checkin_date TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(user_id, checkin_date),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_daily_checkins_user_date ON daily_checkins(user_id, checkin_date);
+
     -- 种子频道：杂谈 / 评测OJ / 界芽计划 / StarCode
     INSERT OR IGNORE INTO chat_channels (key, name, icon, description, sort_order) VALUES
       ('general', '杂谈', '💬', '任何话题的闲聊', 0),

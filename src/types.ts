@@ -123,6 +123,16 @@ export type UserResponse = {
   message?: string
 }
 
+export type CheckinResponse = {
+  checkedToday: boolean
+  currentStreak: number
+  maxStreak: number
+  totalDays: number
+  alreadyChecked?: boolean
+  success?: boolean
+  message?: string
+}
+
 export type ProblemsResponse = {
   problems: OjProblemSummary[]
   total: number

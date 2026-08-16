@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { CalendarCheck, Flame, Trophy } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import type {
   Achievement,
   AchievementsResponse,
+  CheckinResponse,
   DifficultyStats,
   HeatmapData,
   HeatmapResponse,
@@ -49,6 +51,9 @@ export default function AccountPage() {
   const [ratingHistory, setRatingHistory] = useState<{ date: string; rating: number }[]>([])
   const [relations, setRelations] = useState<FollowRelations | null>(null)
   const [bookmarks, setBookmarks] = useState<{ id: number; title: string; userName: string; commentCount: number; createdAt: string }[]>([])
+  const [checkin, setCheckin] = useState<CheckinResponse | null>(null)
+  const [checkingIn, setCheckingIn] = useState(false)
+  const [checkinError, setCheckinError] = useState('')
   const loadedUserIdRef = useRef<string | null>(null)
   const initial = currentUser?.name?.trim()?.[0] || currentUser?.id?.[0] || '★'
 
@@ -99,6 +104,21 @@ export default function AccountPage() {
     }
 
     reader.readAsDataURL(file)
+  }
+
+  const handleCheckin = async () => {
+    if (!currentUser || checkingIn || checkin?.checkedToday) return
+    setCheckingIn(true)
+    setCheckinError('')
+    const { response, data } = await fetchJson<CheckinResponse>('/api/me/checkin', {
+      method: 'POST',
+    })
+    setCheckingIn(false)
+    if (!response.ok || !data) {
+      setCheckinError(data?.message || '签到失败，请重试。')
+      return
+    }
+    setCheckin(data)
   }
 
   useEffect(() => {
@@ -165,6 +185,18 @@ export default function AccountPage() {
       })
     }, 0)
     return () => window.clearTimeout(timer)
+  }, [currentUser])
+
+  // 加载每日签到状态（独立于做题数据，始终显示）
+  useEffect(() => {
+    if (!currentUser?.id) return
+    let mounted = true
+    void fetchJson<CheckinResponse>('/api/me/checkin').then(({ response, data }) => {
+      if (mounted && response.ok && data) setCheckin(data)
+    })
+    return () => {
+      mounted = false
+    }
   }, [currentUser])
 
   if (!currentUser) {
@@ -432,6 +464,53 @@ export default function AccountPage() {
             />
           </Panel>
         )}
+
+        <Panel className="profile-checkin">
+          <div className="profile-panel-head">
+            <div>
+              <div className="profile-kicker">Check-in</div>
+              <h2>每日签到</h2>
+            </div>
+            {checkin?.checkedToday && (
+              <span className="profile-checkin-done">今日已签到</span>
+            )}
+          </div>
+          <div className="profile-checkin-body">
+            <div className="profile-checkin-metrics">
+              <div className="profile-checkin-metric">
+                <CalendarCheck size={16} aria-hidden="true" />
+                <div>
+                  <strong>{checkin?.currentStreak ?? 0}</strong>
+                  <span>当前连续</span>
+                </div>
+              </div>
+              <div className="profile-checkin-metric">
+                <Trophy size={16} aria-hidden="true" />
+                <div>
+                  <strong>{checkin?.maxStreak ?? 0}</strong>
+                  <span>最长连续</span>
+                </div>
+              </div>
+              <div className="profile-checkin-metric">
+                <Flame size={16} aria-hidden="true" />
+                <div>
+                  <strong>{checkin?.totalDays ?? 0}</strong>
+                  <span>累计签到</span>
+                </div>
+              </div>
+            </div>
+            <Button
+              variant={checkin?.checkedToday ? 'ghost' : 'primary'}
+              size="sm"
+              onClick={handleCheckin}
+              disabled={!checkin || checkin.checkedToday || checkingIn}
+              loading={!checkin || checkingIn}
+            >
+              {checkin?.checkedToday ? '今日已签到' : checkin ? '立即签到' : '加载中…'}
+            </Button>
+          </div>
+          {checkinError && <div className="profile-checkin-error">{checkinError}</div>}
+        </Panel>
 
         {bookmarks.length > 0 && (
           <Panel className="profile-bookmarks">

@@ -489,6 +489,66 @@
   font-size: 11px;
 }
 
+/* 每日签到 */
+.profile-checkin {
+  margin-top: 12px;
+}
+
+.profile-panel-head > .profile-checkin-done {
+  color: var(--ss-color-success);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.profile-checkin-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.profile-checkin-metrics {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.profile-checkin-metric {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ss-color-text-muted);
+}
+
+.profile-checkin-metric svg {
+  color: var(--ss-color-accent);
+  flex-shrink: 0;
+}
+
+.profile-checkin-metric div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-checkin-metric strong {
+  color: var(--ss-color-text);
+  font-family: var(--ss-font-display);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.profile-checkin-metric span {
+  font-size: 11px;
+}
+
+.profile-checkin-error {
+  margin-top: 8px;
+  color: var(--ss-color-danger);
+  font-size: 12px;
+}
+
 /* 我的收藏 */
 .profile-bookmarks-list {
   display: flex;

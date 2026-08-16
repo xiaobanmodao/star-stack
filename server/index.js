@@ -5518,6 +5518,112 @@ const localDay = (date = new Date()) => {
   return `${y}-${m}-${d}`
 }
 
+// 按本地时区解析 YYYY-MM-DD，避免 UTC 解析差一天
+const parseLocalDate = (str) => {
+  const [y, m, d] = String(str).split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
+// 每日签到状态：独立于 AC 连击
+const getCheckinStatus = async (db, userId) => {
+  const rows = await db.all(
+    `SELECT checkin_date FROM daily_checkins WHERE user_id = ? ORDER BY checkin_date DESC`,
+    userId
+  )
+  const today = localDay()
+  const checkedToday = rows.some((row) => row.checkin_date === today)
+
+  let currentStreak = 0
+  let maxStreak = 0
+  if (rows.length > 0) {
+    const dates = rows.map((row) => parseLocalDate(row.checkin_date))
+    const todayDate = parseLocalDate(today)
+
+    // 当前连续：今天已签到从今天起算；今天未签到但昨天已签到时，连续仍保留（今天还没断）
+    let expected = todayDate
+    let allowYesterdayGap = true
+    let tempStreak = 0
+    for (const date of dates) {
+      const diffDays = Math.floor((expected - date) / (1000 * 60 * 60 * 24))
+      if (diffDays === 0) {
+        tempStreak++
+        allowYesterdayGap = false
+        expected = new Date(date)
+        expected.setDate(expected.getDate() - 1)
+      } else if (diffDays === 1 && allowYesterdayGap) {
+        tempStreak++
+        expected = new Date(date)
+        expected.setDate(expected.getDate() - 1)
+        allowYesterdayGap = false
+      } else {
+        break
+      }
+    }
+    currentStreak = tempStreak
+
+    // 最长连续
+    let tempMax = 1
+    for (let i = 0; i < dates.length - 1; i++) {
+      const diffDays = Math.floor((dates[i] - dates[i + 1]) / (1000 * 60 * 60 * 24))
+      if (diffDays === 1) {
+        tempMax++
+        maxStreak = Math.max(maxStreak, tempMax)
+      } else {
+        tempMax = 1
+      }
+    }
+    maxStreak = Math.max(maxStreak, tempMax, currentStreak)
+  }
+
+  return {
+    checkedToday,
+    currentStreak,
+    maxStreak,
+    totalDays: rows.length,
+  }
+}
+
+// 我的每日签到状态
+app.get('/api/me/checkin', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const status = await getCheckinStatus(db, user.id)
+    return res.json(status)
+  } catch (error) {
+    console.error('Failed to get checkin status:', error)
+    return res.status(500).json({ message: '获取签到状态失败' })
+  }
+})
+
+// 执行每日签到
+app.post('/api/me/checkin', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const today = localDay()
+    const existing = await db.get(
+      `SELECT 1 FROM daily_checkins WHERE user_id = ? AND checkin_date = ?`,
+      user.id,
+      today
+    )
+    const alreadyChecked = !!existing
+    await db.run(
+      `INSERT OR IGNORE INTO daily_checkins (user_id, checkin_date, created_at) VALUES (?, ?, ?)`,
+      user.id,
+      today,
+      new Date().toISOString()
+    )
+    const status = await getCheckinStatus(db, user.id)
+    return res.json({ success: true, alreadyChecked, ...status })
+  } catch (error) {
+    console.error('Failed to check in:', error)
+    return res.status(500).json({ message: '签到失败' })
+  }
+})
+
 // 累计活跃天数（从活跃日志去重计数）
 const countActiveDays = async (db, userId) => {
   const row = await db.get(
