@@ -161,6 +161,70 @@
   resize: none;
 }
 
+/* 洛谷风格题解区 */
+.oj-solutions-empty {
+  padding: 18px 0;
+  color: var(--ss-color-text-muted);
+  font-size: 13px;
+}
+
+.oj-solutions-list {
+  display: grid;
+  gap: 8px;
+}
+
+.oj-solution-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-hover-layer);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--ss-motion-normal), background-color var(--ss-motion-normal);
+}
+
+.oj-solution-item:hover {
+  border-color: rgba(125, 211, 252, 0.28);
+  background: var(--ss-hover-layer);
+}
+
+.oj-solution-item-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.oj-solution-item-main strong {
+  color: var(--ss-color-text);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oj-solution-item-main span {
+  color: var(--ss-color-text-muted);
+  font-size: 12px;
+}
+
+.oj-solution-item-meta {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.oj-solution-item-meta em {
+  color: var(--ss-color-text-muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
 @media (max-width: 1040px) {
   .oj-detail.split {
     width: min(100%, 980px) !important;

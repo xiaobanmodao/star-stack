@@ -2,10 +2,11 @@ import 'katex/dist/katex.min.css'
 import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
+import SolutionModal from '../components/SolutionModal'
 import { fetchJson, openInNewTab, preloadOjIdeAssets } from '../utils'
 import { renderLatex } from '../latex'
 import { LANGUAGE_OPTIONS, getLanguageConfig } from '../constants'
-import type { DiscussionListResponse, DiscussionPost, OjProblemDetail, ProblemResponse, OjSubmission, SubmissionResponse } from '../types'
+import type { DiscussionListResponse, DiscussionPost, OjProblemDetail, ProblemResponse, OjSubmission, SubmissionResponse, SolutionsResponse } from '../types'
 import './OjDetailPage.css'
 
 const LazyOjIdePanel = lazy(() => import('../components/OjIdePanel'))
@@ -59,6 +60,11 @@ export default function OjDetailPage() {
   const [relatedPosts, setRelatedPosts] = useState<DiscussionPost[]>([])
   const [discussionTotal, setDiscussionTotal] = useState(0)
   const [discussionLoading, setDiscussionLoading] = useState(false)
+  const [solutions, setSolutions] = useState<SolutionsResponse['solutions']>([])
+  const [solutionsLoading, setSolutionsLoading] = useState(true)
+  const [solutionError, setSolutionError] = useState('')
+  const [canWriteSolution, setCanWriteSolution] = useState(false)
+  const [showSolutionModal, setShowSolutionModal] = useState(false)
   const latestIdeSubmissionCacheRef = useRef<{ problemId: number; submission: OjSubmission | null } | null>(null)
 
   const preloadOjIde = useCallback(() => {
@@ -166,6 +172,43 @@ export default function OjDetailPage() {
     }
   }, [problem?.id])
 
+  const loadSolutions = useCallback(async () => {
+    if (!problem) return
+    const { response, data } = await fetchJson<SolutionsResponse>(`/api/oj/problems/${problem.id}/solutions`)
+    if (response.ok && data) {
+      setSolutions(data.solutions || [])
+      setCanWriteSolution(data.canWrite)
+      setSolutionError('')
+    } else {
+      setSolutions([])
+      setCanWriteSolution(false)
+      setSolutionError('题解加载失败')
+    }
+    setSolutionsLoading(false)
+  }, [problem])
+
+  useEffect(() => {
+    if (!problem) return
+    let cancelled = false
+    ;(async () => {
+      const { response, data } = await fetchJson<SolutionsResponse>(`/api/oj/problems/${problem.id}/solutions`)
+      if (cancelled) return
+      if (response.ok && data) {
+        setSolutions(data.solutions || [])
+        setCanWriteSolution(data.canWrite)
+        setSolutionError('')
+      } else {
+        setSolutions([])
+        setCanWriteSolution(false)
+        setSolutionError('题解加载失败')
+      }
+      setSolutionsLoading(false)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [problem])
+
   const handleSubmitJudge = useCallback((payload: {
     problemId: number
     problemTitle: string
@@ -259,6 +302,64 @@ export default function OjDetailPage() {
               </div>
             </div>
             <div className="oj-problem-richtext" dangerouslySetInnerHTML={{ __html: renderLatex(problem.statement) }} />
+          </section>
+
+          {/* 题解（洛谷风格） */}
+          <section className="oj-section oj-solutions-section">
+            <div className="oj-section-header-row">
+              <h3>题解</h3>
+              <div className="hero-actions">
+                <button
+                  className="ghost small"
+                  onClick={() => {
+                    if (!currentUser) {
+                      openAuth('login')
+                    } else if (canWriteSolution) {
+                      setSolutionError('')
+                      setShowSolutionModal(true)
+                    } else {
+                      setSolutionError('通过该题后才能写题解')
+                    }
+                  }}
+                >
+                  写题解
+                </button>
+              </div>
+            </div>
+            {solutionError && <div className="auth-error">{solutionError}</div>}
+            {solutionsLoading ? (
+              <div className="discussion-loading">
+                {Array.from({ length: 2 }, (_, index) => <div key={index} className="skeleton skeleton-card" />)}
+              </div>
+            ) : solutions.length === 0 ? (
+              <div className="oj-solutions-empty">
+                <div className="oj-discussion-empty-title">还没有题解</div>
+                <div className="oj-discussion-empty-copy">通过本题后可以发布你的第一篇题解。</div>
+              </div>
+            ) : (
+              <div className="oj-solutions-list">
+                {solutions.map((solution) => (
+                  <button
+                    key={solution.id}
+                    type="button"
+                    className="oj-solution-item"
+                    onClick={() => openInNewTab(`/chat/p/${solution.id}`)}
+                  >
+                    <div className="oj-solution-item-main">
+                      <strong>{solution.title}</strong>
+                      <span>
+                        {solution.userName} · {new Date(solution.createdAt).toLocaleDateString('zh-CN')}
+                      </span>
+                    </div>
+                    <div className="oj-solution-item-meta">
+                      <em>👍 {solution.likeCount}</em>
+                      <em>💬 {solution.commentCount}</em>
+                      <em>👁 {solution.viewCount}</em>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
           </section>
 
           {/* 输入说明 */}
@@ -422,6 +523,18 @@ export default function OjDetailPage() {
             onPendingSampleRunHandled={() => setPendingSampleRunIndex(null)}
           />
         </Suspense>
+      )}
+
+      {showSolutionModal && (
+        <SolutionModal
+          problemId={problem.id}
+          onClose={() => setShowSolutionModal(false)}
+          onCreated={(postId) => {
+            setShowSolutionModal(false)
+            void loadSolutions()
+            openInNewTab(`/chat/p/${postId}`)
+          }}
+        />
       )}
     </div>
   )

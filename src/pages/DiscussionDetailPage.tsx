@@ -11,7 +11,7 @@ import './DiscussionPages.css'
 
 const getPostTypeMeta = (post: DiscussionPost) => {
   const title = post.title.toLowerCase()
-  if (post.problemId && /题解|solution|做法|思路/.test(post.title)) {
+  if (post.isSolution || (post.problemId && /题解|solution|做法|思路/.test(post.title))) {
     return { label: '题解', tone: 'success' as const }
   }
   if (/求助|求调|wa|tle|re|ce|为什么|错/.test(title) || /求助|求调|为什么|错/.test(post.title)) {

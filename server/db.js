@@ -455,6 +455,7 @@ export const initDb = async () => {
       comment_count INTEGER DEFAULT 0,
       is_pinned INTEGER DEFAULT 0,
       pinned_at TEXT,
+      is_solution INTEGER DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -816,6 +817,15 @@ export const initDb = async () => {
   }
   await db.exec(
     `CREATE INDEX IF NOT EXISTS idx_posts_pinned ON discussion_posts(is_pinned, created_at)`
+  )
+
+  // Migration: discussion_posts.is_solution（洛谷风格题解）
+  const solutionPostColumns = await db.all(`PRAGMA table_info(discussion_posts)`)
+  if (!solutionPostColumns.some((col) => col.name === 'is_solution')) {
+    await db.exec(`ALTER TABLE discussion_posts ADD COLUMN is_solution INTEGER DEFAULT 0`)
+  }
+  await db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_posts_solution_problem ON discussion_posts(is_solution, problem_id, created_at)`
   )
 
   // Initialize user_stats for existing users

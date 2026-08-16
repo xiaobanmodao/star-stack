@@ -87,6 +87,7 @@ tsc / eslint / build 通过；audit 双主题 0 违规；无硬编码颜色；�
 
 - **项目大厅首页**：三张项目卡片（OJ featured / 界芽 external `<a>` / StarCode desktop `<button>`），hover/active 星蓝边框+背景加深+active 下沉 1px，边框绝不消失（修复过 `--hover-calm` 事故）。
 - **OJ**：题库列表（搜索/难度/标签/分页）、题目详情（KaTeX+代码高亮、样例、刷题计划面板）、评测（Monaco IDE、提交记录、判题结果）、OJ 首页。
+- **题解区（洛谷式）**：题目详情页独立题解列表 + 写题解弹窗；仅 AC 过该题的用户可发布；题解详情复用讨论详情页并显示“题解”徽标；普通讨论列表自动排除题解。
 - **每日一题 + AC 连击**（留存机制，已上线）：
   - `GET /api/problems/daily`：按日期取模轮换推荐（优先未 AC 的题），返回 problem/solvedToday/streak/maxStreak。
   - 连击规则：**任意 AC 一题即打卡**；`server/stats.js` 的 `calculateStreak` 只统计 `accepted_count > 0` 的日子；算法含"今天未打卡允许昨天为起点"逻辑（边界已修）。
@@ -154,7 +155,7 @@ tsc / eslint / build 通过；audit 双主题 0 违规；无硬编码颜色；�
 
 1. **审查制度**：已落地（audit 工具 + DEVELOPING.md）。
 2. **每日一题 + AC 连击**：✅ 已完成。
-3. 待讨论/开发：新手引导 + 等级称号（星空主题）、题解区（洛谷式，SEO 流量）、周赛/限时赛、热榜、月度编程报告（Spotify Wrapped 风分享卡）、品牌落地页 + SEO meta、测试体系（Vitest/Playwright）、CI（GitHub Actions）、错误监控。
+3. 待讨论/开发：新手引导 + 等级称号（星空主题）、周赛/限时赛、热榜、月度编程报告（Spotify Wrapped 风分享卡）、品牌落地页 + SEO meta、测试体系扩充、错误监控。
 
 ---
 

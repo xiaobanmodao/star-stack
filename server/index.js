@@ -621,6 +621,113 @@ app.get('/api/oj/problems/:id', async (req, res) => {
   })
 })
 
+// GET /api/oj/problems/:id/solutions - 题目题解列表（洛谷风格）
+app.get('/api/oj/problems/:id/solutions', async (req, res) => {
+  try {
+    const db = await getDb()
+    const problemId = parseInt(req.params.id)
+    if (!problemId) return res.status(400).json({ message: '无效的题目ID' })
+
+    const problem = await db.get(`SELECT id FROM problems WHERE id = ?`, problemId)
+    if (!problem) return res.status(404).json({ message: '题目不存在' })
+
+    const solutions = await db.all(
+      `SELECT dp.id, dp.user_id, dp.title, dp.like_count, dp.comment_count, dp.view_count, dp.created_at,
+              u.name as user_name, u.avatar as user_avatar
+       FROM discussion_posts dp
+       LEFT JOIN users u ON dp.user_id = u.id
+       WHERE dp.problem_id = ? AND dp.is_solution = 1
+       ORDER BY dp.created_at DESC`,
+      problemId
+    )
+
+    let canWrite = false
+    const token = getAuthToken(req)
+    if (token) {
+      const user = await getUserByToken(db, token)
+      if (user) {
+        const solved = await db.get(
+          `SELECT 1 FROM solved_problems WHERE user_id = ? AND problem_id = ?`,
+          user.id, problemId
+        )
+        canWrite = !!solved
+      }
+    }
+
+    return res.json({
+      solutions: solutions.map((s) => ({
+        id: s.id,
+        userId: s.user_id,
+        userName: s.user_name,
+        userAvatar: s.user_avatar,
+        title: s.title,
+        likeCount: s.like_count,
+        commentCount: s.comment_count,
+        viewCount: s.view_count,
+        createdAt: s.created_at,
+        isSolution: true,
+      })),
+      canWrite,
+    })
+  } catch (error) {
+    console.error('Failed to list solutions:', error)
+    return res.status(500).json({ message: '获取题解列表失败' })
+  }
+})
+
+// POST /api/oj/problems/:id/solutions - 发布题解（需 AC 过该题）
+const solutionRateLimits = new BoundedCache(5000, 10000) // 10 秒冷却
+
+app.post('/api/oj/problems/:id/solutions', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+
+  try {
+    if (solutionRateLimits.has(user.id)) {
+      return res.status(429).json({ message: '发布题解过于频繁，请稍后再试' })
+    }
+
+    const problemId = parseInt(req.params.id)
+    if (!problemId) return res.status(400).json({ message: '无效的题目ID' })
+
+    const problem = await db.get(`SELECT id FROM problems WHERE id = ?`, problemId)
+    if (!problem) return res.status(404).json({ message: '题目不存在' })
+
+    const solved = await db.get(
+      `SELECT 1 FROM solved_problems WHERE user_id = ? AND problem_id = ?`,
+      user.id, problemId
+    )
+    if (!solved) {
+      return res.status(403).json({ message: '通过该题后才能写题解' })
+    }
+
+    const { title, content } = req.body || {}
+    if (!title || !title.trim()) return res.status(400).json({ message: '标题不能为空' })
+    if (title.trim().length > 200) return res.status(400).json({ message: '标题不能超过200字符' })
+    if (!content || !content.trim()) return res.status(400).json({ message: '内容不能为空' })
+    if (content.length > 50000) return res.status(400).json({ message: '内容不能超过50000字符' })
+
+    solutionRateLimits.set(user.id, Date.now())
+    const now = new Date().toISOString()
+    const result = await db.run(
+      `INSERT INTO discussion_posts (user_id, title, content, problem_id, module_key, is_solution, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'oj', 1, ?, ?)`,
+      user.id,
+      title.trim(),
+      content,
+      problemId,
+      now,
+      now
+    )
+
+    return res.json({ success: true, postId: result.lastID })
+  } catch (error) {
+    console.error('Failed to create solution:', error)
+    return res.status(500).json({ message: '发布题解失败' })
+  }
+})
+
 app.post('/api/problems', async (req, res) => {
   const auth = await requireUser(req, res)
   if (!auth) return
@@ -2904,6 +3011,9 @@ app.get('/api/discussions', async (req, res) => {
     const where = []
     const params = []
 
+    // 普通讨论列表默认排除题解（题解走专用接口）
+    where.push('dp.is_solution = 0')
+
     if (problemId) {
       where.push('dp.problem_id = ?')
       params.push(problemId)
@@ -3089,6 +3199,7 @@ app.get('/api/discussions/:id', async (req, res) => {
         moduleKey: post.module_key,
         viewCount: post.view_count, likeCount: post.like_count,
         commentCount: post.comment_count, isPinned: Boolean(post.is_pinned),
+        isSolution: Boolean(post.is_solution),
         liked: postLiked,
         createdAt: post.created_at, updatedAt: post.updated_at,
       },

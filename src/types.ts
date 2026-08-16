@@ -144,6 +144,25 @@ export type ProblemResponse = {
   message?: string
 }
 
+export type SolutionSummary = {
+  id: number
+  userId: string
+  userName: string
+  userAvatar?: string
+  title: string
+  likeCount: number
+  commentCount: number
+  viewCount: number
+  createdAt: string
+  isSolution: true
+}
+
+export type SolutionsResponse = {
+  solutions: SolutionSummary[]
+  canWrite: boolean
+  message?: string
+}
+
 export type SubmissionsResponse = {
   submissions: OjSubmission[]
   total: number
@@ -177,7 +196,7 @@ export type DiscussionPost = {
   problemId?: number; problemTitle?: string
   moduleKey?: ChatModuleKey
   viewCount: number; likeCount: number; commentCount: number
-  isPinned?: boolean; liked?: boolean; createdAt: string; updatedAt: string
+  isPinned?: boolean; isSolution?: boolean; liked?: boolean; createdAt: string; updatedAt: string
 }
 
 export type DiscussionComment = {
