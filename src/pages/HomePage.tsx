@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Badge, Panel } from '../components/ui'
 import { PORTAL_PROJECTS, type PortalProject } from '../projects'
+import { openInNewTab } from '../utils'
 import './EntryPages.css'
 import './HomePage.css'
 
@@ -110,7 +111,7 @@ export default function HomePage() {
             project={project}
             desktopHint={desktopHintId === project.id}
             onToggleDesktopHint={() => setDesktopHintId(desktopHintId === project.id ? null : project.id)}
-            onOpen={() => navigate(project.href)}
+            onOpen={() => openInNewTab(project.href)}
           />
         ))}
       </section>
