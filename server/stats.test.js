@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { calculateStreak } from './stats.js'
+import { calculateStreak, getLevelInfo } from './stats.js'
 
 const localDate = (offsetDays) => {
   const date = new Date()
@@ -93,5 +93,38 @@ describe('calculateStreak', () => {
       3,
       'astro01'
     )
+  })
+})
+
+describe('getLevelInfo', () => {
+  it('starts at 星尘 level 1 with 0 xp', () => {
+    const info = getLevelInfo(0)
+    expect(info.level).toBe(1)
+    expect(info.title).toBe('星尘')
+    expect(info.nextTitle).toBe('流星')
+    expect(info.nextXp).toBe(100)
+    expect(info.progress).toBe(0)
+  })
+
+  it('upgrades to 流星 at 100 xp', () => {
+    const info = getLevelInfo(100)
+    expect(info.level).toBe(2)
+    expect(info.title).toBe('流星')
+    expect(info.nextTitle).toBe('新星')
+    expect(info.nextXp).toBe(300)
+  })
+
+  it('caps at 黑洞 after 6000 xp', () => {
+    const info = getLevelInfo(10000)
+    expect(info.level).toBe(7)
+    expect(info.title).toBe('黑洞')
+    expect(info.nextTitle).toBeNull()
+    expect(info.nextXp).toBeNull()
+    expect(info.progress).toBe(100)
+  })
+
+  it('computes progress toward next level', () => {
+    const info = getLevelInfo(200)
+    expect(info.progress).toBe(50)
   })
 })
