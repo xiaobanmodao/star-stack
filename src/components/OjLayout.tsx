@@ -1,11 +1,10 @@
 import { useLocation, useNavigate, Outlet } from 'react-router-dom'
-import { House, BookOpen, Code2, FileText } from 'lucide-react'
+import { House, BookOpen, FileText } from 'lucide-react'
 import './OjLayout.css'
 
 const NAV_ITEMS = [
   { path: '/oj', label: '评测首页', icon: House, match: (p: string) => p === '/oj' },
   { path: '/oj/list', label: '题库', icon: BookOpen, match: (p: string) => p.startsWith('/oj/list') },
-  { path: '/oj/judge', label: '代码评测', icon: Code2, match: (p: string) => p.startsWith('/oj/judge') },
   { path: '/oj/submissions', label: '提交记录', icon: FileText, match: (p: string) => p.startsWith('/oj/submissions') },
 ]
 

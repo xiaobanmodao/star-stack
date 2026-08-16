@@ -36,7 +36,7 @@ export const PORTAL_PROJECTS: PortalProject[] = [
     tagline: '题库 · 代码评测 · 提交记录',
     description: '竞赛编程在线评测平台：C++17 / Python 3 / Java 17 评测，题目讨论、排行榜与成长记录都在这里。',
     kind: 'internal',
-    href: '/oj/list',
+    href: '/oj',
     featured: true,
     badges: ['C++17', 'Python 3', 'Java 17'],
   },

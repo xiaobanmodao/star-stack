@@ -28,7 +28,7 @@
 ### OJ 侧边栏设计（用户明确要求）
 - 复用原全局侧栏整套样式（`.sidebar/.nav/.nav-link/.nav-icon/.nav-label/.sidebar-footer`，规则仍在 App.css，全局已不渲染）。
 - 收起：64px 窄图标栏（图标居中）；**hover 展开：224px**，图标 + 文字（文字在图标**右侧**，淡入），悬浮（fixed）**不挤压内容**（`.oj-sidebar-main { margin-left: 59px }` 固定占位）。
-- 每项独立图标（lucide-react）：评测首页=House、题库=BookOpen、代码评测=Code2、提交记录=FileText。底部 footer"Online Judge"。
+- 每项独立图标（lucide-react）：评测首页=House、题库=BookOpen、提交记录=FileText（代码评测入口已按用户要求移除，路由仍保留）。底部 footer"Online Judge"。
 - 移动端不在考虑范围（用户原话"看着办"）。
 
 ### 路由结构（App.tsx）
