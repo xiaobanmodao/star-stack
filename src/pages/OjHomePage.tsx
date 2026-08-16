@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
+import CheckinBanner from '../components/CheckinBanner'
 import type { OjProblemSummary } from '../types'
 import { fetchJson } from '../utils'
 import { Badge, Button, EmptyState, Panel } from '../components/ui'
@@ -133,6 +134,8 @@ export default function OjHomePage() {
           </div>
         </Panel>
       </section>
+
+      <CheckinBanner key={currentUser?.id ?? 'guest'} />
 
       <section className="oj-workbench-grid">
         <Panel className="oj-workbench-section oj-workbench-difficulty">
