@@ -12,7 +12,7 @@ import { dirname, join } from 'path'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-const DB_PATH = join(__dirname, 'data', 'oj.sqlite')
+const DB_PATH = join(__dirname, 'data', 'starstack.sqlite')
 
 async function openDb() {
   return open({
@@ -154,6 +154,7 @@ async function diagnose() {
       })
       console.log()
       console.log('建议运行修复程序: node diagnose.js --fix')
+      process.exitCode = 1
     } else {
       console.log('✓ 未发现明显问题')
       console.log()
@@ -167,6 +168,7 @@ async function diagnose() {
   } catch (err) {
     console.error('✗ 诊断过程中出错:', err.message)
     console.error(err.stack)
+    process.exitCode = 1
   } finally {
     if (db) {
       await db.close()
@@ -258,6 +260,7 @@ async function fix() {
   } catch (err) {
     console.error('✗ 修复过程中出错:', err.message)
     console.error(err.stack)
+    process.exitCode = 1
   } finally {
     if (db) {
       await db.close()

@@ -98,6 +98,7 @@ tsc / eslint / build 通过；audit 双主题 0 违规；无硬编码颜色；�
 - **管理后台**：用户管理、题目管理、举报处理、内容审核。
 - **已移除**：排行榜（路由重定向首页，入口全删，后端 API 保留）、成长航线面板（个人中心星图，代码已清理）。
 - **安全**：登录限流（5 次失败锁 IP 10 分钟）、发帖/私信/聊天/评论/举报限流、token 30 天、SAFE_URL_RE 防 `//`、sanitizeHtml 白名单、评测沙箱（生产强制）。
+- **工程化**：Vitest 基础单测（`npm test`）+ GitHub Actions CI（lint/build/test）；`server/diagnose.js` 已修正为读取真实 `starstack.sqlite`。
 
 ---
 

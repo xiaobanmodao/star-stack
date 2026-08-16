@@ -12,6 +12,8 @@
     "dev:server": "npm --prefix server run dev",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "preview": "vite preview",
     "audit": "node scripts/audit.mjs",
     "audit:light": "node scripts/audit.mjs --theme light",
@@ -42,6 +44,7 @@
     "globals": "^16.5.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vitest": "^4.1.10"
   }
 }
