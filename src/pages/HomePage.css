@@ -1,0 +1,247 @@
+/* 星栈 · 项目主站（首页项目大厅） */
+.portal-hall {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+  display: grid;
+  gap: 14px;
+}
+
+.portal-hero {
+  display: grid;
+  align-content: center;
+  gap: 14px;
+  min-height: 300px;
+  padding: clamp(26px, 5vw, 54px);
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-xl);
+  background: none;
+  box-shadow: none !important;
+}
+
+.portal-hero .ui-badge {
+  justify-self: start;
+}
+
+.portal-hero h1 {
+  max-width: 820px;
+  margin: 0;
+  color: var(--ss-color-text);
+  font-size: clamp(38px, 6vw, 64px);
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+}
+
+.portal-hero p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--ss-color-text-muted);
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+.portal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.portal-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 250px;
+  padding: 18px;
+  border: 1.5px solid var(--ss-color-border-strong); /* 基础边框清晰，不消失 */
+  border-radius: var(--ss-radius-lg);
+  background: var(--ss-bg-panel);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: none;
+  box-shadow: none;
+  transition:
+    background-color var(--ss-motion-normal),
+    border-color var(--ss-motion-normal),
+    box-shadow var(--ss-motion-normal),
+    transform 0.12s ease;
+}
+
+/* hover：星蓝边框强调 + 背景加深 + 轻阴影，变化明确可见（两主题下 accent 均为高对比） */
+.portal-card:hover {
+  border-color: var(--ss-color-accent);
+  background: var(--ss-hover-layer);
+  box-shadow: 0 4px 18px rgba(31, 35, 40, 0.1);
+  transform: none;
+}
+
+.portal-card.featured {
+  background: var(--ss-bg-panel);
+}
+
+/* 按钮卡片与链接卡片渲染完全一致：重置按钮默认字体/外观/高亮 */
+button.portal-card {
+  font: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 按钮卡点击反馈：与链接卡同一套 hover 视觉，active 增加轻微下沉，边框绝不消失 */
+/* !important 压过 App.css 全局 button:hover 组（--hover-calm 覆盖） */
+button.portal-card:hover,
+button.portal-card:active {
+  filter: none !important;
+  border-color: var(--ss-color-accent) !important;
+  background: var(--ss-hover-layer) !important;
+  box-shadow: 0 4px 18px rgba(31, 35, 40, 0.1) !important;
+}
+
+button.portal-card:active {
+  box-shadow: 0 2px 10px rgba(31, 35, 40, 0.08) !important;
+  transform: translateY(1px) !important; /* 按下轻微下沉，反馈明确且克制 */
+}
+
+.portal-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.portal-card-kicker {
+  color: var(--ss-color-accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.portal-card h2 {
+  margin: 0;
+  color: var(--ss-color-text);
+  font-size: 22px;
+}
+
+.portal-card-tagline {
+  margin: 0;
+  color: var(--ss-color-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.portal-card-desc {
+  flex: 1;
+  margin: 0;
+  color: var(--ss-color-text-muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.portal-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.portal-card-badges span {
+  padding: 2px 9px;
+  border: 1px solid rgba(125, 211, 252, 0.25);
+  border-radius: 999px;
+  color: var(--ss-color-text-subtle);
+  font-size: 11px;
+}
+
+.portal-card-action {
+  align-self: flex-start;
+  color: var(--ss-color-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.portal-card-hint {
+  padding-top: 10px;
+  border-top: 1px dashed var(--ss-color-border);
+}
+
+.portal-card-hint code {
+  color: var(--ss-color-text-muted);
+  font-family: var(--ss-font-mono);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.portal-community {
+  display: grid;
+  grid-template-columns: minmax(0, 240px) 1fr;
+  gap: 16px;
+  padding: 14px 16px !important;
+  border-color: var(--ss-color-border) !important;
+  background: var(--ss-bg-panel) !important;
+}
+
+.portal-community-title {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+
+.portal-community-title span {
+  color: var(--ss-color-accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.portal-community-title strong {
+  color: var(--ss-color-text);
+  font-size: 18px;
+}
+
+.portal-community-links {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.portal-community-links button {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-hover-layer);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--ss-motion-normal), border-color var(--ss-motion-normal);
+}
+
+.portal-community-links button:hover {
+  border-color: rgba(125, 211, 252, 0.28);
+  background: var(--ss-hover-layer);
+}
+
+.portal-community-links strong {
+  color: var(--ss-color-text);
+  font-size: 14px;
+}
+
+.portal-community-links span {
+  color: var(--ss-color-text-subtle);
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .portal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-community {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-community-links {
+    grid-template-columns: 1fr;
+  }
+}

@@ -31,3 +31,10 @@ server/data/db.json
 
 # Keep the data directory structure
 !server/data/.gitkeep
+
+# Generated audit artifacts and local browser profile
+.audit/
+.audit-chrome/
+
+# Local secrets / push credentials
+server/.vapid.json

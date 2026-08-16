@@ -26,9 +26,7 @@
   align-items: stretch;
   padding: 14px !important;
   border-color: var(--ss-color-border);
-  background:
-    linear-gradient(135deg, rgba(226, 232, 240, 0.055), rgba(15, 23, 42, 0.72)),
-    rgba(8, 13, 22, 0.84);
+  background: none;
   box-shadow: none !important;
 }
 
@@ -38,9 +36,7 @@
   overflow: hidden;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
-  background:
-    radial-gradient(circle at 28% 18%, rgba(125, 211, 252, 0.16), transparent 34%),
-    linear-gradient(180deg, rgba(2, 6, 23, 0.1), rgba(2, 6, 23, 0.72));
+  background: none;
 }
 
 .judge-visual .submit-anim {
@@ -62,7 +58,7 @@
   padding: 5px 9px;
   border: 1px solid rgba(226, 232, 240, 0.16);
   border-radius: var(--ss-radius-sm);
-  background: rgba(2, 6, 23, 0.54);
+  background: var(--ss-bg-input);
   color: var(--ss-color-text);
   font-family: var(--ss-font-display);
   font-size: 12px;
@@ -106,25 +102,25 @@
   height: 7px;
   overflow: hidden;
   border-radius: var(--ss-radius-pill);
-  background: rgba(226, 232, 240, 0.08);
+  background: var(--ss-hover-layer);
 }
 
 .judge-progress-line span {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--ss-color-accent), var(--ss-color-success));
+  background: var(--ss-color-accent);
   transition: width var(--ss-motion-normal);
 }
 
 .judge-page-wrong .judge-progress-line span,
 .judge-page-runtime .judge-progress-line span,
 .judge-page-compile .judge-progress-line span {
-  background: linear-gradient(90deg, var(--ss-color-danger), #fb7185);
+  background: var(--ss-color-danger);
 }
 
 .judge-page-tle .judge-progress-line span {
-  background: linear-gradient(90deg, var(--ss-color-warning), #fbbf24);
+  background: var(--ss-color-warning);
 }
 
 .judge-summary-grid {
@@ -140,7 +136,7 @@
   padding: 11px 12px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.045);
+  background: var(--ss-hover-layer);
 }
 
 .judge-summary-card span,
@@ -240,7 +236,7 @@
 
 .judge-live-progress {
   padding: 14px !important;
-  background: rgba(8, 13, 22, 0.76);
+  background: var(--ss-bg-panel);
 }
 
 .judge-panel-head {
@@ -273,7 +269,7 @@
   min-height: 72px;
   padding: 12px;
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .judge-results-panel .submit-result.ok {
@@ -329,9 +325,7 @@
   margin-top: 0;
   padding: 16px;
   border-radius: var(--ss-radius-lg);
-  background:
-    radial-gradient(circle at top right, rgba(74, 222, 128, 0.1), transparent 26%),
-    rgba(8, 13, 22, 0.78);
+  background: none;
   box-shadow: none;
 }
 
@@ -342,7 +336,7 @@
 .judge-page-v2 .judge-celebration-stat,
 .judge-page-v2 .judge-achievement-card {
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .low-performance-mode .judge-visual .fireworks span,
@@ -396,4 +390,31 @@
     align-items: flex-start;
     flex-direction: column;
   }
+}
+
+/* ---------- 浅色主题：评测页加深可读 ---------- */
+:root[data-theme='light'] .judge-status-message {
+  color: var(--ss-color-danger);
+  border-color: rgba(207, 34, 46, 0.28);
+  background: rgba(207, 34, 46, 0.06);
+}
+
+:root[data-theme='light'] .judge-page-accepted .judge-status-message {
+  color: var(--ss-color-success);
+  border-color: rgba(26, 127, 55, 0.28);
+  background: rgba(26, 127, 55, 0.06);
+}
+
+:root[data-theme='light'] .judge-debug-panel {
+  background: var(--ss-bg-input);
+  border-color: rgba(207, 34, 46, 0.22);
+}
+
+:root[data-theme='light'] .judge-first-fail {
+  background: rgba(207, 34, 46, 0.07);
+  border-color: rgba(207, 34, 46, 0.26);
+}
+
+:root[data-theme='light'] .judge-first-fail strong {
+  color: var(--ss-color-danger);
 }

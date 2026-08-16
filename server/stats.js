@@ -36,12 +36,26 @@ function calculateRatingIncrease(difficulty) {
   return ratingMap[difficulty] || 0.1
 }
 
+// 本地日期 YYYY-MM-DD（避免 UTC 时区错位导致连续天数/热力图日期串位）
+const localDay = (date = new Date()) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+// 按本地时区解析 YYYY-MM-DD（new Date('2026-08-16') 是 UTC 解析，会差一天）
+const parseLocalDate = (str) => {
+  const [y, m, d] = String(str).split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
 /**
  * Update user statistics after a submission
  */
 async function updateUserStats(db, userId, submission) {
   const now = new Date().toISOString()
-  const today = now.split('T')[0]
+  const today = localDay()
 
   // Ensure user_stats record exists
   let stats = await db.get(`SELECT * FROM user_stats WHERE user_id = ?`, userId)
@@ -80,8 +94,9 @@ async function updateUserStats(db, userId, submission) {
       const problem = await db.get(`SELECT difficulty FROM problems WHERE id = ?`, submission.problemId)
       const difficulty = problem?.difficulty || 'Medium'
 
-      await db.run(
-        `INSERT INTO solved_problems (user_id, problem_id, difficulty, first_solved_at)
+      // 原子插入 + 按 changes 判断，避免并发首 AC 时重复计数/丢失
+      const insertResult = await db.run(
+        `INSERT OR IGNORE INTO solved_problems (user_id, problem_id, difficulty, first_solved_at)
          VALUES (?, ?, ?, ?)`,
         userId,
         submission.problemId,
@@ -89,10 +104,12 @@ async function updateUserStats(db, userId, submission) {
         now
       )
 
-      await db.run(
-        `UPDATE user_stats SET solved_problems = solved_problems + 1 WHERE user_id = ?`,
-        userId
-      )
+      if (insertResult.changes > 0) {
+        await db.run(
+          `UPDATE user_stats SET solved_problems = solved_problems + 1 WHERE user_id = ?`,
+          userId
+        )
+      }
 
       // Calculate and update rating based on difficulty
       const ratingIncrease = calculateRatingIncrease(difficulty)
@@ -147,9 +164,10 @@ async function updateUserStats(db, userId, submission) {
  * Calculate user's current and max streak
  */
 async function calculateStreak(db, userId) {
+  // 连击只统计有 AC 的日子（任意 AC 一题即算打卡）
   const activities = await db.all(
     `SELECT activity_date FROM daily_activity
-     WHERE user_id = ?
+     WHERE user_id = ? AND accepted_count > 0
      ORDER BY activity_date DESC`,
     userId
   )
@@ -167,30 +185,35 @@ async function calculateStreak(db, userId) {
   let tempStreak = 0
   let expectedDate = new Date()
   expectedDate.setHours(0, 0, 0, 0)
+  // 今天尚未打卡时，允许连击起点是昨天（今天还可补卡）；一旦跨过该缺口，后续必须严格逐日连续
+  let allowYesterdayGap = true
 
   for (const activity of activities) {
-    const activityDate = new Date(activity.activity_date)
-    activityDate.setHours(0, 0, 0, 0)
-
+    const activityDate = parseLocalDate(activity.activity_date)
     const diffDays = Math.floor((expectedDate - activityDate) / (1000 * 60 * 60 * 24))
 
-    if (diffDays === 0 || diffDays === 1) {
+    if (diffDays === 0) {
       tempStreak++
-      if (currentStreak === 0) {
-        currentStreak = tempStreak
-      }
+      allowYesterdayGap = false // 今天已打卡，后续必须严格逐日连续
       expectedDate = new Date(activityDate)
       expectedDate.setDate(expectedDate.getDate() - 1)
+    } else if (diffDays === 1 && allowYesterdayGap) {
+      // 第一个活动是昨天（今天未打卡）→ 算入连击，之后必须严格连续
+      tempStreak++
+      expectedDate = new Date(activityDate)
+      expectedDate.setDate(expectedDate.getDate() - 1)
+      allowYesterdayGap = false
     } else {
       break
     }
   }
+  currentStreak = tempStreak
 
   // Calculate max streak
   tempStreak = 1
   for (let i = 0; i < activities.length - 1; i++) {
-    const date1 = new Date(activities[i].activity_date)
-    const date2 = new Date(activities[i + 1].activity_date)
+    const date1 = parseLocalDate(activities[i].activity_date)
+    const date2 = parseLocalDate(activities[i + 1].activity_date)
     const diffDays = Math.floor((date1 - date2) / (1000 * 60 * 60 * 24))
 
     if (diffDays === 1) {

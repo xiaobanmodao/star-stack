@@ -1,147 +1,132 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { fetchJson } from '../utils'
-import type { StatsResponse } from '../types'
-import { Badge, Button, Panel } from '../components/ui'
+import { Badge, Panel } from '../components/ui'
+import { PORTAL_PROJECTS, type PortalProject } from '../projects'
 import './EntryPages.css'
+import './HomePage.css'
+
+const KIND_LABELS: Record<PortalProject['kind'], string> = {
+  internal: '站内接入',
+  external: '网页应用',
+  desktop: '桌面应用',
+}
+
+const KIND_TONES: Record<PortalProject['kind'], 'info' | 'success' | 'warning'> = {
+  internal: 'info',
+  external: 'success',
+  desktop: 'warning',
+}
+
+const COMMUNITY_LINKS = [
+  { label: '讨论区', desc: '发帖、评论、交流心得', path: '/chat/plaza' },
+  { label: '个人中心', desc: '做题数据、成就与设置', path: '/account' },
+]
+
+function ProjectCard({ project, desktopHint, onToggleDesktopHint, onOpen }: {
+  project: PortalProject
+  desktopHint: boolean
+  onToggleDesktopHint: () => void
+  onOpen: () => void
+}) {
+  const isDesktop = project.kind === 'desktop'
+  const body = (
+    <>
+      <div className="portal-card-head">
+        <span className="portal-card-kicker">{project.kicker}</span>
+        <Badge tone={KIND_TONES[project.kind]}>{KIND_LABELS[project.kind]}</Badge>
+      </div>
+      <h2>{project.name}</h2>
+      <p className="portal-card-tagline">{project.tagline}</p>
+      <p className="portal-card-desc">{project.description}</p>
+      {project.badges && project.badges.length > 0 && (
+        <div className="portal-card-badges">
+          {project.badges.map((badge) => (
+            <span key={badge}>{badge}</span>
+          ))}
+        </div>
+      )}
+      <span className="portal-card-action">
+        {isDesktop ? (desktopHint ? '收起' : '查看启动方式') : project.kind === 'external' ? '打开 →' : '进入 →'}
+      </span>
+      {isDesktop && desktopHint && project.launchHint && (
+        <div className="portal-card-hint">
+          <code>{project.launchHint}</code>
+        </div>
+      )}
+    </>
+  )
+
+  if (project.kind === 'external') {
+    return (
+      <a
+        key={project.id}
+        className={`portal-card ${project.featured ? 'featured' : ''}`}
+        href={project.href}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {body}
+      </a>
+    )
+  }
+
+  return (
+    <button
+      key={project.id}
+      type="button"
+      className={`portal-card ${project.featured ? 'featured' : ''}`}
+      onClick={() => {
+        if (isDesktop) {
+          onToggleDesktopHint()
+        } else {
+          onOpen()
+        }
+      }}
+    >
+      {body}
+    </button>
+  )
+}
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const [stats, setStats] = useState<StatsResponse | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      const { response, data } = await fetchJson<StatsResponse>('/api/stats')
-      if (!cancelled && response.ok && data) {
-        setStats(data)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  const statCards = [
-    { label: '题目', value: stats?.problemCount ?? '-' },
-    { label: '用户', value: stats?.userCount ?? '-' },
-    { label: '今日提交', value: stats?.todaySubmissions ?? '-' },
-  ]
-
-  const entryCards = [
-    {
-      kicker: 'Problem Set',
-      title: '题库训练',
-      desc: '按难度、标签和通过率快速找到下一题。',
-      action: '进入题库',
-      path: '/oj/list',
-      featured: true,
-    },
-    {
-      kicker: 'Workspace',
-      title: '在线评测',
-      desc: '题面、IDE、运行样例和提交结果在同一条路径里。',
-      action: '打开 OJ',
-      path: '/oj',
-    },
-    {
-      kicker: 'Discussion',
-      title: '讨论闭环',
-      desc: '题目讨论会回到题目，不再把做题流打散。',
-      action: '看讨论',
-      path: '/discussions',
-    },
-    {
-      kicker: 'Growth',
-      title: '成长记录',
-      desc: '用星图、成就和连续天数记录训练节奏。',
-      action: '查看个人中心',
-      path: '/account',
-    },
-  ]
+  const [desktopHintId, setDesktopHintId] = useState<string | null>(null)
 
   return (
-    <div className="home-entry-v2">
-      <section className="home-entry-hero">
-        <div className="home-entry-copy">
-          <Badge tone="info">StarStack Online Judge</Badge>
-          <h1>把刷题路径收束成一座深空工作台。</h1>
-          <p>
-            找题、读题、写代码、看评测、回讨论和复盘成长都在同一条航线上。页面安静、入口清楚，低配电脑也能轻松打开。
-          </p>
-          <div className="home-entry-actions" aria-label="主要入口">
-            <Button variant="primary" size="lg" onClick={() => navigate('/oj/list')}>
-              开始训练
-            </Button>
-            <Button variant="ghost" size="lg" onClick={() => navigate('/oj')}>
-              打开 OJ 工作台
-            </Button>
-          </div>
-          <div className="home-entry-stats" aria-label="站点概览">
-            {statCards.map((item) => (
-              <div key={item.label}>
-                <strong>{item.value}</strong>
-                <span>{item.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <Panel className="home-entry-orbit" aria-label="训练流程">
-          <div className="home-entry-orbit-head">
-            <span>Training Route</span>
-            <strong>Online</strong>
-          </div>
-          <div className="home-entry-map">
-            <span className="route-node node-a">题</span>
-            <span className="route-node node-b">码</span>
-            <span className="route-node node-c">判</span>
-            <span className="route-node node-d">论</span>
-            <span className="route-line line-a" />
-            <span className="route-line line-b" />
-            <span className="route-line line-c" />
-          </div>
-          <div className="home-entry-orbit-foot">
-            <span>题库</span>
-            <span>IDE</span>
-            <span>评测</span>
-            <span>讨论</span>
-          </div>
-        </Panel>
+    <div className="portal-hall">
+      <section className="portal-hero">
+        <Badge tone="info">StarStack Hub</Badge>
+        <h1>星栈 · 项目主站</h1>
+        <p>
+          把评测、创作与工具聚合在同一片深空里：在线评测 OJ、创造型沙盒界芽计划，
+          以及面向竞赛训练的代码编辑器 StarCode。选择一个项目，开始你的航行。
+        </p>
       </section>
 
-      <section className="home-entry-grid" aria-label="功能入口">
-        {entryCards.map((card) => (
-          <button
-            key={card.title}
-            type="button"
-            className={`home-entry-card ${card.featured ? 'featured' : ''}`}
-            onClick={() => navigate(card.path)}
-          >
-            <span>{card.kicker}</span>
-            <strong>{card.title}</strong>
-            <p>{card.desc}</p>
-            <em>{card.action}</em>
-          </button>
+      <section className="portal-grid" aria-label="项目大厅">
+        {PORTAL_PROJECTS.map((project) => (
+          <ProjectCard
+            key={project.id}
+            project={project}
+            desktopHint={desktopHintId === project.id}
+            onToggleDesktopHint={() => setDesktopHintId(desktopHintId === project.id ? null : project.id)}
+            onOpen={() => navigate(project.href)}
+          />
         ))}
       </section>
 
-      <Panel className="home-entry-flow">
-        <div>
-          <span>01</span>
-          <strong>找题</strong>
+      <Panel className="portal-community">
+        <div className="portal-community-title">
+          <span>Community</span>
+          <strong>星栈社区</strong>
         </div>
-        <div>
-          <span>02</span>
-          <strong>编码</strong>
-        </div>
-        <div>
-          <span>03</span>
-          <strong>反馈</strong>
-        </div>
-        <div>
-          <span>04</span>
-          <strong>复盘</strong>
+        <div className="portal-community-links">
+          {COMMUNITY_LINKS.map((link) => (
+            <button key={link.path} type="button" onClick={() => navigate(link.path)}>
+              <strong>{link.label}</strong>
+              <span>{link.desc}</span>
+            </button>
+          ))}
         </div>
       </Panel>
     </div>

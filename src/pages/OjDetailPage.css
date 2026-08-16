@@ -68,7 +68,7 @@
 
 .oj-detail.split .oj-problem-richtext {
   max-width: 74ch;
-  color: rgba(236, 242, 255, 0.9);
+  color: var(--ss-color-text);
   font-size: 14px;
   line-height: 1.78;
 }
@@ -79,7 +79,7 @@
   padding: 12px !important;
   border: 1px solid var(--ss-color-border) !important;
   border-radius: var(--ss-radius-md) !important;
-  background: rgba(226, 232, 240, 0.04) !important;
+  background: var(--ss-hover-layer) !important;
 }
 
 .oj-detail.split .oj-sample pre {
@@ -101,7 +101,7 @@
   padding: 10px !important;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg) !important;
-  background: rgba(8, 13, 22, 0.92);
+  background: var(--ss-bg-panel-solid);
   box-shadow: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;

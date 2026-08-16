@@ -11,9 +11,7 @@
   padding: 18px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-xl);
-  background:
-    linear-gradient(135deg, rgba(125, 211, 252, 0.08), transparent 46%),
-    rgba(8, 13, 22, 0.72);
+  background: none;
 }
 
 .ops-summary-grid {
@@ -27,7 +25,7 @@
   gap: 5px;
   min-height: 96px;
   border-radius: var(--ss-radius-lg);
-  background: rgba(8, 13, 22, 0.72);
+  background: var(--ss-bg-panel);
   box-shadow: none;
 }
 
@@ -101,7 +99,7 @@
   display: grid;
   gap: 16px;
   border-radius: var(--ss-radius-xl) !important;
-  background: rgba(8, 13, 22, 0.72) !important;
+  background: var(--ss-bg-panel) !important;
   box-shadow: none !important;
 }
 
@@ -134,7 +132,7 @@
   padding: 10px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .leaderboard-focus-stats strong {
@@ -164,7 +162,7 @@
   padding: 12px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.035);
+  background: var(--ss-hover-layer);
   color: var(--ss-color-text);
   text-align: left;
   cursor: pointer;
@@ -194,7 +192,7 @@
   overflow-x: auto;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
-  background: rgba(2, 6, 23, 0.22);
+  background: var(--ss-bg-input);
 }
 
 .leaderboard-row-v2,
@@ -239,7 +237,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   cursor: default;
-  background: rgba(226, 232, 240, 0.045);
+  background: var(--ss-hover-layer);
 }
 
 button.leaderboard-row-v2:hover,
@@ -344,7 +342,7 @@ button.submission-row-v2:hover {
   gap: 10px;
   align-items: end;
   border-radius: var(--ss-radius-lg) !important;
-  background: rgba(8, 13, 22, 0.72) !important;
+  background: var(--ss-bg-panel) !important;
   box-shadow: none !important;
 }
 
@@ -359,7 +357,7 @@ button.submission-row-v2:hover {
   width: 100%;
   border-color: var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .message-list-page.ops-page-v2 {
@@ -392,7 +390,7 @@ button.submission-row-v2:hover {
   padding: 14px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
-  background: rgba(2, 6, 23, 0.22);
+  background: var(--ss-bg-input);
   color: inherit;
   text-align: left;
   box-shadow: none;
@@ -506,4 +504,19 @@ button.submission-row-v2:hover {
   .messages-v2 .conversation-unread {
     justify-self: start;
   }
+}
+
+/* 会话列表头像可点击（查看个人主页） */
+.messages-v2 .conversation-avatar {
+  cursor: pointer;
+}
+
+.messages-v2 .conversation-avatar:hover {
+  outline: 2px solid rgba(125, 211, 252, 0.45);
+  outline-offset: 2px;
+}
+
+/* 浅色主题：绿底未读徽标改白字（深字配鲜艳绿底看不清） */
+:root[data-theme='light'] .messages-v2 .conversation-unread {
+  color: #ffffff;
 }

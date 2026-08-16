@@ -1,5 +1,12 @@
 export const TOKEN_KEY = 'starstack_token'
 
+// 做题功能开关（只做停用，不删除代码）：
+// - false：暂时停用全部做题相关内容 —— 题库/题目详情/代码评测/提交记录及其所有入口、
+//   排行榜、个人中心的做题数据（热力图/成就/刷题计划/Rating/连续天数等）
+// - true：完整恢复做题功能
+// 后端 API（/api/oj/*、/api/leaderboard 等）保持原样，不受此开关影响。
+export const OJ_ENABLED = true
+
 export const LANGUAGE_OPTIONS = [
   {
     label: 'C++17',

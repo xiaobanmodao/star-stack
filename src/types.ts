@@ -165,6 +165,7 @@ export type DiscussionPost = {
   id: number; userId: string; userName: string; userAvatar?: string
   title: string; content?: string
   problemId?: number; problemTitle?: string
+  moduleKey?: ChatModuleKey
   viewCount: number; likeCount: number; commentCount: number
   liked?: boolean; createdAt: string; updatedAt: string
 }
@@ -232,6 +233,234 @@ export type MessagesResponse = {
 
 export type UnreadCountResponse = {
   unreadCount: number
+}
+
+// ============ 聊天中心 ============
+
+export type ChatModuleKey = 'general' | 'oj' | 'jieya' | 'starcode'
+
+export type ChatReaction = {
+  emoji: string
+  count: number
+  mine: boolean
+}
+
+export type ChatMessage = {
+  id: number
+  senderId: string
+  senderName: string
+  senderAvatar?: string | null
+  content: string
+  createdAt: string
+  reactions: ChatReaction[]
+  threadParentId?: number | null
+  threadReplyCount: number
+}
+
+export type ChatChannel = {
+  key: ChatModuleKey
+  name: string
+  icon?: string | null
+  description?: string | null
+  sortOrder: number
+  unread: number
+}
+
+export type ChatChannelsResponse = {
+  channels: ChatChannel[]
+}
+
+export type ChatMessageListResponse = {
+  messages: ChatMessage[]
+  hasMore: boolean
+}
+
+export type ChatRoomMember = {
+  userId: string
+  userName: string
+  userAvatar?: string | null
+  role: 'owner' | 'member'
+  online: boolean
+}
+
+export type ChatRoom = {
+  id: number
+  name: string
+  description: string
+  type: 'public' | 'invite'
+  ownerId: string
+  ownerName: string
+  memberCount: number
+  createdAt: string
+  joined: boolean
+  unread: number
+}
+
+export type ChatRoomDetail = ChatRoom & {
+  members: ChatRoomMember[]
+  myRole?: 'owner' | 'member' | null
+}
+
+export type ChatRoomsResponse = {
+  rooms: ChatRoom[]
+}
+
+export type ChatRoomResponse = {
+  room?: ChatRoomDetail
+  message?: string
+}
+
+export type ChatUnreadResponse = {
+  channels: Record<string, number>
+  rooms: Record<string, number>
+  total: number
+}
+
+export type ChatStreamEvent =
+  | { type: 'connected' }
+  | { type: 'ping' }
+  | { type: 'message'; message: ChatMessage }
+  | { type: 'reaction'; messageId: number; reactions: ChatReaction[] }
+  | { type: 'members'; members: ChatRoomMember[] }
+  | { type: 'typing'; userId: string; userName: string }
+  | { type: 'thread_reply'; message: ChatMessage }
+  | { type: 'message_deleted'; messageId: number }
+  | { type: 'closed' }
+
+// ============ 好友系统 ============
+
+export type FollowRelations = {
+  following: boolean
+  followedBy: boolean
+  isFriend: boolean
+  followerCount: number
+  followingCount: number
+  friendCount: number
+}
+
+export type UserProfile = {
+  id: string
+  name: string
+  avatar?: string | null
+  isAdmin: boolean
+  bio?: string
+  createdAt: string
+}
+
+export type UserProfileResponse = {
+  user: UserProfile
+  relations: FollowRelations
+  blocked?: boolean
+  message?: string
+}
+
+export type FollowUser = {
+  id: string
+  name: string
+  avatar?: string | null
+  online: boolean
+  isFriend?: boolean
+  followedAt?: string
+}
+
+export type FriendsResponse = {
+  friends: FollowUser[]
+}
+
+export type FollowListResponse = {
+  users: FollowUser[]
+}
+
+// ============ 通知中心 ============
+
+export type NotificationType = 'follow' | 'comment' | 'reply' | 'mention' | 'invite'
+
+export type NotificationItem = {
+  id: number
+  type: NotificationType
+  actor: { id: string; name: string; avatar?: string | null }
+  message: string
+  targetType?: string | null
+  targetId?: number | null
+  isRead: boolean
+  createdAt: string
+}
+
+export type NotificationsResponse = {
+  notifications: NotificationItem[]
+  unreadCount: number
+  total: number
+  page: number
+  pageSize: number
+}
+
+// ============ 游戏化（聊天成就 / 活跃度） ============
+
+export type ChatAchievement = {
+  type: string
+  name: string
+  icon: string
+  desc: string
+  unlockedAt: string
+}
+
+export type ChatStatsResponse = {
+  stats: {
+    messageCount: number
+    replyCount: number
+    postCount: number
+    commentCount: number
+    reactionReceived: number
+    activityScore: number
+    activeDays: number
+  }
+  achievements: ChatAchievement[]
+}
+
+export type ChatAchievementsResponse = {
+  achievements: ChatAchievement[]
+}
+
+export type ActivityLeaderboardEntry = {
+  rank: number
+  userId: string
+  userName: string
+  userAvatar?: string | null
+  score: number
+}
+
+export type ActivityLeaderboardResponse = {
+  days: number
+  leaderboard: ActivityLeaderboardEntry[]
+  me: { userId: string; score: number; rank: number | null }
+}
+
+// ============ 举报 ============
+
+export type ReportTargetType = 'post' | 'comment' | 'message' | 'user'
+
+export type AdminReport = {
+  id: number
+  reporterId: string
+  reporterName: string
+  targetType: ReportTargetType
+  targetId: number
+  reason: string
+  status: 'open' | 'resolved'
+  summary: string
+  createdAt: string
+}
+
+export type AdminStatsResponse = {
+  stats: {
+    users: number
+    posts: number
+    comments: number
+    chatMessages: number
+    rooms: number
+    openReports: number
+    todayActive: number
+  }
 }
 
 export type AuthMode = 'login' | 'register'

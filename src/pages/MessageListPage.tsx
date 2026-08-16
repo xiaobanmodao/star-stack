@@ -5,7 +5,7 @@ import type { Conversation, ConversationsResponse } from '../types'
 import { fetchJson, htmlToPlainText, isPollingPageVisible } from '../utils'
 import './OpsPages.css'
 
-export default function MessageListPage() {
+export default function MessageListPage({ basePath = '/messages' }: { basePath?: string }) {
   const navigate = useNavigate()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
@@ -152,9 +152,17 @@ export default function MessageListPage() {
                 key={conversation.conversationId}
                 type="button"
                 className={`conversation-card ${conversation.unreadCount > 0 ? 'unread' : ''}`}
-                onClick={() => navigate(`/messages/${conversation.otherUser.id}`)}
+                onClick={() => navigate(`${basePath}/${conversation.otherUser.id}`)}
               >
-                <span className="conversation-avatar">
+                <span
+                  className="conversation-avatar"
+                  role="button"
+                  title="查看个人主页"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    navigate(`/user/${conversation.otherUser.id}`)
+                  }}
+                >
                   {conversation.otherUser.avatar ? (
                     <img src={conversation.otherUser.avatar} alt={conversation.otherUser.name} loading="lazy" />
                   ) : (
@@ -203,7 +211,7 @@ export default function MessageListPage() {
                 <div className="new-chat-hint">没有找到匹配的用户。</div>
               ) : (
                 searchResults.map((user) => (
-                  <button key={user.id} type="button" className="new-chat-user" onClick={() => { setShowNewChat(false); navigate(`/messages/${user.id}`) }}>
+                  <button key={user.id} type="button" className="new-chat-user" onClick={() => { setShowNewChat(false); navigate(`${basePath}/${user.id}`) }}>
                     <div className="conversation-avatar" style={{ width: 36, height: 36, fontSize: 16 }}>
                       {user.avatar ? <img src={user.avatar} alt={user.name} loading="lazy" /> : <span>{user.name.charAt(0).toUpperCase()}</span>}
                     </div>

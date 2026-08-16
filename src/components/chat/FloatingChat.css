@@ -1,0 +1,189 @@
+/* 全局聊天浮窗（任何页面可用，拖动 / 最小化 / 未读角标） */
+
+.chat-float-window {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 2000;
+  width: min(340px, calc(100vw - 24px));
+  height: min(460px, calc(100vh - 110px));
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-lg);
+  background: var(--ss-bg-panel-solid);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.chat-float-window.dragging {
+  user-select: none;
+  cursor: grabbing;
+}
+
+.chat-float-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--ss-hover-layer);
+  background: var(--ss-hover-layer);
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.chat-float-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--ss-color-text);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.chat-float-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-float-icon {
+  font-size: 14px;
+}
+
+.chat-float-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.chat-float-actions button {
+  border: none;
+  background: transparent;
+  color: var(--ss-color-text-muted);
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.chat-float-actions button:hover {
+  background: rgba(226, 232, 240, 0.12);
+  color: var(--ss-color-text);
+}
+
+.chat-float-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.chat-float-body .chat-thread {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-float-body .chat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+}
+
+/* 最小化气泡（右下角堆叠） */
+
+.chat-float-bubbles {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.chat-float-bubble {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 230px;
+  padding: 9px 16px;
+  border: 1px solid rgba(125, 211, 252, 0.3);
+  border-radius: 999px;
+  background: var(--ss-bg-panel-solid);
+  color: var(--ss-color-text);
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.chat-float-bubble:hover {
+  border-color: rgba(125, 211, 252, 0.6);
+}
+
+.chat-float-bubble-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-float-unread {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--ss-color-accent);
+  color: #04101c;
+  font-size: 11px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ss-bg-panel-solid);
+}
+
+@media (max-width: 768px) {
+  .chat-float-bubbles {
+    right: 10px;
+    bottom: 74px;
+  }
+}
+
+/* 浮窗底部：退出房间 / 解散房间 */
+
+.chat-float-foot {
+  flex-shrink: 0;
+  padding: 7px 10px;
+  border-top: 1px solid var(--ss-hover-layer);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.chat-float-leave {
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: var(--ss-radius-md);
+  background: transparent;
+  color: #f87171;
+  font-size: 12px;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: background-color var(--ss-motion-normal), border-color var(--ss-motion-normal);
+}
+
+.chat-float-leave:hover {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.6);
+}

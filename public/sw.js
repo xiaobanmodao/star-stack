@@ -38,3 +38,39 @@ self.addEventListener('fetch', (event) => {
       .catch(() => caches.match(request))
   )
 })
+
+// ---------- Web Push 通知 ----------
+
+self.addEventListener('push', (event) => {
+  let data = { title: '星栈', body: '', url: '/' }
+  try {
+    const parsed = event.data ? event.data.json() : {}
+    data = { title: '星栈', body: '', url: '/', ...parsed }
+  } catch {
+    // 非 JSON 载荷忽略
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/starstack.svg',
+      badge: '/starstack.svg',
+      data: { url: data.url },
+    })
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const url = event.notification.data?.url || '/'
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if ('focus' in client) {
+          client.navigate(url)
+          return client.focus()
+        }
+      }
+      return self.clients.openWindow(url)
+    })
+  )
+})

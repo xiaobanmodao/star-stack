@@ -44,21 +44,21 @@
   padding: 10px !important;
   border-color: var(--ss-color-border) !important;
   border-radius: var(--ss-radius-lg) !important;
-  background: rgba(8, 13, 22, 0.72) !important;
+  background: var(--ss-bg-panel) !important;
 }
 
 .discussion-toolbar-v2 .discussion-search input {
   min-height: 38px;
   border-color: var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .discussion-toolbar-v2 .discussion-sort {
   padding: 3px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.035);
+  background: var(--ss-hover-layer);
 }
 
 .discussion-toolbar-v2 .sort-btn {
@@ -97,13 +97,13 @@
   padding: 14px 16px !important;
   border-color: var(--ss-color-border) !important;
   border-radius: var(--ss-radius-lg) !important;
-  background: rgba(8, 13, 22, 0.72) !important;
+  background: var(--ss-bg-panel) !important;
   box-shadow: none !important;
   transition: background-color var(--ss-motion-normal), border-color var(--ss-motion-normal);
 }
 
 .discussion-card-v2:hover {
-  background: rgba(226, 232, 240, 0.055) !important;
+  background: var(--ss-hover-layer) !important;
   border-color: rgba(125, 211, 252, 0.24) !important;
   transform: none !important;
 }
@@ -151,7 +151,7 @@
   padding: 6px 8px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-sm);
-  background: rgba(226, 232, 240, 0.035);
+  background: var(--ss-hover-layer);
 }
 
 .discussion-card-v2 .discussion-card-problem,
@@ -183,7 +183,7 @@
   padding: 14px !important;
   border-color: var(--ss-color-border) !important;
   border-radius: var(--ss-radius-lg) !important;
-  background: rgba(8, 13, 22, 0.76) !important;
+  background: var(--ss-bg-panel) !important;
   box-shadow: none !important;
 }
 
@@ -225,7 +225,7 @@
   padding: 10px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .discussion-side-stats strong {
@@ -249,7 +249,7 @@
   padding: 18px !important;
   border-color: var(--ss-color-border) !important;
   border-radius: var(--ss-radius-lg) !important;
-  background: rgba(8, 13, 22, 0.74) !important;
+  background: var(--ss-bg-panel) !important;
   box-shadow: none !important;
 }
 
@@ -267,7 +267,7 @@
 }
 
 .discussion-detail-v2 .post-content {
-  color: rgba(236, 242, 255, 0.9);
+  color: var(--ss-color-text);
   font-size: 15px;
   line-height: 1.82;
 }
@@ -275,6 +275,67 @@
 .discussion-detail-v2 .post-content img {
   max-width: 100%;
   border-radius: var(--ss-radius-md);
+}
+
+/* 富文本：文字大小 */
+.discussion-detail-v2 .post-content .text-sm,
+.discussion-detail-v2 .comment-body .text-sm {
+  font-size: 12.5px;
+  color: var(--ss-color-text-muted);
+}
+
+.discussion-detail-v2 .post-content .text-lg,
+.discussion-detail-v2 .comment-body .text-lg {
+  font-size: 19px;
+}
+
+.discussion-detail-v2 .post-content .text-xl,
+.discussion-detail-v2 .comment-body .text-xl {
+  font-size: 27px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+/* 富文本：代码块（含语法高亮） */
+.discussion-detail-v2 .post-content pre,
+.discussion-detail-v2 .comment-body pre {
+  background: var(--ss-bg-code);
+  border: 1px solid rgba(226, 232, 240, 0.14);
+  border-radius: var(--ss-radius-md);
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 10px 0;
+}
+
+.discussion-detail-v2 .post-content pre code,
+.discussion-detail-v2 .comment-body pre code {
+  background: none;
+  padding: 0;
+  font-family: var(--ss-font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.discussion-detail-v2 .post-content code,
+.discussion-detail-v2 .comment-body code {
+  background: rgba(125, 211, 252, 0.12);
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: 13px;
+}
+
+/* 富文本：数学公式 */
+.discussion-detail-v2 .post-content .katex-display,
+.discussion-detail-v2 .comment-body .katex-display {
+  margin: 10px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.discussion-detail-v2 .post-content a,
+.discussion-detail-v2 .comment-body a {
+  color: var(--ss-color-accent);
 }
 
 .discussion-detail-v2 .post-actions {
@@ -286,7 +347,7 @@
   padding: 18px !important;
   border-color: var(--ss-color-border) !important;
   border-radius: var(--ss-radius-lg) !important;
-  background: rgba(8, 13, 22, 0.72) !important;
+  background: var(--ss-bg-panel) !important;
   box-shadow: none !important;
 }
 
@@ -319,14 +380,14 @@
   margin-bottom: 0;
   border-color: var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .discussion-create-shell {
   padding: 16px !important;
   border-color: var(--ss-color-border) !important;
   border-radius: var(--ss-radius-lg) !important;
-  background: rgba(8, 13, 22, 0.74) !important;
+  background: var(--ss-bg-panel) !important;
   box-shadow: none !important;
 }
 
@@ -357,13 +418,13 @@
   min-height: 42px;
   border-color: var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .discussion-create-v2 .problem-dropdown {
   z-index: 10070;
   border-color: rgba(125, 211, 252, 0.24);
-  background: rgba(8, 13, 22, 0.98);
+  background: var(--ss-bg-panel-solid);
   box-shadow: 0 16px 42px rgba(0, 0, 0, 0.32);
   backdrop-filter: none;
 }
@@ -371,16 +432,49 @@
 .discussion-create-v2 .rich-editor-wrap {
   border-color: var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.035);
+  background: var(--ss-hover-layer);
 }
 
 .discussion-create-v2 .rich-editor-toolbar {
   border-bottom-color: var(--ss-color-border);
-  background: rgba(226, 232, 240, 0.035);
+  background: var(--ss-hover-layer);
 }
 
 .discussion-create-v2 .rich-editor-content {
   min-height: 260px;
+}
+
+/* 评论输入框：紧凑高度 */
+.discussion-detail-v2 .comment-input-area .rich-editor-content {
+  min-height: 96px;
+  max-height: 320px;
+}
+
+/* 发帖页模块选择 chips */
+.discussion-module-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.discussion-module-chips button {
+  border: 1px solid rgba(226, 232, 240, 0.14);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ss-color-text-muted);
+  font-size: 12px;
+  padding: 4px 11px;
+  cursor: pointer;
+}
+
+.discussion-module-chips button:hover {
+  color: var(--ss-color-text);
+}
+
+.discussion-module-chips button.active {
+  border-color: rgba(125, 211, 252, 0.45);
+  background: rgba(125, 211, 252, 0.12);
+  color: var(--ss-color-text);
 }
 
 .discussion-create-aside {
@@ -390,7 +484,7 @@
   padding: 14px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .discussion-create-aside h3 {
@@ -417,7 +511,7 @@
   border-radius: var(--ss-radius-sm);
   color: var(--ss-color-text-muted);
   font-size: 12px;
-  background: rgba(8, 13, 22, 0.38);
+  background: var(--ss-bg-panel);
 }
 
 .discussion-create-actions {
@@ -465,4 +559,63 @@
   .discussion-card-v2 .discussion-card-stats {
     grid-template-columns: 1fr;
   }
+}
+
+/* 帖子收藏按钮（详情页操作区） */
+.discussion-detail-v2 .bookmark-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: 1px solid rgba(226, 232, 240, 0.16);
+  border-radius: var(--ss-radius-md);
+  background: transparent;
+  color: var(--ss-color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.discussion-detail-v2 .bookmark-btn svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.discussion-detail-v2 .bookmark-btn:hover {
+  color: var(--ss-color-text);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+.discussion-detail-v2 .bookmark-btn.active {
+  color: #fcd34d;
+  border-color: rgba(251, 191, 36, 0.5);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.discussion-detail-v2 .bookmark-btn.active svg {
+  fill: #fcd34d;
+}
+
+/* 举报按钮（帖子操作区 + 评论区） */
+.discussion-detail-v2 .report-btn {
+  color: var(--ss-color-text-subtle);
+}
+
+.discussion-detail-v2 .report-btn:hover {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.discussion-detail-v2 .comment-header .report-btn {
+  border: none;
+  background: transparent;
+  padding: 2px 6px;
+  font-size: 13px;
+  color: var(--ss-color-text-subtle);
+}
+
+.discussion-detail-v2 .comment-header .report-btn:hover {
+  color: #f87171;
 }

@@ -3,6 +3,7 @@ import { open } from 'sqlite'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import bcrypt from 'bcryptjs'
+import { randomBytes } from 'crypto'
 import fs from 'fs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -335,7 +336,8 @@ export const initDb = async () => {
   if (!existingAdmin) {
     const adminId = process.env.ADMIN_ID || 'admin'
     const adminName = process.env.ADMIN_NAME || '管理员'
-    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123'
+    // 初始管理员密码：优先取环境变量；否则生成随机密码并打印（避免硬编码弱口令）
+    const adminPassword = process.env.ADMIN_PASSWORD || randomBytes(9).toString('base64url')
     const passwordHash = bcrypt.hashSync(adminPassword, 10)
     await db.run(
       `INSERT INTO users (id, name, password_hash, is_admin, is_banned, created_at)
@@ -345,6 +347,9 @@ export const initDb = async () => {
       passwordHash,
       new Date().toISOString()
     )
+    if (!process.env.ADMIN_PASSWORD) {
+      console.log(`[init] 已创建管理员 ${adminId}，初始密码（随机生成，请立即修改）：${adminPassword}`)
+    }
   }
 
   await ensureBuiltinProblems(db)
@@ -555,7 +560,238 @@ export const initDb = async () => {
     CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
     CREATE INDEX IF NOT EXISTS idx_message_deletions_message ON message_deletions(message_id);
     CREATE INDEX IF NOT EXISTS idx_message_deletions_user ON message_deletions(user_id);
+
+    -- ============================================================
+    -- Chat tables (聊天中心：模块频道 / 实时聊天室 / 消息 / 回应 / 已读 / 在线状态)
+    -- ============================================================
+
+    CREATE TABLE IF NOT EXISTS chat_channels (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      key TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      icon TEXT,
+      description TEXT DEFAULT '',
+      sort_order INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_rooms (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      type TEXT NOT NULL DEFAULT 'public',
+      owner_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_room_members (
+      room_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'member',
+      joined_at TEXT NOT NULL,
+      PRIMARY KEY (room_id, user_id),
+      FOREIGN KEY (room_id) REFERENCES chat_rooms(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      channel_key TEXT,
+      room_id INTEGER,
+      sender_id TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (room_id) REFERENCES chat_rooms(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_reactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      emoji TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(message_id, user_id, emoji),
+      FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_read_state (
+      user_id TEXT NOT NULL,
+      scope_type TEXT NOT NULL,
+      scope_id TEXT NOT NULL,
+      last_read_message_id INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, scope_type, scope_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS user_presence (
+      user_id TEXT PRIMARY KEY,
+      last_seen_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_channel ON chat_messages(channel_key, id);
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_room ON chat_messages(room_id, id);
+    CREATE INDEX IF NOT EXISTS idx_chat_reactions_message ON chat_reactions(message_id);
+    CREATE INDEX IF NOT EXISTS idx_chat_room_members_user ON chat_room_members(user_id);
+
+    -- 好友系统：互相关注即成为好友
+    CREATE TABLE IF NOT EXISTS follows (
+      follower_id TEXT NOT NULL,
+      followee_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (follower_id, followee_id),
+      FOREIGN KEY (follower_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (followee_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_follows_follower ON follows(follower_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows(followee_id, created_at);
+
+    -- 通知中心（关注 / 评论 / 回复 / @提及 / 房间邀请）
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      actor_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      target_type TEXT,
+      target_id INTEGER,
+      message TEXT NOT NULL,
+      is_read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read, created_at);
+
+    -- 黑名单（屏蔽后对方不可私信/评论/查看档案）
+    CREATE TABLE IF NOT EXISTS blocks (
+      blocker_id TEXT NOT NULL,
+      blocked_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (blocker_id, blocked_id),
+      FOREIGN KEY (blocker_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (blocked_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON blocks(blocked_id);
+
+    -- 聊天室邀请链接（一次性 / 带过期时间）
+    CREATE TABLE IF NOT EXISTS room_invite_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_id INTEGER NOT NULL,
+      token TEXT UNIQUE NOT NULL,
+      created_by TEXT NOT NULL,
+      expires_at TEXT,
+      max_uses INTEGER DEFAULT 1,
+      use_count INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (room_id) REFERENCES chat_rooms(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_room_invite_links_room ON room_invite_links(room_id);
+
+    -- 收藏（帖子 / 题目）
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(user_id, target_type, target_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_bookmarks_user ON bookmarks(user_id, created_at);
+
+    -- Web Push 订阅（浏览器推送通知）
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      endpoint TEXT UNIQUE NOT NULL,
+      keys_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
+
+    -- 聊天统计 / 活跃度 / 聊天成就（游戏化）
+    CREATE TABLE IF NOT EXISTS chat_stats (
+      user_id TEXT PRIMARY KEY,
+      message_count INTEGER DEFAULT 0,
+      reply_count INTEGER DEFAULT 0,
+      post_count INTEGER DEFAULT 0,
+      comment_count INTEGER DEFAULT 0,
+      reaction_received INTEGER DEFAULT 0,
+      activity_score INTEGER DEFAULT 0,
+      last_active_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_activity_log (
+      user_id TEXT NOT NULL,
+      day TEXT NOT NULL,
+      score INTEGER DEFAULT 0,
+      PRIMARY KEY (user_id, day),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_activity_day ON chat_activity_log(day, score);
+
+    -- 举报（帖子 / 评论 / 聊天消息 / 用户）
+    CREATE TABLE IF NOT EXISTS reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      reporter_id TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id INTEGER NOT NULL,
+      reason TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (reporter_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at);
+
+    CREATE TABLE IF NOT EXISTS chat_achievements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      unlocked_at TEXT NOT NULL,
+      UNIQUE(user_id, type),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    -- 种子频道：杂谈 / 评测OJ / 界芽计划 / StarCode
+    INSERT OR IGNORE INTO chat_channels (key, name, icon, description, sort_order) VALUES
+      ('general', '杂谈', '💬', '任何话题的闲聊', 0),
+      ('oj', '评测OJ', '⚡', '题目、评测与竞赛相关讨论', 1),
+      ('jieya', '界芽计划', '🌱', '创造型世界沙盒 · 界芽计划', 2),
+      ('starcode', 'StarCode', '⌨️', 'C++ 编辑器 StarCode 使用与反馈', 3);
   `)
+
+  // Migration: discussion_posts.module_key（帖子所属模块，聊天广场按模块过滤）
+  const postColumns = await db.all(`PRAGMA table_info(discussion_posts)`)
+  if (!postColumns.some((col) => col.name === 'module_key')) {
+    await db.exec(
+      `ALTER TABLE discussion_posts ADD COLUMN module_key TEXT DEFAULT 'general'`
+    )
+    await db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_posts_module ON discussion_posts(module_key, created_at)`
+    )
+  }
+
+  // Migration: chat_messages.thread_parent_id（话题线程：回复挂在父消息下，主时间线不展示）
+  const chatMessageColumns = await db.all(`PRAGMA table_info(chat_messages)`)
+  if (!chatMessageColumns.some((col) => col.name === 'thread_parent_id')) {
+    await db.exec(
+      `ALTER TABLE chat_messages ADD COLUMN thread_parent_id INTEGER`
+    )
+    await db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_chat_messages_thread ON chat_messages(thread_parent_id, id)`
+    )
+  }
+
+  // Migration: users.bio（个人简介）
+  const userColumns = await db.all(`PRAGMA table_info(users)`)
+  if (!userColumns.some((col) => col.name === 'bio')) {
+    await db.exec(`ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''`)
+  }
 
   // Initialize user_stats for existing users
   const existingUsers = await db.all(`SELECT id FROM users`)

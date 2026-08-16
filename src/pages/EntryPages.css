@@ -22,9 +22,7 @@
 .oj-workbench-jump {
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-xl);
-  background:
-    linear-gradient(135deg, rgba(125, 211, 252, 0.08), transparent 46%),
-    rgba(8, 13, 22, 0.78);
+  background: none;
   box-shadow: none !important;
 }
 
@@ -87,7 +85,7 @@
   padding: 12px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.045);
+  background: var(--ss-hover-layer);
 }
 
 .home-entry-stats strong,
@@ -144,10 +142,7 @@
   overflow: hidden;
   border: 1px solid rgba(226, 232, 240, 0.12);
   border-radius: var(--ss-radius-lg);
-  background:
-    radial-gradient(circle at 28% 24%, rgba(125, 211, 252, 0.16), transparent 18%),
-    radial-gradient(circle at 70% 70%, rgba(34, 197, 94, 0.12), transparent 20%),
-    rgba(2, 6, 23, 0.24);
+  background: none;
 }
 
 .home-entry-map::before {
@@ -155,7 +150,7 @@
   position: absolute;
   inset: 16px;
   opacity: 0.32;
-  background-image: radial-gradient(circle, rgba(226, 232, 240, 0.5) 0 1px, transparent 1.5px);
+  background-image: none;
   background-size: 38px 38px;
 }
 
@@ -181,7 +176,7 @@
 .route-line {
   position: absolute;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(125, 211, 252, 0.42), transparent);
+  background: none;
   transform-origin: left center;
 }
 
@@ -224,7 +219,7 @@
   padding: 16px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
-  background: rgba(8, 13, 22, 0.72);
+  background: var(--ss-bg-panel);
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -234,14 +229,12 @@
 
 .home-entry-card:hover {
   border-color: rgba(125, 211, 252, 0.28);
-  background: rgba(226, 232, 240, 0.055);
+  background: var(--ss-hover-layer);
   transform: none;
 }
 
 .home-entry-card.featured {
-  background:
-    radial-gradient(circle at 20% 0%, rgba(125, 211, 252, 0.14), transparent 36%),
-    rgba(8, 13, 22, 0.82);
+  background: none;
 }
 
 .home-entry-card span {
@@ -278,7 +271,7 @@
   gap: 8px;
   padding: 12px !important;
   border-color: var(--ss-color-border) !important;
-  background: rgba(8, 13, 22, 0.62) !important;
+  background: var(--ss-bg-panel) !important;
 }
 
 .home-entry-flow div {
@@ -287,7 +280,7 @@
   gap: 10px;
   padding: 10px 12px;
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .home-entry-flow span {
@@ -325,7 +318,7 @@
   min-height: 40px;
   border-color: var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .oj-workbench-metrics {
@@ -346,7 +339,7 @@
   padding: 16px !important;
   border-color: var(--ss-color-border) !important;
   border-radius: var(--ss-radius-lg) !important;
-  background: rgba(8, 13, 22, 0.72) !important;
+  background: var(--ss-bg-panel) !important;
   box-shadow: none !important;
 }
 
@@ -372,7 +365,7 @@
 .oj-workbench-list button {
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
   color: var(--ss-color-text);
   cursor: pointer;
   box-shadow: none;
@@ -392,7 +385,7 @@
 .oj-workbench-tags button:hover,
 .oj-workbench-list button:hover {
   border-color: rgba(125, 211, 252, 0.28);
-  background: rgba(226, 232, 240, 0.06);
+  background: var(--ss-hover-layer);
   transform: none;
 }
 

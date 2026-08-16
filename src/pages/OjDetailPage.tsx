@@ -367,7 +367,7 @@ export default function OjDetailPage() {
                       key={post.id}
                       type="button"
                       className="oj-sidebar-discussion-item"
-                      onClick={() => navigate(`/discussions/${post.id}`, { state: { fromProblemId: problem.id } })}
+                      onClick={() => navigate(`/chat/p/${post.id}`, { state: { fromProblemId: problem.id } })}
                     >
                       <span className="oj-sidebar-discussion-title">{post.title}</span>
                       <span className="oj-sidebar-discussion-meta">
@@ -380,14 +380,14 @@ export default function OjDetailPage() {
               <div className="oj-sidebar-discussion-actions">
                 <button
                   className="oj-sidebar-button"
-                  onClick={() => navigate(`/discussions?problemId=${problem.id}`, { state: { fromProblemId: problem.id } })}
+                  onClick={() => navigate(`/chat/plaza?problemId=${problem.id}`)}
                 >
                   查看全部讨论
                 </button>
                 {currentUser && (
                   <button
                     className="ghost small"
-                    onClick={() => navigate(`/discussions/create?problemId=${problem.id}`)}
+                    onClick={() => navigate(`/chat/plaza?create=1&problemId=${problem.id}`)}
                   >
                     发起讨论
                   </button>

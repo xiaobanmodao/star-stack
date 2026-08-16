@@ -15,9 +15,7 @@
   padding: 18px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-xl);
-  background:
-    linear-gradient(135deg, rgba(125, 211, 252, 0.08), transparent 44%),
-    rgba(8, 13, 22, 0.72);
+  background: none;
 }
 
 .problem-editor-form {
@@ -43,9 +41,7 @@
   display: grid;
   gap: 16px;
   border-radius: var(--ss-radius-xl) !important;
-  background:
-    linear-gradient(180deg, rgba(226, 232, 240, 0.045), transparent),
-    rgba(8, 13, 22, 0.74) !important;
+  background: var(--ss-hover-layer);
   box-shadow: none !important;
 }
 
@@ -102,7 +98,7 @@
   width: 100%;
   border-color: var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
   color: var(--ss-color-text);
   box-shadow: none;
 }
@@ -126,7 +122,7 @@
   margin: 0;
   border-color: var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
-  background: rgba(2, 6, 23, 0.24);
+  background: var(--ss-bg-input);
 }
 
 .problem-editor-v2 .sample-group + .sample-group {
@@ -141,13 +137,13 @@
   width: 100%;
   border-color: var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
-  background: rgba(2, 6, 23, 0.24);
+  background: var(--ss-bg-input);
   color: var(--ss-color-text-muted);
 }
 
 .problem-editor-v2 .test-file-item {
   border-color: var(--ss-color-border);
-  background: rgba(2, 6, 23, 0.28);
+  background: var(--ss-bg-input);
 }
 
 .problem-editor-v2 .custom-select {
@@ -183,7 +179,7 @@
   display: grid;
   gap: 14px;
   border-radius: var(--ss-radius-xl) !important;
-  background: rgba(8, 13, 22, 0.74) !important;
+  background: var(--ss-bg-panel) !important;
   box-shadow: none !important;
 }
 
@@ -211,7 +207,7 @@
   padding: 8px 10px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.035);
+  background: var(--ss-hover-layer);
   color: var(--ss-color-text-muted);
   font-size: 13px;
 }
@@ -245,7 +241,7 @@
   padding: 10px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .problem-editor-guide-metrics strong {
@@ -272,7 +268,7 @@
   display: grid;
   gap: 4px;
   border-radius: var(--ss-radius-lg);
-  background: rgba(8, 13, 22, 0.72);
+  background: var(--ss-bg-panel);
   box-shadow: none;
 }
 
@@ -295,16 +291,14 @@
 
 .my-problem-card-v2 {
   border-color: var(--ss-color-border);
-  background:
-    linear-gradient(180deg, rgba(226, 232, 240, 0.045), transparent),
-    rgba(8, 13, 22, 0.72);
+  background: var(--ss-hover-layer);
   box-shadow: none;
   transition: border-color var(--ss-motion-normal), background-color var(--ss-motion-normal);
 }
 
 .my-problem-card-v2:hover {
   border-color: rgba(125, 211, 252, 0.26);
-  background-color: rgba(226, 232, 240, 0.04);
+  background-color: var(--ss-hover-layer);
   transform: none;
 }
 
@@ -323,7 +317,7 @@
 
 .admin-console-v2 .admin-metric-card {
   border-radius: var(--ss-radius-lg);
-  background: rgba(8, 13, 22, 0.72);
+  background: var(--ss-bg-panel);
   box-shadow: none;
 }
 
@@ -332,7 +326,7 @@
   gap: 14px;
   border-color: var(--ss-color-border);
   border-radius: var(--ss-radius-xl);
-  background: rgba(8, 13, 22, 0.72);
+  background: var(--ss-bg-panel);
 }
 
 .admin-console-v2 .admin-list-header {
@@ -356,7 +350,7 @@
   padding: 12px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
-  background: rgba(2, 6, 23, 0.22);
+  background: var(--ss-bg-input);
 }
 
 .admin-form-v2 label {
@@ -376,7 +370,7 @@
 .admin-table-v2 {
   overflow-x: auto;
   border-color: var(--ss-color-border);
-  background: rgba(2, 6, 23, 0.22);
+  background: var(--ss-bg-input);
 }
 
 .admin-table-v2 .admin-row {
@@ -386,7 +380,7 @@
 
 .admin-table-v2 .admin-row-head {
   color: var(--ss-color-text-subtle);
-  background: rgba(226, 232, 240, 0.045);
+  background: var(--ss-hover-layer);
 }
 
 .admin-table-v2 .admin-row-actions {
@@ -446,4 +440,107 @@
   .my-problem-card-v2 .problem-actions .ui-button {
     width: 100%;
   }
+}
+
+/* 管理后台标签页 */
+.admin-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.admin-tabs.small {
+  margin-bottom: 0;
+}
+
+.admin-tabs button {
+  border: 1px solid var(--ss-color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ss-color-text-muted);
+  font-size: 13px;
+  padding: 5px 14px;
+  cursor: pointer;
+}
+
+.admin-tabs button.active {
+  border-color: rgba(125, 211, 252, 0.45);
+  background: rgba(125, 211, 252, 0.12);
+  color: var(--ss-color-text);
+}
+
+/* 举报列表 */
+.admin-report-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.admin-report-item {
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-bg-panel);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-report-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.admin-report-type {
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  color: #f87171;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.admin-report-type.comment {
+  border-color: rgba(251, 191, 36, 0.4);
+  color: #fcd34d;
+}
+
+.admin-report-type.message {
+  border-color: rgba(139, 211, 255, 0.4);
+  color: var(--ss-color-accent);
+}
+
+.admin-report-type.user {
+  border-color: rgba(94, 230, 168, 0.4);
+  color: var(--ss-color-success);
+}
+
+.admin-report-by {
+  color: var(--ss-color-text-muted);
+  font-size: 12px;
+}
+
+.admin-report-time {
+  color: var(--ss-color-text-subtle);
+  font-size: 11px;
+  margin-left: auto;
+}
+
+.admin-report-summary {
+  color: var(--ss-color-text);
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.admin-report-reason {
+  color: var(--ss-color-text-muted);
+  font-size: 12px;
+}
+
+.admin-report-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
 }

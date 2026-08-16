@@ -201,7 +201,6 @@ export default function OjHomePage() {
               <span>Accepted</span>
               <h2>最近 AC</h2>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/leaderboard')}>排行榜</Button>
           </div>
           <div className="oj-workbench-list">
             {recentAc.slice(0, 5).map((item) => (

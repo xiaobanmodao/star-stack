@@ -37,7 +37,7 @@
 .problem-library-summary .oj-library-stats div {
   gap: 4px;
   padding: 10px 14px;
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .problem-library-summary .oj-library-stats strong {
@@ -121,13 +121,13 @@
 
 .problem-library-table {
   border-color: var(--ss-color-border);
-  background: rgba(8, 13, 22, 0.78);
+  background: var(--ss-bg-panel);
 }
 
 .problem-library-table .oj-library-head {
   padding: 10px 16px;
   border-bottom: 1px solid var(--ss-color-border);
-  background: rgba(226, 232, 240, 0.045);
+  background: var(--ss-hover-layer);
   color: var(--ss-color-text-subtle);
   font-size: 12px;
   font-weight: 750;
@@ -149,7 +149,7 @@
 
 .problem-library-table .oj-library-row:hover,
 .problem-library-table .oj-library-row:focus-visible {
-  background: rgba(226, 232, 240, 0.055) !important;
+  background: var(--ss-hover-layer) !important;
 }
 
 .problem-library-table .oj-library-title {
@@ -213,13 +213,13 @@
   height: 6px;
   overflow: hidden;
   border-radius: var(--ss-radius-pill);
-  background: rgba(226, 232, 240, 0.09);
+  background: var(--ss-hover-layer);
 }
 
 .problem-library-table .oj-pass-rate-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--ss-color-success), var(--ss-color-accent));
+  background: var(--ss-color-success);
 }
 
 .problem-library-table .oj-pass-rate span {
@@ -341,5 +341,99 @@
     margin-left: 0;
     padding-left: 0;
     border-left: 0;
+  }
+}
+
+/* ---------- 每日一题 + AC 连击卡片 ---------- */
+.daily-quest-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  padding: 16px 18px !important;
+  border-color: var(--ss-color-border) !important;
+  border-radius: var(--ss-radius-lg) !important;
+  background: var(--ss-bg-panel) !important;
+  box-shadow: none !important;
+}
+
+.daily-quest-main {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.daily-quest-kicker {
+  color: var(--ss-color-accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.daily-quest-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.daily-quest-title {
+  color: var(--ss-color-text);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.daily-quest-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.daily-quest-empty {
+  color: var(--ss-color-text-muted);
+  font-size: 13px;
+}
+
+.daily-quest-side {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.daily-quest-meta {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.daily-quest-streak {
+  color: var(--ss-color-warning);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.daily-quest-done {
+  color: var(--ss-color-success);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.daily-quest-warn {
+  color: var(--ss-color-danger);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .daily-quest-card {
+    grid-template-columns: 1fr;
+  }
+
+  .daily-quest-side {
+    justify-items: start;
+  }
+
+  .daily-quest-meta {
+    justify-items: start;
   }
 }

@@ -164,6 +164,8 @@ export default function OjJudgePage() {
   const [stage, setStage] = useState<JudgeStage>('idle')
   const [showResults, setShowResults] = useState(false)
   const submitRef = useRef(false)
+  const streamCompletedRef = useRef(false)
+  const streamAbortRef = useRef<AbortController | null>(null)
   const [streamResults, setStreamResults] = useState<{ index: number; status: string; message: string; timeMs: number }[]>([])
   const [totalCases, setTotalCases] = useState(0)
   const [celebrationStats, setCelebrationStats] = useState<JudgeCelebrationStats | null>(null)
@@ -191,6 +193,9 @@ export default function OjJudgePage() {
     setStage('running')
     setError('')
     setShowResults(false)
+    streamCompletedRef.current = false
+    const abortController = new AbortController()
+    streamAbortRef.current = abortController
     setStreamResults([])
     setTotalCases(0)
     setCelebrationStats(null)
@@ -209,6 +214,7 @@ export default function OjJudgePage() {
           language: locationState.language,
           code: locationState.code,
         }),
+        signal: abortController.signal,
       })
 
       if (!resp.ok) {
@@ -263,6 +269,7 @@ export default function OjJudgePage() {
 
       if (doneSubmission) {
         setSubmission(doneSubmission)
+        streamCompletedRef.current = true
         const accepted = (doneSubmission as OjSubmission).status === 'Accepted'
         setStage(accepted ? 'success' : 'fail')
         navigate(`/oj/judge/${(doneSubmission as OjSubmission).id}`, { replace: true })
@@ -275,9 +282,17 @@ export default function OjJudgePage() {
     }
   }, [locationState.code, locationState.language, locationState.problemId, navigate])
 
+  // 卸载时中止评测流连接
   useEffect(() => {
-    // 如果有 submissionId，说明是查看已有提交，直接加载
-    if (submissionId) {
+    return () => {
+      streamAbortRef.current?.abort()
+      streamAbortRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    // 如果有 submissionId，说明是查看已有提交，直接加载（流式评测完成跳转过来的跳过，避免重复拉取）
+    if (submissionId && !streamCompletedRef.current) {
       const timer = window.setTimeout(() => {
         void loadSubmission(submissionId)
       }, 0)

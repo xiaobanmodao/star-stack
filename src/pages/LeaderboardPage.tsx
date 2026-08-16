@@ -222,7 +222,7 @@ export default function LeaderboardPage() {
                 key={user.userId}
                 type="button"
                 className={`leaderboard-row-v2 ${currentUserRank?.userId === user.userId ? 'current-user' : ''} ${user.rank <= 3 ? `top-${user.rank}` : ''}`}
-                onClick={() => navigate(`/account?user=${user.userId}`)}
+                onClick={() => navigate(`/user/${user.userId}`)}
               >
                 <span className="rank-token">{getRankLabel(user.rank)}</span>
                 <span className="leaderboard-user-cell">

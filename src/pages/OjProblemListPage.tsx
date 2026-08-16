@@ -3,11 +3,25 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import CustomSelect from '../components/CustomSelect'
 import TagSelector from '../components/TagSelector'
-import { Button, DataList, DataListHead, DataListRow, EmptyState, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, DataList, DataListHead, DataListRow, EmptyState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
 import { DIFFICULTY_OPTIONS } from '../constants'
 import type { OjProblemSummary, ProblemsResponse } from '../types'
 import './OjProblemListPage.css'
+
+interface DailyQuest {
+  problem: {
+    id: number
+    slug: string
+    title: string
+    difficulty: string
+    tags: string[]
+    solved: boolean
+  } | null
+  solvedToday: boolean
+  streak: number
+  maxStreak: number
+}
 
 const LIST_COLUMNS = 'minmax(260px, 1fr) 96px minmax(180px, 0.72fr) 150px 94px'
 
@@ -24,6 +38,7 @@ export default function OjProblemListPage() {
   const [problemList, setProblemList] = useState<OjProblemSummary[]>([])
   const [problemLoading, setProblemLoading] = useState(false)
   const [problemError, setProblemError] = useState('')
+  const [daily, setDaily] = useState<DailyQuest | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageInput, setPageInput] = useState('1')
   const itemsPerPage = 20
@@ -58,6 +73,15 @@ export default function OjProblemListPage() {
       void loadProblems()
     }, 220)
     return () => window.clearTimeout(timer)
+  }, [loadProblems])
+
+  // 每日一题 + AC 连击
+  useEffect(() => {
+    let cancelled = false
+    void fetchJson<DailyQuest>('/api/problems/daily').then(({ response, data }) => {
+      if (!cancelled && response.ok && data) setDaily(data)
+    })
+    return () => { cancelled = true }
   }, [loadProblems])
 
   // 计算分页
@@ -146,6 +170,53 @@ export default function OjProblemListPage() {
           </Button>
         }
       />
+
+      {/* 每日一题 + AC 连击（留存激励） */}
+      <Panel className="daily-quest-card">
+        <div className="daily-quest-main">
+          <span className="daily-quest-kicker">Daily Quest · 今日推荐</span>
+          {daily?.problem ? (
+            <>
+              <div className="daily-quest-title-row">
+                <span className={`oj-badge ${daily.problem.difficulty}`}>{daily.problem.difficulty}</span>
+                <strong className="daily-quest-title">{daily.problem.title}</strong>
+                {daily.problem.solved && <Badge tone="success">已完成</Badge>}
+              </div>
+              {daily.problem.tags.length > 0 && (
+                <div className="daily-quest-tags">
+                  {daily.problem.tags.map((tag) => (
+                    <span key={tag} className="oj-tag">{tag}</span>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="daily-quest-empty">
+              {currentUser ? '题库为空，暂无今日推荐' : '登录后获取今日推荐题目，连续 AC 打卡养成习惯'}
+            </div>
+          )}
+        </div>
+        <div className="daily-quest-side">
+          {currentUser && daily && (
+            <div className="daily-quest-meta">
+              <span className="daily-quest-streak" title={`最长连击 ${daily.maxStreak} 天`}>
+                🔥 连续 {daily.streak} 天
+              </span>
+              {!daily.solvedToday && daily.streak > 0 && (
+                <span className="daily-quest-warn">今日未打卡，连击明天将中断</span>
+              )}
+              {daily.solvedToday && <span className="daily-quest-done">今日已打卡 ✓</span>}
+            </div>
+          )}
+          <Button
+            variant={daily?.problem?.solved ? 'secondary' : 'primary'}
+            onClick={() => daily?.problem && navigate(`/oj/${daily.problem.id}`)}
+            disabled={!daily?.problem}
+          >
+            {daily?.problem?.solved ? '再刷一遍' : '去挑战 →'}
+          </Button>
+        </div>
+      </Panel>
 
       <Panel className="problem-library-summary">
         <div className="oj-library-stats" aria-label="当前筛选结果概览">

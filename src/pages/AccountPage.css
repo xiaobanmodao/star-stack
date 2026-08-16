@@ -29,9 +29,7 @@
   align-items: stretch !important;
   padding: 16px !important;
   border-color: var(--ss-color-border);
-  background:
-    radial-gradient(circle at 50% 0%, rgba(125, 211, 252, 0.12), transparent 36%),
-    rgba(8, 13, 22, 0.78) !important;
+  background: var(--ss-bg-panel-opaque) !important; /* sticky 卡需不透明，避免滚动内容透出 */
 }
 
 .profile-avatar-shell {
@@ -44,9 +42,7 @@
   width: 104px;
   height: 104px;
   border: 1px solid rgba(125, 211, 252, 0.32);
-  background:
-    radial-gradient(circle at 35% 30%, rgba(226, 232, 240, 0.22), transparent 32%),
-    rgba(15, 23, 42, 0.88);
+  background: var(--ss-hover-layer);
   color: var(--ss-color-text);
   font-family: var(--ss-font-display);
   font-size: 38px;
@@ -105,7 +101,7 @@
   padding: 12px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .profile-identity-metrics span,
@@ -138,9 +134,7 @@
   padding: 18px !important;
   overflow: hidden;
   border-color: var(--ss-color-border);
-  background:
-    linear-gradient(135deg, rgba(125, 211, 252, 0.08), transparent 44%),
-    linear-gradient(180deg, rgba(8, 13, 22, 0.92), rgba(15, 23, 42, 0.74)) !important;
+  background: none;
 }
 
 .profile-command-copy {
@@ -188,10 +182,7 @@
   overflow: hidden;
   border: 1px solid rgba(226, 232, 240, 0.12);
   border-radius: var(--ss-radius-lg);
-  background:
-    radial-gradient(circle at 22% 28%, rgba(125, 211, 252, 0.18), transparent 16%),
-    radial-gradient(circle at 72% 62%, rgba(74, 222, 128, 0.1), transparent 18%),
-    linear-gradient(180deg, rgba(2, 6, 23, 0.12), rgba(2, 6, 23, 0.56));
+  background: none;
 }
 
 .profile-star-map::before {
@@ -200,8 +191,7 @@
   inset: 14px;
   opacity: 0.36;
   background-image:
-    radial-gradient(circle, rgba(226, 232, 240, 0.55) 0 1px, transparent 1.5px),
-    radial-gradient(circle, rgba(125, 211, 252, 0.35) 0 1px, transparent 1.5px);
+    none;
   background-position: 0 0, 18px 24px;
   background-size: 38px 38px, 54px 54px;
 }
@@ -265,7 +255,7 @@
   padding: 14px !important;
   border-color: var(--ss-color-border) !important;
   border-radius: var(--ss-radius-md) !important;
-  background: rgba(226, 232, 240, 0.04) !important;
+  background: var(--ss-hover-layer) !important;
   box-shadow: none !important;
 }
 
@@ -303,7 +293,7 @@
   padding: 16px !important;
   border-color: var(--ss-color-border) !important;
   border-radius: var(--ss-radius-lg) !important;
-  background: rgba(8, 13, 22, 0.72) !important;
+  background: var(--ss-bg-panel) !important;
   box-shadow: none !important;
 }
 
@@ -319,7 +309,7 @@
   width: 10px;
   height: 10px;
   border-radius: 3px;
-  background: rgba(226, 232, 240, 0.06);
+  background: var(--ss-hover-layer);
 }
 
 .profile-v2 .heatmap-cell:hover {
@@ -354,21 +344,21 @@
   padding: 13px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .profile-difficulty-track {
   height: 6px;
   overflow: hidden;
   border-radius: var(--ss-radius-pill);
-  background: rgba(226, 232, 240, 0.08);
+  background: var(--ss-hover-layer);
 }
 
 .profile-difficulty-track span {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--ss-color-accent), var(--ss-color-success));
+  background: var(--ss-color-accent);
 }
 
 .profile-difficulty-card em {
@@ -390,7 +380,7 @@
   padding: 12px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .profile-achievement-icon {
@@ -459,4 +449,116 @@
   .profile-star-map {
     min-height: 220px;
   }
+}
+
+/* 关注 / 粉丝 / 好友 计数行 */
+.profile-follow-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  width: 100%;
+  margin: 4px 0;
+}
+
+.profile-follow-row button {
+  display: grid;
+  gap: 2px;
+  padding: 8px 4px;
+  border: 1px solid rgba(226, 232, 240, 0.1);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-hover-layer);
+  color: inherit;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color var(--ss-motion-normal), background-color var(--ss-motion-normal);
+}
+
+.profile-follow-row button:hover {
+  border-color: rgba(125, 211, 252, 0.35);
+  background: rgba(125, 211, 252, 0.08);
+}
+
+.profile-follow-row strong {
+  color: var(--ss-color-text);
+  font-family: var(--ss-font-display);
+  font-size: 19px;
+}
+
+.profile-follow-row span {
+  color: var(--ss-color-text-subtle);
+  font-size: 11px;
+}
+
+/* 我的收藏 */
+.profile-bookmarks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-bookmarks-list button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: none;
+  border-radius: var(--ss-radius-md);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-bookmarks-list button:hover {
+  background: var(--ss-hover-layer);
+}
+
+.profile-bookmark-title {
+  color: var(--ss-color-text);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.profile-bookmark-meta {
+  color: var(--ss-color-text-subtle);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+
+/* 收藏/占位面板间距 */
+.profile-bookmarks,
+.profile-oj-paused {
+  margin-top: 12px;
+}
+
+/* ---------- 浅色主题：星图节点改浅底深字 ---------- */
+:root[data-theme='light'] .profile-star-node {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(9, 105, 218, 0.4);
+  color: var(--ss-color-text);
+}
+
+:root[data-theme='light'] .profile-star-node.level-2 {
+  border-color: rgba(9, 105, 218, 0.45);
+}
+
+:root[data-theme='light'] .profile-star-node.level-3 {
+  background: rgba(26, 127, 55, 0.08);
+  border-color: rgba(26, 127, 55, 0.45);
+}
+
+:root[data-theme='light'] .profile-star-node.level-4 {
+  background: rgba(154, 103, 0, 0.08);
+  border-color: rgba(154, 103, 0, 0.45);
+}
+
+/* ---------- 浅色主题：等级徽标近白字 → 星蓝强调色 ---------- */
+:root[data-theme='light'] .profile-v2 .profile-rank-badge {
+  color: var(--ss-color-accent) !important;
 }

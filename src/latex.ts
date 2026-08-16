@@ -8,9 +8,14 @@ const ALLOWED_TAGS = new Set([
 
 const ALLOWED_ATTRS: Record<string, Set<string>> = {
   a: new Set(['href', 'target', 'rel']),
+  span: new Set(['class']),
+  code: new Set(['class']),
+  pre: new Set(['class']),
 }
 
-const SAFE_URL_RE = /^(?:https?:\/\/|mailto:|\/)/i
+const SAFE_URL_RE = /^(?:https?:\/\/|mailto:|\/(?!\/))/i
+// class 白名单：只允许文字大小类与代码语言类（与服务端 sanitizeHtml 一致）
+const SAFE_CLASS_RE = /^(?:text-(?:sm|lg|xl)|language-[a-z0-9+-]+)$/i
 const LATEX_PLAIN_TEXT_MAP: Array<[RegExp, string]> = [
   [/\\leq?/g, '≤'],
   [/\\geq?/g, '≥'],
@@ -74,6 +79,10 @@ const sanitizeRichHtml = (raw: string) => {
         return
       }
       if (name === 'href' && !SAFE_URL_RE.test(value)) {
+        element.removeAttribute(attr.name)
+        return
+      }
+      if (name === 'class' && !SAFE_CLASS_RE.test(value)) {
         element.removeAttribute(attr.name)
         return
       }

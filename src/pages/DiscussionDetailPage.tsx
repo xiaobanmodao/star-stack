@@ -2,8 +2,11 @@ import { useState, useEffect, useCallback } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import { fetchJson, formatTime, htmlToPlainText } from '../utils'
+import { renderRichText } from '../utils/richText'
 import type { DiscussionPost, DiscussionComment, DiscussionDetailResponse } from '../types'
 import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import RichTextEditor from '../components/RichTextEditor'
+import ReportModal from '../components/ReportModal'
 import './DiscussionPages.css'
 
 const getPostTypeMeta = (post: DiscussionPost) => {
@@ -30,15 +33,24 @@ export default function DiscussionDetailPage() {
   const [commentText, setCommentText] = useState('')
   const [replyTo, setReplyTo] = useState<{ id: number; name: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [bookmarked, setBookmarked] = useState(false)
+  const [bookmarkToggling, setBookmarkToggling] = useState(false)
+  const [reportTarget, setReportTarget] = useState<{ type: 'post' | 'comment'; id: number } | null>(null)
   const fromProblemId = (location.state as { fromProblemId?: number } | null)?.fromProblemId
+  const fromPath = (location.state as { from?: string } | null)?.from
 
   const navigateBack = useCallback(() => {
     if (fromProblemId) {
       navigate(`/oj/p${fromProblemId}`)
       return
     }
-    navigate('/discussions')
-  }, [fromProblemId, navigate])
+    // 优先回到进入帖子前的列表（如聊天中心的模块板块）
+    if (fromPath && fromPath !== location.pathname) {
+      navigate(fromPath)
+      return
+    }
+    navigate('/chat/plaza')
+  }, [fromProblemId, fromPath, location.pathname, navigate])
 
   const loadDetail = useCallback(async () => {
     if (!id) return
@@ -49,11 +61,31 @@ export default function DiscussionDetailPage() {
         setPost(data.post)
         setComments(data.comments || [])
       }
+      // 收藏状态
+      const token = localStorage.getItem('starstack_token')
+      if (token) {
+        const bm = await fetchJson<{ bookmarked: boolean }>(`/api/bookmarks/status?targetType=post&targetId=${id}`).catch(() => null)
+        if (bm?.response.ok && bm.data) setBookmarked(bm.data.bookmarked)
+      }
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }, [id])
 
   useEffect(() => { loadDetail() }, [loadDetail])
+
+  const handleToggleBookmark = async () => {
+    if (!currentUser || !post) { navigate('/auth'); return }
+    if (bookmarkToggling) return
+    setBookmarkToggling(true)
+    try {
+      const { response, data } = await fetchJson<{ bookmarked?: boolean }>('/api/bookmarks', {
+        method: 'POST',
+        body: JSON.stringify({ targetType: 'post', targetId: post.id }),
+      })
+      if (response.ok && data) setBookmarked(Boolean(data.bookmarked))
+    } catch { /* 忽略 */ }
+    finally { setBookmarkToggling(false) }
+  }
 
   const handleLikePost = async () => {
     if (!currentUser || !post) { navigate('/auth'); return }
@@ -125,7 +157,12 @@ export default function DiscussionDetailPage() {
   const renderComment = (comment: DiscussionComment, depth: number = 0) => (
     <div key={comment.id} className={`discussion-comment ${depth > 0 ? 'nested' : ''}`}>
       <div className="comment-header">
-        <span className="comment-author">
+        <span
+          className="comment-author"
+          onClick={() => navigate(`/user/${comment.userId}`)}
+          title="查看个人主页"
+          style={{ cursor: 'pointer' }}
+        >
           {comment.userAvatar ? (
             <img className="discussion-avatar small" src={comment.userAvatar} alt="" loading="lazy" />
           ) : (
@@ -152,7 +189,7 @@ export default function DiscussionDetailPage() {
         )}
         <span className="comment-time">{formatTime(comment.createdAt)}</span>
       </div>
-      <div className="comment-body" dangerouslySetInnerHTML={{ __html: comment.content }} />
+      <div className="comment-body" dangerouslySetInnerHTML={{ __html: renderRichText(comment.content) }} />
       <div className="comment-actions">
         <button className={`like-btn ${comment.liked ? 'liked' : ''}`} onClick={() => handleLikeComment(comment.id)}>
           <svg viewBox="0 0 24 24"><path d="M12 21C12 21 3 13.5 3 8.5C3 5.42 5.42 3 8.5 3C10.24 3 11.91 3.81 12 5C12.09 3.81 13.76 3 15.5 3C18.58 3 21 5.42 21 8.5C21 13.5 12 21 12 21Z" /></svg>
@@ -220,7 +257,12 @@ export default function DiscussionDetailPage() {
               )}
             </div>
             <div className="post-meta">
-              <span className="post-author">
+              <span
+                className="post-author"
+                onClick={() => navigate(`/user/${post.userId}`)}
+                title="查看个人主页"
+                style={{ cursor: 'pointer' }}
+              >
                 {post.userAvatar ? (
                   <img className="discussion-avatar" src={post.userAvatar} alt="" loading="lazy" />
                 ) : (
@@ -243,19 +285,40 @@ export default function DiscussionDetailPage() {
               <span className="post-time">{formatTime(post.createdAt)}</span>
               <span className="post-views">浏览 {post.viewCount}</span>
             </div>
-            <div className="post-content" dangerouslySetInnerHTML={{ __html: post.content || '' }} />
-            <div className="post-actions">
-              <button className={`like-btn ${post.liked ? 'liked' : ''}`} onClick={handleLikePost}>
-                <svg viewBox="0 0 24 24"><path d="M12 21C12 21 3 13.5 3 8.5C3 5.42 5.42 3 8.5 3C10.24 3 11.91 3.81 12 5C12.09 3.81 13.76 3 15.5 3C18.58 3 21 5.42 21 8.5C21 13.5 12 21 12 21Z" /></svg>
-                {post.likeCount}
-              </button>
-              {currentUser && (currentUser.id === post.userId || currentUser.isAdmin) && (
-                <>
-                  <Button variant="ghost" size="sm" onClick={() => navigate(`/discussions/${post.id}/edit`)}>编辑</Button>
-                  <Button variant="danger" size="sm" onClick={handleDeletePost}>删除</Button>
-                </>
-              )}
-            </div>
+            <div className="post-content" dangerouslySetInnerHTML={{ __html: renderRichText(post.content || '') }} />
+             <div className="post-actions">
+               <button className={`like-btn ${post.liked ? 'liked' : ''}`} onClick={handleLikePost}>
+                 <svg viewBox="0 0 24 24"><path d="M12 21C12 21 3 13.5 3 8.5C3 5.42 5.42 3 8.5 3C10.24 3 11.91 3.81 12 5C12.09 3.81 13.76 3 15.5 3C18.58 3 21 5.42 21 8.5C21 13.5 12 21 12 21Z" /></svg>
+                 {post.likeCount}
+               </button>
+               {currentUser && (
+                 <button
+                   className={`bookmark-btn ${bookmarked ? 'active' : ''}`}
+                   onClick={() => void handleToggleBookmark()}
+                   title={bookmarked ? '取消收藏' : '收藏帖子'}
+                 >
+                   <svg viewBox="0 0 24 24">
+                     <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                   </svg>
+                   收藏
+                 </button>
+               )}
+               {currentUser && post.userId !== currentUser.id && (
+                 <button
+                   className="bookmark-btn report-btn"
+                   onClick={() => setReportTarget({ type: 'post', id: post.id })}
+                   title="举报帖子"
+                 >
+                   ⚑ 举报
+                 </button>
+               )}
+               {currentUser && (currentUser.id === post.userId || currentUser.isAdmin) && (
+                 <>
+                   <Button variant="ghost" size="sm" onClick={() => navigate(`/chat/p/${post.id}/edit`, fromPath ? { state: { from: fromPath } } : undefined)}>编辑</Button>
+                   <Button variant="danger" size="sm" onClick={handleDeletePost}>删除</Button>
+                 </>
+               )}
+             </div>
           </Panel>
 
           <Panel className="discussion-comments-section discussion-comments-v2">
@@ -282,11 +345,10 @@ export default function DiscussionDetailPage() {
                     <button onClick={() => setReplyTo(null)}>x</button>
                   </div>
                 )}
-                <textarea
-                  placeholder={replyTo ? `回复 ${replyTo.name}...` : '写下你的评论...'}
+                <RichTextEditor
                   value={commentText}
-                  onChange={e => setCommentText(e.target.value)}
-                  rows={3}
+                  onChange={setCommentText}
+                  placeholder={replyTo ? `回复 ${replyTo.name}...` : '写下你的评论（支持代码、公式、大小字）...'}
                 />
                 <Button variant="primary" size="sm" disabled={submitting || !commentText.trim()} onClick={handleSubmitComment}>
                   {submitting ? '提交中...' : '发表评论'}
@@ -317,7 +379,7 @@ export default function DiscussionDetailPage() {
                 <Button variant="primary" size="sm" onClick={() => navigate(`/oj/p${problemTargetId}`)}>
                   返回题目
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => navigate(`/discussions?problemId=${post.problemId}`, { state: { fromProblemId: post.problemId } })}>
+                <Button variant="ghost" size="sm" onClick={() => navigate(`/chat/plaza?problemId=${post.problemId}`)}>
                   同题讨论
                 </Button>
               </div>
@@ -330,6 +392,15 @@ export default function DiscussionDetailPage() {
           </Panel>
         </aside>
       </div>
+      {reportTarget && (
+        <ReportModal
+          targetType={reportTarget.type}
+          targetId={reportTarget.id}
+          onClose={() => setReportTarget(null)}
+          onDone={(message) => window.alert(message)}
+        />
+      )}
+
     </section>
   )
 }

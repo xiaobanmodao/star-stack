@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAppContext } from '../context/AppContext'
 import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
-import type { UserRecord, ApiResponse } from '../types'
+import type { AdminReport, AdminStatsResponse, UserRecord, ApiResponse } from '../types'
 import './CreatorAdminPages.css'
 
 export default function AdminPage() {
@@ -12,6 +12,7 @@ export default function AdminPage() {
   const [adminError, setAdminError] = useState('')
   const [adminActionError, setAdminActionError] = useState('')
   const [adminActionMessage, setAdminActionMessage] = useState('')
+  const [adminTab, setAdminTab] = useState<'users' | 'reports' | 'stats'>('users')
   const [adminUsersPage, setAdminUsersPage] = useState(1)
   const [adminUsersPageInput, setAdminUsersPageInput] = useState('1')
   const adminUsersPerPage = 20
@@ -193,6 +194,20 @@ export default function AdminPage() {
         }
       />
 
+      <div className="admin-tabs" role="tablist">
+        <button type="button" className={adminTab === 'users' ? 'active' : ''} onClick={() => setAdminTab('users')}>
+          用户管理
+        </button>
+        <button type="button" className={adminTab === 'reports' ? 'active' : ''} onClick={() => setAdminTab('reports')}>
+          举报处理
+        </button>
+        <button type="button" className={adminTab === 'stats' ? 'active' : ''} onClick={() => setAdminTab('stats')}>
+          站点看板
+        </button>
+      </div>
+
+      {adminTab === 'users' && (
+      <>
       <div className="admin-summary admin-summary-v2">
         <Panel className="summary-card admin-metric-card">
           <div className="summary-label">Users</div>
@@ -388,7 +403,187 @@ export default function AdminPage() {
           </div>
         )}
       </section>
+      </>
+      )}
 
+      {adminTab === 'reports' && <AdminReportsSection />}
+      {adminTab === 'stats' && <AdminStatsSection />}
     </div>
+  )
+}
+
+// === 举报处理 ===
+
+function AdminReportsSection() {
+  const [status, setStatus] = useState<'open' | 'resolved'>('open')
+  const [reports, setReports] = useState<AdminReport[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    const { response, data } = await fetchJson<{ reports: AdminReport[]; message?: string }>(
+      `/api/admin/reports?status=${status}`
+    )
+    if (response.ok && data) {
+      setReports(data.reports || [])
+    } else {
+      setError(data?.message || '加载失败')
+    }
+    setLoading(false)
+  }, [status])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void load()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [load])
+
+  const handleDeleteAndResolve = async (report: AdminReport) => {
+    setBusy(true)
+    setError('')
+    try {
+      let ok = false
+      if (report.targetType === 'post') {
+        const r = await fetchJson(`/api/discussions/${report.targetId}`, { method: 'DELETE' })
+        ok = r.response.ok
+      } else if (report.targetType === 'comment') {
+        const r = await fetchJson(`/api/discussions/comments/${report.targetId}`, { method: 'DELETE' })
+        ok = r.response.ok
+      } else if (report.targetType === 'message') {
+        const r = await fetchJson(`/api/admin/messages/${report.targetId}`, { method: 'DELETE' })
+        ok = r.response.ok
+      } else {
+        const r = await fetchJson(`/api/admin/users/${report.targetId}/ban`, { method: 'POST' })
+        ok = r.response.ok
+      }
+      if (!ok) {
+        setError('删除目标失败，请检查目标是否仍存在')
+        return
+      }
+      await fetchJson(`/api/admin/reports/${report.id}/resolve`, { method: 'POST' })
+      await load()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleResolveOnly = async (report: AdminReport) => {
+    setBusy(true)
+    await fetchJson(`/api/admin/reports/${report.id}/resolve`, { method: 'POST' })
+    await load()
+    setBusy(false)
+  }
+
+  return (
+    <section className="admin-section admin-users-panel">
+      <div className="admin-list-header">
+        <div>
+          <Badge tone={status === 'open' ? 'danger' : 'neutral'}>
+            {status === 'open' ? '待处理' : '已处理'}
+          </Badge>
+          <strong>举报处理</strong>
+        </div>
+        <div className="admin-tabs small">
+          <button type="button" className={status === 'open' ? 'active' : ''} onClick={() => setStatus('open')}>
+            待处理
+          </button>
+          <button type="button" className={status === 'resolved' ? 'active' : ''} onClick={() => setStatus('resolved')}>
+            已处理
+          </button>
+        </div>
+      </div>
+      {error && <div className="auth-error">{error}</div>}
+      {loading ? (
+        <div className="oj-loading">加载中...</div>
+      ) : reports.length === 0 ? (
+        <EmptyState title="没有举报" description={status === 'open' ? '当前没有待处理的举报。' : '还没有已处理的举报。'} />
+      ) : (
+        <div className="admin-report-list">
+          {reports.map((report) => (
+            <div key={report.id} className="admin-report-item">
+              <div className="admin-report-head">
+                <span className={`admin-report-type ${report.targetType}`}>
+                  {report.targetType === 'post' ? '帖子' : report.targetType === 'comment' ? '评论' : report.targetType === 'message' ? '消息' : '用户'}
+                </span>
+                <span className="admin-report-by">{report.reporterName} 举报</span>
+                <span className="admin-report-time">{new Date(report.createdAt).toLocaleString('zh-CN')}</span>
+              </div>
+              <div className="admin-report-summary">{report.summary}</div>
+              <div className="admin-report-reason">原因：{report.reason}</div>
+              {status === 'open' && (
+                <div className="admin-report-actions">
+                  <Button variant="danger" size="sm" loading={busy} onClick={() => void handleDeleteAndResolve(report)}>
+                    删除目标并处理
+                  </Button>
+                  <Button variant="ghost" size="sm" loading={busy} onClick={() => void handleResolveOnly(report)}>
+                    仅标记已处理
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+// === 站点看板 ===
+
+function AdminStatsSection() {
+  const [stats, setStats] = useState<AdminStatsResponse['stats'] | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { response, data } = await fetchJson<AdminStatsResponse>('/api/admin/stats')
+    if (response.ok && data) setStats(data.stats)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void load()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [load])
+
+  const cards = stats
+    ? [
+        { label: '用户', value: stats.users },
+        { label: '帖子', value: stats.posts },
+        { label: '评论', value: stats.comments },
+        { label: '聊天消息', value: stats.chatMessages },
+        { label: '聊天室', value: stats.rooms },
+        { label: '今日活跃', value: stats.todayActive },
+        { label: '待处理举报', value: stats.openReports },
+      ]
+    : []
+
+  return (
+    <section className="admin-section">
+      <div className="admin-list-header">
+        <div>
+          <Badge tone="info">Overview</Badge>
+          <strong>站点看板</strong>
+        </div>
+      </div>
+      {loading ? (
+        <div className="oj-loading">加载中...</div>
+      ) : (
+        <div className="admin-summary admin-summary-v2">
+          {cards.map((card) => (
+            <Panel key={card.label} className="summary-card admin-metric-card">
+              <div className="summary-label">{card.label}</div>
+              <div className="summary-value">{card.value}</div>
+            </Panel>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }

@@ -12,16 +12,23 @@
     "dev:server": "npm --prefix server run dev",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "audit": "node scripts/audit.mjs",
+    "audit:light": "node scripts/audit.mjs --theme light",
+    "audit:dark": "node scripts/audit.mjs --theme dark",
+    "audit:custom": "node scripts/audit.mjs --url"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "cookie": "^1.1.1",
+    "highlight.js": "^11.12.0",
     "katex": "^0.16.28",
+    "lucide-react": "^1.31.0",
     "monaco-editor": "^0.55.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.13.0"
+    "react-router-dom": "^7.13.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

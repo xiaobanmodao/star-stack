@@ -13,7 +13,10 @@ module.exports = {
       max_memory_restart: '500M',
       env: {
         NODE_ENV: 'production',
-        PORT: 3000
+        PORT: 5174,
+        // Web Push 用：可在此配置 VAPID 密钥（不配置则服务端自动生成并保存到 server/.vapid.json）
+        // VAPID_PUBLIC_KEY: '',
+        // VAPID_PRIVATE_KEY: '',
       },
       env_development: {
         NODE_ENV: 'development',

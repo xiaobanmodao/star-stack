@@ -5,28 +5,32 @@
   --ss-font-display: 'Oxanium', 'Space Grotesk', sans-serif;
   --ss-font-mono: 'SFMono-Regular', 'Consolas', 'Liberation Mono', monospace;
 
-  --ss-color-bg: #05070b;
-  --ss-color-bg-soft: #08101a;
-  --ss-color-surface: rgba(10, 15, 24, 0.86);
-  --ss-color-surface-muted: rgba(226, 232, 240, 0.045);
-  --ss-color-surface-strong: rgba(6, 10, 17, 0.94);
-  --ss-color-border: rgba(226, 232, 240, 0.11);
-  --ss-color-border-strong: rgba(226, 232, 240, 0.18);
-  --ss-color-text: #eef4ff;
-  --ss-color-text-muted: rgba(226, 232, 240, 0.66);
-  --ss-color-text-subtle: rgba(226, 232, 240, 0.46);
-  --ss-color-accent: #8bd3ff;
-  --ss-color-accent-strong: #f8fafc;
-  --ss-color-success: #5ee6a8;
-  --ss-color-warning: #ffd166;
-  --ss-color-danger: #ff6b7a;
-  --ss-color-info: #8bd3ff;
+  /* ============================================================
+     工程深空（高级纯色）· 深色主题
+     近黑纯色 + 细边框 + 细投影，零渐变
+     ============================================================ */
+  --ss-color-bg: #0d1117;
+  --ss-color-bg-soft: #161b22;
+  --ss-color-surface: #161b22;
+  --ss-color-surface-muted: rgba(255, 255, 255, 0.04);
+  --ss-color-surface-strong: #0d1117;
+  --ss-color-border: rgba(255, 255, 255, 0.12);
+  --ss-color-border-strong: rgba(255, 255, 255, 0.2);
+  --ss-color-text: #e6edf3;
+  --ss-color-text-muted: #8b949e;
+  --ss-color-text-subtle: #6e7681;
+  --ss-color-accent: #58a6ff;
+  --ss-color-accent-strong: #79c0ff;
+  --ss-color-success: #3fb950;
+  --ss-color-warning: #d29922;
+  --ss-color-danger: #f85149;
+  --ss-color-info: #58a6ff;
 
   --ss-radius-xs: 4px;
   --ss-radius-sm: 6px;
   --ss-radius-md: 8px;
   --ss-radius-lg: 12px;
-  --ss-radius-xl: 18px;
+  --ss-radius-xl: 16px;
   --ss-radius-pill: 999px;
 
   --ss-space-1: 4px;
@@ -52,11 +56,19 @@
   --ss-line-reading: 1.85;
 
   --ss-shadow-rest: none;
-  --ss-shadow-raised: 0 12px 30px rgba(0, 0, 0, 0.22);
-  --ss-focus-ring: 0 0 0 3px rgba(139, 211, 255, 0.22);
+  --ss-shadow-raised: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --ss-focus-ring: 0 0 0 3px rgba(88, 166, 255, 0.25);
 
-  --ss-motion-fast: 120ms ease;
-  --ss-motion-normal: 180ms ease;
+  --ss-motion-fast: 100ms ease;
+  --ss-motion-normal: 150ms ease;
+
+  /* 表面背景变量（供组件使用） */
+  --ss-bg-panel: #161b22;
+  --ss-bg-panel-solid: #161b22;
+  --ss-bg-panel-opaque: #161b22;
+  --ss-bg-input: #0d1117;
+  --ss-bg-code: #0d1117;
+  --ss-hover-layer: rgba(255, 255, 255, 0.06);
 
   --bg: var(--ss-color-bg);
   --panel: var(--ss-color-surface);
@@ -65,6 +77,63 @@
   --text: var(--ss-color-text);
   --muted: var(--ss-color-text-muted);
   --accent: var(--ss-color-accent);
+}
+
+/* ============================================================
+   极简亮白（高级纯色）· 浅色主题
+   纯白 + 灰阶 + 细线，几乎无色相
+   ============================================================ */
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --ss-color-bg: #ffffff;
+  --ss-color-bg-soft: #f6f8fa;
+  --ss-color-surface: #ffffff;
+  --ss-color-surface-muted: rgba(31, 35, 40, 0.04);
+  --ss-color-surface-strong: #f6f8fa;
+  --ss-color-border: rgba(31, 35, 40, 0.14);
+  --ss-color-border-strong: rgba(31, 35, 40, 0.24);
+  --ss-color-text: #1f2328;
+  --ss-color-text-muted: #59636e;
+  --ss-color-text-subtle: #667085; /* 浅色下加深：小字/表头可读（对比 ≥4.5） */
+  --ss-color-accent: #0969da;
+  --ss-color-accent-strong: #0a55ad;
+  --ss-color-success: #15803d; /* 鲜艳绿，白底对比 ≥4.5 */
+  --ss-color-warning: #b45309; /* 鲜艳琥珀，白底对比 ≥4.5 */
+  --ss-color-danger: #dc2626;
+  --ss-color-info: #0969da;
+
+  --ss-shadow-raised: 0 1px 3px rgba(31, 35, 40, 0.12);
+  --ss-focus-ring: 0 0 0 3px rgba(9, 105, 218, 0.2);
+
+  /* 表面背景（浅色） */
+  --ss-bg-panel: #ffffff;
+  --ss-bg-panel-solid: #ffffff;
+  --ss-bg-panel-opaque: #ffffff;
+  --ss-bg-input: #f6f8fa;
+  /* 代码块保持深色，与代码高亮配色兼容 */
+  --ss-bg-code: #0d1117;
+  --ss-hover-layer: rgba(31, 35, 40, 0.09); /* 浅色下反馈加深，避免看不清 */
+
+  /* ============================================================
+     legacy 变量（App.css 的 :root 硬编码为深色值，浅色下必须随主题）
+     否则 var(--text)/var(--muted)/var(--panel) 等旧引用全是亮色
+     ============================================================ */
+  --bg: var(--ss-color-bg);
+  --bg-elevated: var(--ss-color-bg);
+  --panel: var(--ss-color-surface);
+  --panel-strong: var(--ss-color-surface-strong);
+  --border: var(--ss-color-border);
+  --border-strong: var(--ss-color-border-strong);
+  --text: var(--ss-color-text);
+  --muted: var(--ss-color-text-muted);
+  --accent: var(--ss-color-accent);
+  --accent-2: #d97706; /* 琥珀 */
+  --accent-3: #7c3aed; /* 紫 */
+  --success: var(--ss-color-success);
+  --danger: var(--ss-color-danger);
+  --shadow-soft: 0 18px 48px rgba(31, 35, 40, 0.1);
+  --shadow-strong: 0 30px 80px rgba(31, 35, 40, 0.14);
 }
 
 .low-performance-mode {

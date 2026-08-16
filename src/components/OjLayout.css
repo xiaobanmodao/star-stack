@@ -1,0 +1,12 @@
+/* OJ 子站侧栏：复用全局侧栏的 .sidebar 样式（App.css），仅补充内容区占位与详情页适配 */
+
+/* 内容区让出折叠宽度（59px）；侧栏 hover 展开时悬浮，不挤压内容 */
+.oj-sidebar-main {
+  margin-left: 59px;
+  min-width: 0;
+}
+
+.oj-sidebar-main .oj-detail {
+  width: 100%;
+  max-width: 1080px;
+}

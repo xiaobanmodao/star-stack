@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate, useParams, Navigate } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, Navigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import RichTextEditor from '../components/RichTextEditor'
 import { fetchJson } from '../utils'
@@ -7,8 +7,11 @@ import type { ApiResponse, DiscussionDetailResponse, OjProblemSummary, ProblemsR
 
 export default function DiscussionEditPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { currentUser } = useAppContext()
   const { id } = useParams<{ id: string }>()
+  // 透传来源（聊天中心板块等）：保存/取消后回到详情页，再返回时仍能回到原列表
+  const fromPath = (location.state as { from?: string } | null)?.from
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [problemId, setProblemId] = useState<number | null>(null)
@@ -59,7 +62,7 @@ export default function DiscussionEditPage() {
         body: JSON.stringify({ title: title.trim(), content, problemId })
       })
       if (response.ok) {
-        navigate(`/discussions/${id}`)
+        navigate(`/discussions/${id}`, fromPath ? { state: { from: fromPath } } : undefined)
       } else {
         setError(data?.message || '编辑失败')
       }
@@ -118,7 +121,7 @@ export default function DiscussionEditPage() {
       </div>
 
       <div className="form-actions">
-        <button className="ghost" onClick={() => navigate(`/discussions/${id}`)}>取消</button>
+        <button className="ghost" onClick={() => navigate(`/discussions/${id}`, fromPath ? { state: { from: fromPath } } : undefined)}>取消</button>
         <button className="primary" disabled={submitting} onClick={handleSubmit}>
           {submitting ? '保存中...' : '保存'}
         </button>

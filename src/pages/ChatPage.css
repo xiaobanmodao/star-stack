@@ -1,9 +1,13 @@
 /* Route-level styles for the direct message workspace.
    Imported by ChatPage only so the global App.css bundle stays lighter. */
+/* 视口内聊天布局：页面本身不滚动，消息区自适应填满、输入框固定底部始终可见 */
 .chat-page.ops-page-v2.chat-workspace-v2 {
+  display: flex;
+  flex-direction: column;
   width: min(100%, 1180px);
-  height: auto;
-  min-height: 0;
+  /* .main 实际 padding：顶部 34px + 底部 28px，减去后聊天区恰好占满可视区 */
+  height: calc(100vh - var(--topbar-offset, 60px) - 62px);
+  min-height: 540px;
   margin: 0 auto;
   background: transparent;
 }
@@ -16,15 +20,27 @@
 }
 
 .chat-workspace-v2 .ui-page-header {
-  padding: 18px;
+  flex-shrink: 0;
+  padding: 8px 14px;
   border: 1px solid var(--ss-color-border);
-  border-radius: var(--ss-radius-xl);
-  background:
-    linear-gradient(135deg, rgba(125, 211, 252, 0.08), transparent 46%),
-    rgba(8, 13, 22, 0.72);
+  border-radius: var(--ss-radius-lg);
+  background: none;
+}
+
+/* 洛谷式紧凑头部：只留标题 + 返回，把高度让给聊天区 */
+.chat-workspace-v2 .ui-page-header .ui-page-kicker,
+.chat-workspace-v2 .ui-page-header .ui-page-description {
+  display: none;
+}
+
+.chat-workspace-v2 .ui-page-header .ui-page-title {
+  font-size: 16px;
+  margin: 0;
 }
 
 .chat-workspace-grid {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: 290px minmax(0, 1fr);
   gap: 14px;
@@ -32,9 +48,11 @@
 }
 
 .chat-main-column {
+  align-self: stretch; /* 填满 grid 行高，使消息区能占满剩余空间 */
   display: grid;
+  grid-template-rows: minmax(0, 1fr);
   min-width: 0;
-  gap: 14px;
+  min-height: 0;
 }
 
 .chat-profile-card,
@@ -43,8 +61,29 @@
   display: grid;
   gap: 14px;
   border-radius: var(--ss-radius-xl) !important;
-  background: rgba(8, 13, 22, 0.72) !important;
+  background: var(--ss-bg-panel) !important;
   box-shadow: none !important;
+}
+
+/* 聊天框面板：头部固定，消息区占满剩余高度，输入区固定底部 */
+.chat-timeline-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-workspace-v2 .chat-timeline-panel .ops-panel-head {
+  align-items: center;
+  padding: 8px 14px 6px;
+  margin: 0;
+}
+
+.chat-workspace-v2 .chat-timeline-panel .ops-panel-head h2 {
+  font-size: 14px;
+}
+
+.chat-workspace-v2 .chat-timeline-panel .ops-panel-head > span {
+  font-size: 11px;
 }
 
 .chat-profile-card {
@@ -131,7 +170,7 @@
   padding: 10px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(226, 232, 240, 0.04);
+  background: var(--ss-hover-layer);
 }
 
 .chat-profile-metrics strong {
@@ -151,14 +190,17 @@
 .chat-workspace-v2 .chat-messages {
   display: flex;
   flex: none;
-  min-height: 430px;
-  max-height: min(62vh, 640px);
+  /* 由父级 grid 行（minmax(0,1fr)）分配高度，消息区始终填满、输入框固定可见 */
+  min-height: 0;
+  max-height: none;
+  height: 100%;
   overflow-y: auto;
-  padding: 16px;
-  gap: 14px;
+  overflow-x: hidden;
+  padding: 12px 14px;
+  gap: 10px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
-  background: rgba(2, 6, 23, 0.22);
+  background: var(--ss-bg-input);
 }
 
 .chat-workspace-v2 .load-more-button {
@@ -169,7 +211,7 @@
 .chat-workspace-v2 .chat-message {
   display: flex;
   max-width: min(76%, 680px);
-  gap: 10px;
+  gap: 8px;
 }
 
 .chat-workspace-v2 .chat-message.own {
@@ -185,7 +227,7 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 5px;
+  gap: 3px;
 }
 
 .chat-workspace-v2 .chat-message.own .message-content-wrap {
@@ -193,12 +235,20 @@
 }
 
 .chat-workspace-v2 .message-bubble {
-  padding: 12px 14px;
+  max-width: 100%;
+  padding: 9px 12px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
-  background: rgba(226, 232, 240, 0.045);
+  background: var(--ss-hover-layer);
   color: var(--ss-color-text);
   word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* 消息内代码块：横向滚动，不撑破气泡 */
+.chat-workspace-v2 .message-bubble pre {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .chat-workspace-v2 .chat-message.own .message-bubble {
@@ -227,7 +277,7 @@
 
 .chat-workspace-v2 .chat-date-separator span {
   border-color: var(--ss-color-border);
-  background: rgba(226, 232, 240, 0.045);
+  background: var(--ss-hover-layer);
   color: var(--ss-color-text-muted);
 }
 
@@ -258,23 +308,42 @@
 .chat-workspace-v2 .chat-input-area {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: 6px;
   align-items: end;
-  padding: 0;
-  border: 0;
+  padding: 4px 8px;
+  border-top: 1px solid var(--ss-color-border);
   background: transparent;
 }
 
+/* 洛谷式紧凑输入：极矮工具栏 + 矮输入框，把空间全部让给消息区 */
 .chat-workspace-v2 .chat-input-area .rich-editor-wrap {
   min-width: 0;
   border-color: var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
-  background: rgba(2, 6, 23, 0.22);
+  background: var(--ss-bg-input);
+}
+
+.chat-workspace-v2 .chat-input-area .rich-editor-toolbar {
+  padding: 1px 3px;
+  gap: 0;
+  border-bottom: 1px solid var(--ss-hover-layer);
+}
+
+.chat-workspace-v2 .chat-input-area .rich-editor-toolbar button {
+  min-width: 20px;
+  min-height: 20px;
+  padding: 0 3px;
+  font-size: 11px;
+}
+
+.chat-workspace-v2 .chat-input-area .rich-editor-toolbar .rich-editor-sep {
+  margin: 0 1px;
 }
 
 .chat-workspace-v2 .chat-input-area .rich-editor-content {
-  min-height: 78px;
-  max-height: 180px;
+  min-height: 34px;
+  max-height: 96px;
+  padding: 5px 10px;
 }
 
 .chat-workspace-v2 .send-button {
@@ -283,8 +352,28 @@
 }
 
 @media (max-width: 980px) {
+  /* 窄屏恢复自然流：页面（content）可滚动，输入框跟随内容滚动可见 */
+  .chat-page.ops-page-v2.chat-workspace-v2 {
+    height: auto;
+    min-height: 0;
+  }
+
   .chat-workspace-grid {
     grid-template-columns: 1fr;
+  }
+
+  .chat-main-column {
+    grid-template-rows: auto;
+  }
+
+  .chat-timeline-panel {
+    grid-template-rows: auto;
+    overflow: visible;
+  }
+
+  .chat-workspace-v2 .chat-messages {
+    height: auto;
+    max-height: 62vh;
   }
 
   .chat-profile-card {
@@ -305,8 +394,8 @@
   }
 
   .chat-workspace-v2 .chat-messages {
-    min-height: 360px;
-    max-height: 58vh;
+    min-height: 240px;
+    max-height: 60vh;
     padding: 12px;
   }
 
@@ -322,4 +411,44 @@
   .chat-workspace-v2 .send-button {
     width: 100%;
   }
+}
+
+/* 私信页对方信息卡可点击（查看个人主页） */
+.chat-workspace-v2 .chat-header-user {
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.chat-workspace-v2 .chat-header-user:hover .chat-user-name {
+  color: var(--ss-color-accent);
+}
+
+/* 私信已读回执 */
+.message-read-state {
+  color: var(--ss-color-text-subtle);
+  font-size: 11px;
+}
+
+.message-read-state.read {
+  color: var(--ss-color-success);
+}
+
+/* 屏蔽提示 */
+.chat-block-hint {
+  flex: 1;
+  padding: 18px 14px;
+  text-align: center;
+  color: var(--ss-color-text-subtle);
+  font-size: 13px;
+  border: 1px dashed rgba(248, 113, 113, 0.35);
+  border-radius: var(--ss-radius-md);
+  background: rgba(248, 113, 113, 0.05);
 }

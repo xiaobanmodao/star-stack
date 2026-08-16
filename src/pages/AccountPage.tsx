@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import type {
   Achievement,
@@ -11,6 +12,8 @@ import type {
   UserResponse,
 } from '../types'
 import { fetchJson } from '../utils'
+import { OJ_ENABLED } from '../constants'
+import type { FollowRelations, UserProfileResponse } from '../types'
 import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
 import './AccountPage.css'
 
@@ -34,6 +37,7 @@ const getRatingDelta = (history: { date: string; rating: number }[]) => {
 }
 
 export default function AccountPage() {
+  const navigate = useNavigate()
   const { currentUser, setCurrentUser, openAuth } = useAppContext()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
@@ -43,6 +47,8 @@ export default function AccountPage() {
   const [achievements, setAchievements] = useState<Achievement[]>([])
   const [loading, setLoading] = useState(true)
   const [ratingHistory, setRatingHistory] = useState<{ date: string; rating: number }[]>([])
+  const [relations, setRelations] = useState<FollowRelations | null>(null)
+  const [bookmarks, setBookmarks] = useState<{ id: number; title: string; userName: string; commentCount: number; createdAt: string }[]>([])
   const loadedUserIdRef = useRef<string | null>(null)
   const initial = currentUser?.name?.trim()?.[0] || currentUser?.id?.[0] || '★'
 
@@ -97,6 +103,10 @@ export default function AccountPage() {
 
   useEffect(() => {
     if (!currentUser?.id) return
+    if (!OJ_ENABLED) {
+      setLoading(false)
+      return
+    }
     if (loadedUserIdRef.current === currentUser.id) return
 
     let mounted = true
@@ -133,18 +143,42 @@ export default function AccountPage() {
     }
   }, [currentUser, setCurrentUser])
 
+  // 加载自己的关注/粉丝数据（与做题功能无关，始终显示）
+  useEffect(() => {
+    if (!currentUser?.id) return
+    const timer = window.setTimeout(() => {
+      void fetchJson<UserProfileResponse>(`/api/users/${currentUser.id}/profile`).then(({ response, data }) => {
+        if (response.ok && data) setRelations(data.relations)
+      })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [currentUser])
+
+  // 加载我的收藏
+  useEffect(() => {
+    if (!currentUser?.id) return
+    const timer = window.setTimeout(() => {
+      void fetchJson<{ posts: { id: number; title: string; userName: string; commentCount: number; createdAt: string }[] }>(
+        '/api/bookmarks?targetType=post'
+      ).then(({ response, data }) => {
+        if (response.ok && data) setBookmarks(data.posts || [])
+      })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [currentUser])
+
   if (!currentUser) {
     return (
       <section className="section profile-v2 profile-guest">
         <PageHeader
           kicker="Star Profile"
           title="个人中心"
-          description="登录后可以查看做题数据、成长轨迹和个人成就。"
+          description={OJ_ENABLED ? '登录后可以查看做题数据、成长轨迹和个人成就。' : '登录后可以查看个人资料、头像与账号设置。'}
           actions={<Button variant="primary" onClick={() => openAuth('login')}>去登录</Button>}
         />
         <EmptyState
           title="还没有连接到你的星栈账号"
-          description="登录后，这里会展示你的刷题航线、连续天数、成就和 Rating 变化。"
+          description={OJ_ENABLED ? '登录后，这里会展示你的刷题航线、连续天数、成就和 Rating 变化。' : '登录后，这里会展示你的个人资料与账号设置。'}
         />
       </section>
     )
@@ -160,20 +194,22 @@ export default function AccountPage() {
             <div className="skeleton skeleton-line" style={{ width: '40%', margin: '0 auto' }} />
           </Panel>
         </div>
-        <div className="profile-right">
-          <div className="stats-grid">
-            {[1, 2, 3, 4, 5, 6].map((item) => (
-              <Panel key={item} className="stat-card">
-                <div className="skeleton skeleton-line" style={{ width: '50%', height: 20 }} />
-                <div className="skeleton skeleton-line" style={{ width: '70%', height: 14 }} />
-              </Panel>
-            ))}
+        {OJ_ENABLED && (
+          <div className="profile-right">
+            <div className="stats-grid">
+              {[1, 2, 3, 4, 5, 6].map((item) => (
+                <Panel key={item} className="stat-card">
+                  <div className="skeleton skeleton-line" style={{ width: '50%', height: 20 }} />
+                  <div className="skeleton skeleton-line" style={{ width: '70%', height: 14 }} />
+                </Panel>
+              ))}
+            </div>
+            <Panel className="heatmap-container" style={{ minHeight: '200px' }}>
+              <div className="heatmap-title">做题热力图</div>
+              <div className="skeleton" style={{ height: 120, marginTop: 12 }} />
+            </Panel>
           </div>
-          <Panel className="heatmap-container" style={{ minHeight: '200px' }}>
-            <div className="heatmap-title">做题热力图</div>
-            <div className="skeleton" style={{ height: 120, marginTop: 12 }} />
-          </Panel>
-        </div>
+        )}
       </div>
     )
   }
@@ -181,36 +217,13 @@ export default function AccountPage() {
   const stats = profileStats?.stats || {}
   const difficultyStats = profileStats?.difficultyStats || {}
   const solvedProblems = stats.solvedProblems ?? stats.totalSolved ?? 0
-  const totalTried = stats.totalTried ?? solvedProblems
   const acceptedCount = stats.acceptedCount ?? 0
   const totalSubmissions = stats.totalSubmissions ?? 0
   const acceptanceRate = stats.acceptanceRate ?? 0
   const recentActiveDays = getRecentActiveDays(heatmapData)
-  const latestRating = ratingHistory.at(-1)?.rating
   const ratingDelta = getRatingDelta(ratingHistory)
   const difficultyEntries = Object.entries(difficultyStats)
   const maxDifficultySolved = Math.max(...difficultyEntries.map(([, item]) => getDifficultySolved(item)), 1)
-  const starNodes = [
-    ...difficultyEntries.slice(0, 7).map(([difficulty, item], index) => ({
-      id: `difficulty-${difficulty}`,
-      label: difficulty,
-      value: getDifficultySolved(item),
-      x: 14 + ((index * 23) % 72),
-      y: 20 + ((index * 31) % 58),
-      level: Math.min(4, Math.max(1, Math.ceil((getDifficultySolved(item) / maxDifficultySolved) * 4))),
-    })),
-    ...achievements.slice(0, 4).map((achievement, index) => ({
-      id: `achievement-${achievement.id}`,
-      label: achievement.name,
-      value: 1,
-      x: 18 + ((index * 29 + 12) % 68),
-      y: 24 + ((index * 19 + 8) % 52),
-      level: 4,
-    })),
-  ].slice(0, 10)
-  const visibleStarNodes = starNodes.length > 0
-    ? starNodes
-    : [{ id: 'empty-course', label: '等待启航', value: 0, x: 50, y: 48, level: 1 }]
 
   return (
     <div className="profile-container profile-v2">
@@ -239,18 +252,34 @@ export default function AccountPage() {
             <div className="account-name" data-user-name>{currentUser.name}</div>
             <div className="account-id" data-user-id>@{currentUser.id}</div>
           </div>
-          {stats.rank && stats.rank > 0 && (
+          {OJ_ENABLED && stats.rank && stats.rank > 0 && (
             <Badge tone="info" className="profile-rank-badge">全站排名 #{stats.rank}</Badge>
           )}
-          <div className="profile-identity-metrics">
-            <div>
-              <span>连续</span>
-              <strong>{stats.currentStreak || 0} 天</strong>
+          {OJ_ENABLED && (
+            <div className="profile-identity-metrics">
+              <div>
+                <span>连续</span>
+                <strong>{stats.currentStreak || 0} 天</strong>
+              </div>
+              <div>
+                <span>最长</span>
+                <strong>{stats.maxStreak || 0} 天</strong>
+              </div>
             </div>
-            <div>
-              <span>最长</span>
-              <strong>{stats.maxStreak || 0} 天</strong>
-            </div>
+          )}
+          <div className="profile-follow-row">
+            <button type="button" onClick={() => navigate('/chat/friends')}>
+              <strong>{relations?.followingCount ?? '-'}</strong>
+              <span>关注</span>
+            </button>
+            <button type="button" onClick={() => navigate('/chat/friends')}>
+              <strong>{relations?.followerCount ?? '-'}</strong>
+              <span>粉丝</span>
+            </button>
+            <button type="button" onClick={() => navigate('/chat/friends')}>
+              <strong>{relations?.friendCount ?? '-'}</strong>
+              <span>好友</span>
+            </button>
           </div>
           <Button variant="ghost" size="sm" onClick={handleAvatarClick} loading={uploading}>
             更换头像
@@ -264,46 +293,20 @@ export default function AccountPage() {
             style={{ display: 'none' }}
             onChange={handleFileChange}
           />
-        </Panel>
-
-        <Panel className="profile-side-note">
-          <div className="profile-side-note-title">本月活动</div>
-          <strong>{recentActiveDays}</strong>
-          <span>近 30 天有提交记录的天数</span>
+          {OJ_ENABLED && (
+            <Panel className="profile-side-note">
+              <div className="profile-side-note-title">本月活动</div>
+              <strong>{recentActiveDays}</strong>
+              <span>近 30 天有提交记录的天数</span>
+            </Panel>
+          )}
         </Panel>
       </aside>
 
       <main className="profile-right">
-        <Panel className="profile-command-panel" elevated>
-          <div className="profile-command-copy">
-            <div className="profile-kicker">Growth Route</div>
-            <h1>成长航线</h1>
-            <p>
-              把提交、通过、难度和成就收束成一张轻量星图。这里应该让用户一眼看到自己正在变强，而不是只看到一组数字。
-            </p>
-            <div className="profile-command-actions">
-              <Badge tone="success">已解决 {solvedProblems} 题</Badge>
-              <Badge tone="info">尝试 {totalTried} 题</Badge>
-              {latestRating !== undefined && <Badge tone="warning">Rating {latestRating}</Badge>}
-            </div>
-          </div>
-
-          <div className="profile-star-map" aria-label="成长星图">
-            <div className="profile-star-path" />
-            {visibleStarNodes.map((node) => (
-              <span
-                key={node.id}
-                className={`profile-star-node level-${node.level}`}
-                style={{ '--x': `${node.x}%`, '--y': `${node.y}%` } as CSSProperties}
-                title={`${node.label}：${node.value}`}
-              >
-                <span>{node.value > 0 ? node.value : '·'}</span>
-              </span>
-            ))}
-          </div>
-        </Panel>
-
-        <div className="stats-grid profile-stats-grid">
+        {OJ_ENABLED ? (
+          <>
+            <div className="stats-grid profile-stats-grid">
           <Panel className="stat-card">
             <div className="stat-value">{totalSubmissions}</div>
             <div className="stat-label">总提交</div>
@@ -418,6 +421,37 @@ export default function AccountPage() {
                 return <polyline fill="none" stroke="currentColor" strokeWidth="1.8" points={points} />
               })()}
             </svg>
+          </Panel>
+          )}
+        </>
+        ) : (
+          <Panel className="profile-oj-paused">
+            <EmptyState
+              title="做题数据暂时停用"
+              description="相关功能恢复后，这里会重新展示你的成长航线、做题热力图、成就与 Rating。"
+            />
+          </Panel>
+        )}
+
+        {bookmarks.length > 0 && (
+          <Panel className="profile-bookmarks">
+            <div className="profile-panel-head">
+              <div>
+                <div className="profile-kicker">Bookmarks</div>
+                <h2>我的收藏</h2>
+              </div>
+              <span>{bookmarks.length} 篇</span>
+            </div>
+            <div className="profile-bookmarks-list">
+              {bookmarks.map((bookmark) => (
+                <button key={bookmark.id} type="button" onClick={() => navigate(`/chat/p/${bookmark.id}`)}>
+                  <span className="profile-bookmark-title">{bookmark.title}</span>
+                  <span className="profile-bookmark-meta">
+                    {bookmark.userName} · 💬 {bookmark.commentCount} · {new Date(bookmark.createdAt).toLocaleDateString('zh-CN')}
+                  </span>
+                </button>
+              ))}
+            </div>
           </Panel>
         )}
       </main>

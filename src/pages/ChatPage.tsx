@@ -4,7 +4,8 @@ import { useAppContext } from '../context/AppContext'
 import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
 import RichTextEditor from '../components/RichTextEditor'
 import { fetchJson, isPollingPageVisible } from '../utils'
-import type { Message, MessagesResponse } from '../types'
+import { renderRichText } from '../utils/richText'
+import type { FollowRelations, Message, MessagesResponse, UserProfileResponse } from '../types'
 import './OpsPages.css'
 import './ChatPage.css'
 
@@ -17,12 +18,14 @@ type ChatTimelineItem =
   | { type: 'date'; label: string; key: string }
   | { type: 'msg'; message: Message; key: string }
 
-export default function ChatPage() {
+export default function ChatPage({ basePath = '/messages' }: { basePath?: string }) {
   const navigate = useNavigate()
   const { currentUser, fetchUnreadCount } = useAppContext()
   const { userId: otherUserId } = useParams<{ userId: string }>()
   const [messages, setMessages] = useState<Message[]>([])
   const [otherUser, setOtherUser] = useState<{ id: string; name: string; avatar?: string; isBanned: boolean } | null>(null)
+  const [relations, setRelations] = useState<FollowRelations | null>(null)
+  const [blockHint, setBlockHint] = useState<string | null>(null)
   const [messageContent, setMessageContent] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
@@ -67,6 +70,31 @@ export default function ChatPage() {
   useEffect(() => {
     loadMessages(1)
   }, [loadMessages])
+
+  // 加载与对方的关注关系（好友状态 + 屏蔽状态）
+  useEffect(() => {
+    if (!otherUserId) return
+    const timer = window.setTimeout(() => {
+      void fetchJson<UserProfileResponse>(`/api/users/${otherUserId}/profile`).then(({ response, data }) => {
+        if (response.ok && data) {
+          setRelations(data.relations)
+          setBlockHint(data.blocked ? '你已屏蔽对方，无法发送消息' : null)
+        } else if (response.status === 403) {
+          setBlockHint(data?.message || '对方已屏蔽你，无法发送消息')
+        }
+      })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [otherUserId])
+
+  const handleToggleFollow = async () => {
+    if (!otherUserId || !relations) return
+    const { response, data } = await fetchJson<{ relations?: FollowRelations }>(
+      `/api/users/${otherUserId}/follow`,
+      { method: relations.following ? 'DELETE' : 'POST' }
+    )
+    if (response.ok && data?.relations) setRelations(data.relations)
+  }
 
   // Poll for new messages (paused when tab is hidden)
   useEffect(() => {
@@ -262,7 +290,7 @@ export default function ChatPage() {
         title={`与 ${otherUser.name} 的私信`}
         description="对话内容会自动轮询刷新；Enter 发送，Shift+Enter 换行。"
         actions={
-          <Button variant="ghost" onClick={() => navigate('/messages')}>
+          <Button variant="ghost" onClick={() => navigate(basePath)}>
             返回私信
           </Button>
         }
@@ -270,7 +298,12 @@ export default function ChatPage() {
 
       <div className="chat-workspace-grid">
         <Panel className="chat-profile-card">
-          <div className="chat-header-user">
+          <button
+            type="button"
+            className="chat-header-user"
+            onClick={() => navigate(`/user/${otherUser.id}`)}
+            title="查看个人主页"
+          >
             <div className="chat-avatar">
               {otherUser.avatar ? (
                 <img src={otherUser.avatar} alt={otherUser.name} loading="lazy" />
@@ -282,13 +315,28 @@ export default function ChatPage() {
               <span className="chat-user-name">{otherUser.name}</span>
               <span className="chat-user-id">@{otherUser.id}</span>
             </div>
-          </div>
+          </button>
           <div className="chat-profile-status">
             <Badge tone={otherUser.isBanned ? 'danger' : 'success'}>
               {otherUser.isBanned ? '已封禁' : '可发送'}
             </Badge>
+            {relations && !relations.isFriend && (
+              <Badge tone={relations.following ? 'neutral' : 'info'}>
+                {relations.following ? '已关注' : '未关注'}
+              </Badge>
+            )}
+            {relations?.isFriend && <Badge tone="success">好友</Badge>}
             <span>7 秒自动检查新消息</span>
           </div>
+          {relations && !otherUser.isBanned && (
+            <Button
+              variant={relations.following ? 'ghost' : 'primary'}
+              size="sm"
+              onClick={() => void handleToggleFollow()}
+            >
+              {relations.following ? (relations.isFriend ? '互相关注' : '取消关注') : '关注'}
+            </Button>
+          )}
           <div className="chat-profile-metrics">
             <div>
               <strong>{messages.length}</strong>
@@ -350,10 +398,15 @@ export default function ChatPage() {
                       </div>
                       <div className="message-content-wrap">
                         <div className="message-bubble">
-                          <div className="message-text" dangerouslySetInnerHTML={{ __html: message.content }} />
+                          <div className="message-text" dangerouslySetInnerHTML={{ __html: renderRichText(message.content) }} />
                         </div>
                         <div className="message-meta">
                           <span className="message-time">{formatTime(message.createdAt)}</span>
+                          {message.senderId === currentUser?.id && (
+                            <span className={`message-read-state ${message.isRead ? 'read' : ''}`}>
+                              {message.isRead ? '已读' : '未读'}
+                            </span>
+                          )}
                           {canDelete(message) && (
                             <button
                               className="message-delete"
@@ -371,35 +424,33 @@ export default function ChatPage() {
               )}
               <div ref={messagesEndRef} />
             </div>
-          </Panel>
 
-          <Panel className="chat-input-panel">
-            <div className="chat-input-head">
-              <div>
-                <Badge tone="info">Composer</Badge>
-                <strong>发送消息</strong>
-              </div>
-              <span>Enter 发送 · Shift+Enter 换行</span>
-            </div>
+            {/* 输入区：与消息列表同一面板（聊天框风格） */}
             <div className="chat-input-area">
-              <RichTextEditor
-                value={messageContent}
-                onChange={setMessageContent}
-                placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
-              />
-              <Button
-                className="send-button"
-                variant="primary"
-                onClick={handleSendMessage}
-                loading={sending}
-                disabled={!messageContent.trim() || otherUser.isBanned}
-              >
-                {sending ? '发送中...' : '发送'}
-              </Button>
+              {blockHint ? (
+                <div className="chat-block-hint">{blockHint}</div>
+              ) : (
+                <>
+                  <RichTextEditor
+                    value={messageContent}
+                    onChange={setMessageContent}
+                    placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
+                  />
+                  <Button
+                    className="send-button"
+                    variant="primary"
+                    onClick={handleSendMessage}
+                    loading={sending}
+                    disabled={!messageContent.trim() || otherUser.isBanned}
+                  >
+                    {sending ? '发送中...' : '发送'}
+                  </Button>
+                </>
+              )}
+              {otherUser.isBanned && (
+                <div className="form-error">无法向被封禁用户发送消息。</div>
+              )}
             </div>
-            {otherUser.isBanned && (
-              <div className="form-error">无法向被封禁用户发送消息。</div>
-            )}
           </Panel>
         </div>
       </div>

@@ -2,6 +2,8 @@ import express from 'express'
 import cors from 'cors'
 import bcrypt from 'bcryptjs'
 import { randomBytes } from 'crypto'
+import webpush from 'web-push'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { getDb, initDb } from './db.js'
 import { judgeSubmission, runSample, runSamples } from './judge.js'
 import {
@@ -53,6 +55,28 @@ class BoundedCache {
 
 const app = express()
 
+// 登录防护：按 IP 失败计数，5 次失败后锁定 10 分钟
+const loginFailures = new Map() // ip -> { count, lockedUntil }
+const MAX_LOGIN_FAILURES = 5
+const LOGIN_LOCK_MS = 10 * 60 * 1000
+const checkLoginLock = (ip) => {
+  const entry = loginFailures.get(ip)
+  if (!entry) return false
+  if (entry.lockedUntil && entry.lockedUntil > Date.now()) return true
+  if (entry.lockedUntil && entry.lockedUntil <= Date.now()) loginFailures.delete(ip)
+  return false
+}
+const recordLoginFailure = (ip) => {
+  const entry = loginFailures.get(ip) || { count: 0, lockedUntil: 0 }
+  entry.count += 1
+  if (entry.count >= MAX_LOGIN_FAILURES) {
+    entry.lockedUntil = Date.now() + LOGIN_LOCK_MS
+    entry.count = 0
+  }
+  loginFailures.set(ip, entry)
+}
+const clearLoginFailures = (ip) => loginFailures.delete(ip)
+
 // CORS: 生产环境限制为指定域名，开发环境允许 localhost
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
@@ -63,8 +87,9 @@ app.use(cors({
     // 允许无 origin 的请求（如服务器间调用、curl）
     if (!origin) return callback(null, true)
     if (!ALLOWED_ORIGINS) {
+      // 未配置白名单：开发放行；生产放行并告警（避免线上直接不可用，部署时务必配置）
       if (process.env.NODE_ENV === 'production') {
-        return callback(new Error('CORS not allowed'))
+        console.warn('[cors] ALLOWED_ORIGINS 未配置，已放行所有来源。生产环境请设置环境变量！')
       }
       return callback(null, true)
     }
@@ -92,14 +117,20 @@ const getAuthToken = (req) => {
   return null
 }
 
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000 // 会话 30 天过期
 const getUserByToken = async (db, token) => {
   const session = await db.get(
-    `SELECT token, user_id FROM sessions WHERE token = ?`,
+    `SELECT token, user_id, created_at FROM sessions WHERE token = ?`,
     token
   )
   if (!session) return null
+  // 会话过期：删除并拒绝
+  if (session.created_at && Date.now() - new Date(session.created_at).getTime() > SESSION_MAX_AGE_MS) {
+    await db.run(`DELETE FROM sessions WHERE token = ?`, token)
+    return null
+  }
   const user = await db.get(
-    `SELECT id, name, password_hash, is_admin, is_banned, avatar, created_at
+    `SELECT id, name, password_hash, is_admin, is_banned, avatar, bio, created_at
      FROM users WHERE id = ?`,
     session.user_id
   )
@@ -218,6 +249,10 @@ app.post('/api/register', async (req, res) => {
 })
 
 app.post('/api/login', async (req, res) => {
+  const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown'
+  if (checkLoginLock(clientIp)) {
+    return res.status(429).json({ message: '尝试次数过多，请 10 分钟后再试' })
+  }
   const { id, password } = req.body || {}
   if (!id || !password) {
     return res.status(400).json({ message: '请输入 ID 与密码' })
@@ -231,8 +266,10 @@ app.post('/api/login', async (req, res) => {
     id
   )
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+    recordLoginFailure(clientIp)
     return res.status(401).json({ message: 'ID 或密码错误' })
   }
+  clearLoginFailures(clientIp)
   if (user.is_banned) {
     return res.status(403).json({ message: '账号已被封禁' })
   }
@@ -366,8 +403,9 @@ app.post('/api/me/avatar', async (req, res) => {
     return res.status(400).json({ message: '请提供头像数据' })
   }
   // 验证是否为 base64 图片数据
-  if (!avatar.startsWith('data:image/')) {
-    return res.status(400).json({ message: '无效的图片格式' })
+  // MIME 白名单：仅允许常见位图格式，拒绝 svg（可携带脚本）与任意 data 载体
+  if (!/^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(avatar)) {
+    return res.status(400).json({ message: '仅支持 PNG/JPG/WebP/GIF 图片' })
   }
   // 限制大小（约 2MB）
   if (avatar.length > 3000000) {
@@ -391,6 +429,77 @@ app.post('/api/me/avatar', async (req, res) => {
       isAdmin: Boolean(user.is_admin),
       isBanned: Boolean(user.is_banned),
     },
+  })
+})
+
+
+// ============================================================
+// 每日一题 + AC 连击（留存机制）
+// 每日推荐一道题（按日期轮换，优先未 AC）；返回用户连击状态
+// ============================================================
+app.get('/api/problems/daily', async (req, res) => {
+  const db = await getDb()
+  const token = getAuthToken(req)
+  const user = token ? await getUserByToken(db, token) : null
+  const userId = user ? user.id : null
+
+  // 本地日期 YYYY-MM-DD
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+  const problems = await db.all(
+    `SELECT id, slug, title, difficulty, tags FROM problems WHERE status = 'published' ORDER BY id ASC`
+  )
+  if (problems.length === 0) {
+    return res.json({ problem: null, solvedToday: false, streak: 0, maxStreak: 0 })
+  }
+
+  // 按日期取模轮换：同一天所有人看到同一道基准题
+  const dayNum = parseInt(today.replace(/-/g, ''), 10)
+  const baseIdx = dayNum % problems.length
+
+  let solvedSet = new Set()
+  if (userId) {
+    const solved = await db.all(`SELECT problem_id FROM solved_problems WHERE user_id = ?`, userId)
+    solvedSet = new Set(solved.map((s) => s.problem_id))
+  }
+
+  // 优先推荐用户未 AC 的题（从基准索引开始顺延）
+  let picked = null
+  if (userId) {
+    for (let i = 0; i < problems.length; i++) {
+      const p = problems[(baseIdx + i) % problems.length]
+      if (!solvedSet.has(p.id)) { picked = p; break }
+    }
+  }
+  if (!picked) picked = problems[baseIdx]
+
+  let solvedToday = false
+  let streak = 0
+  let maxStreak = 0
+  if (userId) {
+    const act = await db.get(
+      `SELECT accepted_count FROM daily_activity WHERE user_id = ? AND activity_date = ?`,
+      userId, today
+    )
+    solvedToday = Boolean(act && act.accepted_count > 0)
+    const stats = await db.get(`SELECT current_streak, max_streak FROM user_stats WHERE user_id = ?`, userId)
+    streak = stats?.current_streak || 0
+    maxStreak = stats?.max_streak || 0
+  }
+
+  return res.json({
+    problem: picked ? {
+      id: picked.id,
+      slug: picked.slug,
+      title: picked.title,
+      difficulty: picked.difficulty,
+      tags: picked.tags ? picked.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
+      solved: userId ? solvedSet.has(picked.id) : false,
+    } : null,
+    solvedToday,
+    streak,
+    maxStreak,
   })
 })
 
@@ -460,6 +569,15 @@ app.get('/api/oj/problems/:id', async (req, res) => {
     : await db.get(`SELECT p.*, u.name as creator_name FROM problems p LEFT JOIN users u ON p.creator_id = u.id WHERE p.slug = ?`, identifier)
   if (!row) {
     return res.status(404).json({ message: '题目不存在' })
+  }
+  // 草稿题目仅创建者与管理员可见
+  if (row.status !== 'published') {
+    const token = req.headers.authorization?.replace('Bearer ', '')
+    const session = token ? await db.get(`SELECT user_id FROM sessions WHERE token = ?`, token) : null
+    const isCreator = session && session.user_id === row.creator_id
+    if (!isCreator && !(session && (await db.get(`SELECT is_admin FROM users WHERE id = ?`, session.user_id))?.is_admin)) {
+      return res.status(404).json({ message: '题目不存在' })
+    }
   }
   const samples = await db.all(
     `SELECT input, output FROM testcases WHERE problem_id = ? AND is_sample = 1 ORDER BY id ASC`,
@@ -557,7 +675,8 @@ app.post('/api/problems', async (req, res) => {
       sanitizedDataRange,
       JSON.stringify(samples),
       user.id,
-      status || 'published',
+      // 仅管理员可发布；普通用户创建的题目一律为草稿，待审核发布
+      user.is_admin ? (status === 'draft' ? 'draft' : 'published') : 'draft',
       now
     )
 
@@ -828,6 +947,7 @@ app.delete('/api/problems/:id', async (req, res) => {
   try {
     // 删除题目（级联删除会自动删除相关的 testcases 和 submissions）
     await db.run(`DELETE FROM problems WHERE id = ?`, problemId)
+    await db.run(`DELETE FROM bookmarks WHERE target_type = 'problem' AND target_id = ?`, problemId)
 
     return res.json({
       message: '题目删除成功'
@@ -947,10 +1067,10 @@ app.get('/api/oj/submissions/all', async (req, res) => {
       timeMs: row.time_ms,
       memoryKb: row.memory_kb,
       score: row.score ?? 0,
-      message: row.message,
+      message: row.user_id === user.id ? row.message : null,
       code: row.user_id === user.id ? row.code : null,
       canViewCode: row.user_id === user.id,
-      results: parseResults(row.results_json),
+      results: row.user_id === user.id ? parseResults(row.results_json) : [],
       createdAt: row.created_at,
     })),
   })
@@ -993,20 +1113,33 @@ app.get('/api/oj/submissions/:id', async (req, res) => {
       status: row.status,
       timeMs: row.time_ms,
       memoryKb: row.memory_kb,
-      message: row.message,
+      message: canViewCode ? row.message : null,
       score: row.score ?? 0,
       code: canViewCode ? row.code : null,
       canViewCode: canViewCode,
-      results: parseResults(row.results_json),
+      results: canViewCode ? parseResults(row.results_json) : [],
       createdAt: row.created_at,
     },
   })
 })
 
+// 评测限流：每用户 10 秒 1 次 + 全局并发上限
+const judgeRateLimits = new BoundedCache(2000, 10000)
+let activeJudges = 0
+const MAX_ACTIVE_JUDGES = 4
+
 app.post('/api/oj/submissions', async (req, res) => {
   const auth = await requireUser(req, res)
   if (!auth) return
   const { db, user } = auth
+  if (judgeRateLimits.has(user.id)) {
+    return res.status(429).json({ message: '提交过于频繁，请稍后再试' })
+  }
+  judgeRateLimits.set(user.id, Date.now())
+  if (activeJudges >= MAX_ACTIVE_JUDGES) {
+    return res.status(503).json({ message: '评测队列繁忙，请稍后再试' })
+  }
+  activeJudges += 1
   const { problemId, language, code } = req.body || {}
   if (!problemId || !language || !code) {
     return res.status(400).json({ message: '请填写完整信息' })
@@ -1023,9 +1156,12 @@ app.post('/api/oj/submissions', async (req, res) => {
     return res.status(400).json({ message: '代码长度超过限制（最大 100KB）' })
   }
 
-  const problem = await db.get(`SELECT id FROM problems WHERE id = ?`, Number(problemId))
+  const problem = await db.get(`SELECT id, status FROM problems WHERE id = ?`, Number(problemId))
   if (!problem) {
     return res.status(404).json({ message: '题目不存在' })
+  }
+  if (problem.status !== 'published') {
+    return res.status(403).json({ message: '题目尚未发布' })
   }
   const testcases = await db.all(
     `SELECT input, output FROM testcases WHERE problem_id = ? ORDER BY id ASC`,
@@ -1035,11 +1171,16 @@ app.post('/api/oj/submissions', async (req, res) => {
     return res.status(400).json({ message: '该题暂无测试用例' })
   }
   const normalized = String(code)
-  const judgeResult = await judgeSubmission({
-    language,
-    code: normalized,
-    testcases,
-  })
+  let judgeResult
+  try {
+    judgeResult = await judgeSubmission({
+      language,
+      code: normalized,
+      testcases,
+    })
+  } finally {
+    activeJudges = Math.max(0, activeJudges - 1)
+  }
   const status = judgeResult.status
   const message = judgeResult.message
   const timeMs = judgeResult.timeMs ?? null
@@ -1122,9 +1263,12 @@ app.post('/api/oj/submissions/stream', async (req, res) => {
   if (code.length > 100000) {
     return res.status(400).json({ message: '代码长度超过限制（最大 100KB）' })
   }
-  const problem = await db.get(`SELECT id FROM problems WHERE id = ?`, Number(problemId))
+  const problem = await db.get(`SELECT id, status FROM problems WHERE id = ?`, Number(problemId))
   if (!problem) {
     return res.status(404).json({ message: '题目不存在' })
+  }
+  if (problem.status !== 'published') {
+    return res.status(403).json({ message: '题目尚未发布' })
   }
   const testcases = await db.all(
     `SELECT input, output FROM testcases WHERE problem_id = ? ORDER BY id ASC`,
@@ -1650,7 +1794,7 @@ app.get('/api/user/rating-history/:userId', async (req, res) => {
       return res.status(404).json({ message: '用户不存在' })
     }
     const rows = await db.all(
-      `SELECT recorded_at as date, rating
+      `SELECT recorded_at as date, value as rating
        FROM leaderboard_history
        WHERE user_id = ? AND period_type = 'total'
        ORDER BY recorded_at DESC LIMIT 30`,
@@ -1681,8 +1825,8 @@ app.get('/api/user/weekly-stats/:userId', async (req, res) => {
     const tenDaysAgo = new Date(today)
     tenDaysAgo.setDate(tenDaysAgo.getDate() - 9)
 
-    const startDate = tenDaysAgo.toISOString().split('T')[0]
-    const endDate = today.toISOString().split('T')[0]
+    const startDate = localDay(tenDaysAgo)
+    const endDate = localDay(today)
 
     // 查询最近10天的活动数据
     const activities = await db.all(
@@ -2268,6 +2412,23 @@ app.post('/api/messages/conversations/:userId', async (req, res) => {
       return res.status(400).json({ message: '不能给自己发消息' })
     }
 
+    // 黑名单拦截：任一方拉黑对方都不能发私信
+    const blockCheck = await db.get(
+      `SELECT 1 FROM blocks
+       WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)
+       LIMIT 1`,
+      user.id, otherUserId, otherUserId, user.id
+    )
+    if (blockCheck) {
+      const blockedByThem = await db.get(
+        `SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?`,
+        otherUserId, user.id
+      )
+      return res.status(403).json({
+        message: blockedByThem ? '对方已屏蔽你，无法发送消息' : '你已屏蔽对方，无法发送消息',
+      })
+    }
+
     // Check rate limit (3 seconds cooldown, BoundedCache TTL handles expiry)
     const now = Date.now()
     if (messageRateLimits.has(user.id)) {
@@ -2675,8 +2836,13 @@ const ALLOWED_TAGS = new Set([
 ])
 const ALLOWED_ATTR_MAP = {
   a: new Set(['href', 'target', 'rel']),
+  span: new Set(['class']),
+  code: new Set(['class']),
+  pre: new Set(['class']),
 }
-const SAFE_URL_RE = /^(?:https?:\/\/|mailto:|\/)/i
+const SAFE_URL_RE = /^(?:https?:\/\/|mailto:|\/(?!\/))/i
+// class 白名单：只允许文字大小类与代码语言类
+const SAFE_CLASS_RE = /^(?:text-(?:sm|lg|xl)|language-[a-z0-9+-]+)$/i
 
 function sanitizeHtml(html) {
   if (!html) return ''
@@ -2705,6 +2871,7 @@ function sanitizeHtml(html) {
       if (attrName === 'href' && !SAFE_URL_RE.test(attrVal.trim())) continue
       if (attrName === 'target' && attrVal !== '_blank' && attrVal !== '_self') continue
       if (attrName === 'rel') continue
+      if (attrName === 'class' && !SAFE_CLASS_RE.test(attrVal.trim())) continue
       // 转义属性值中的引号
       const escaped = attrVal.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
       safeAttrs.push(`${attrName}="${escaped}"`)
@@ -2729,6 +2896,10 @@ app.get('/api/discussions', async (req, res) => {
     const sort = req.query.sort === 'hot' ? 'hot' : 'latest'
     const problemId = req.query.problemId ? parseInt(req.query.problemId) : null
     const search = (req.query.search || '').trim()
+    const moduleKey = (req.query.module || '').trim()
+    const authorId = (req.query.userId || '').trim()
+    const feed = req.query.feed === 'following' ? 'following' : null
+    const VALID_MODULES = new Set(['general', 'oj', 'jieya', 'starcode'])
 
     const where = []
     const params = []
@@ -2740,6 +2911,22 @@ app.get('/api/discussions', async (req, res) => {
     if (search) {
       where.push('dp.title LIKE ?')
       params.push(`%${search}%`)
+    }
+    if (moduleKey && VALID_MODULES.has(moduleKey)) {
+      where.push('dp.module_key = ?')
+      params.push(moduleKey)
+    }
+    if (authorId) {
+      where.push('dp.user_id = ?')
+      params.push(authorId)
+    }
+    if (feed === 'following') {
+      // 关注动态：我关注的人 + 我自己的帖子
+      const token = getAuthToken(req)
+      const viewer = token ? await getUserByToken(db, token) : null
+      if (!viewer) return res.status(401).json({ message: '未登录' })
+      where.push(`(dp.user_id = ? OR dp.user_id IN (SELECT followee_id FROM follows WHERE follower_id = ?))`)
+      params.push(viewer.id, viewer.id)
     }
 
     const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : ''
@@ -2755,7 +2942,7 @@ app.get('/api/discussions', async (req, res) => {
 
     const offset = (page - 1) * pageSize
     const posts = await db.all(
-      `SELECT dp.id, dp.user_id, dp.title, dp.content, dp.problem_id, dp.view_count, dp.like_count,
+      `SELECT dp.id, dp.user_id, dp.title, dp.content, dp.problem_id, dp.module_key, dp.view_count, dp.like_count,
               dp.comment_count, dp.created_at, dp.updated_at,
               u.name as user_name, u.avatar as user_avatar,
               p.title as problem_title
@@ -2785,6 +2972,7 @@ app.get('/api/discussions', async (req, res) => {
       posts: posts.map(p => ({
         id: p.id, userId: p.user_id, userName: p.user_name, userAvatar: p.user_avatar,
         title: p.title, content: p.content, problemId: p.problem_id, problemTitle: p.problem_title,
+        moduleKey: p.module_key || 'general',
         viewCount: p.view_count, likeCount: p.like_count, commentCount: p.comment_count,
         liked: likedSet.has(p.id), createdAt: p.created_at, updatedAt: p.updated_at,
       })),
@@ -2815,6 +3003,7 @@ app.get('/api/discussions/:id', async (req, res) => {
       postId
     )
     if (!post) return res.status(404).json({ message: '帖子不存在' })
+    post.module_key = post.module_key || 'general'
 
     // Track unique views by user
     const token = getAuthToken(req)
@@ -2896,6 +3085,7 @@ app.get('/api/discussions/:id', async (req, res) => {
         id: post.id, userId: post.user_id, userName: post.user_name,
         userAvatar: post.user_avatar, title: post.title, content: post.content,
         problemId: post.problem_id, problemTitle: post.problem_title,
+        moduleKey: post.module_key,
         viewCount: post.view_count, likeCount: post.like_count,
         commentCount: post.comment_count, liked: postLiked,
         createdAt: post.created_at, updatedAt: post.updated_at,
@@ -2920,11 +3110,13 @@ app.post('/api/discussions', async (req, res) => {
       return res.status(429).json({ message: '发帖过于频繁，请稍后再试' })
     }
 
-    const { title, content, problemId } = req.body || {}
+    const { title, content, problemId, moduleKey } = req.body || {}
     if (!title || !title.trim()) return res.status(400).json({ message: '标题不能为空' })
     if (title.trim().length > 200) return res.status(400).json({ message: '标题不能超过200字符' })
     if (!content || !content.trim()) return res.status(400).json({ message: '内容不能为空' })
     if (content.length > 50000) return res.status(400).json({ message: '内容不能超过50000字符' })
+    const VALID_MODULES = new Set(['general', 'oj', 'jieya', 'starcode'])
+    const module = moduleKey && VALID_MODULES.has(moduleKey) ? moduleKey : 'general'
 
     // Validate problemId if provided
     if (problemId) {
@@ -2935,12 +3127,17 @@ app.post('/api/discussions', async (req, res) => {
     const now = new Date().toISOString()
     const sanitized = sanitizeHtml(content)
     const result = await db.run(
-      `INSERT INTO discussion_posts (user_id, title, content, problem_id, view_count, like_count, comment_count, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 0, 0, 0, ?, ?)`,
-      user.id, title.trim(), sanitized, problemId || null, now, now
+      `INSERT INTO discussion_posts (user_id, title, content, problem_id, module_key, view_count, like_count, comment_count, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?)`,
+      user.id, title.trim(), sanitized, problemId || null, module, now, now
     )
 
     postRateLimits.set(user.id, Date.now())
+    await bumpChatStat(db, user.id, { field: 'post_count', points: 10 })
+    await notifyMentions(
+      db, content.replace(/<[^>]*>/g, ' '), user.id, 'mention',
+      'post', result.lastID, (id) => `在帖子《${String(title).trim().slice(0, 30)}》中提到了你（@${id}）`
+    )
     return res.json({ message: '发帖成功', postId: result.lastID })
   } catch (error) {
     console.error('Failed to create discussion:', error)
@@ -2964,11 +3161,13 @@ app.put('/api/discussions/:id', async (req, res) => {
       return res.status(403).json({ message: '无权编辑此帖子' })
     }
 
-    const { title, content, problemId } = req.body || {}
+    const { title, content, problemId, moduleKey } = req.body || {}
     if (!title || !title.trim()) return res.status(400).json({ message: '标题不能为空' })
     if (title.trim().length > 200) return res.status(400).json({ message: '标题不能超过200字符' })
     if (!content || !content.trim()) return res.status(400).json({ message: '内容不能为空' })
     if (content.length > 50000) return res.status(400).json({ message: '内容不能超过50000字符' })
+    const VALID_MODULES = new Set(['general', 'oj', 'jieya', 'starcode'])
+    const module = moduleKey && VALID_MODULES.has(moduleKey) ? moduleKey : 'general'
 
     if (problemId) {
       const problem = await db.get(`SELECT id FROM problems WHERE id = ?`, problemId)
@@ -2978,8 +3177,8 @@ app.put('/api/discussions/:id', async (req, res) => {
     const now = new Date().toISOString()
     const sanitized = sanitizeHtml(content)
     await db.run(
-      `UPDATE discussion_posts SET title = ?, content = ?, problem_id = ?, updated_at = ? WHERE id = ?`,
-      title.trim(), sanitized, problemId || null, now, postId
+      `UPDATE discussion_posts SET title = ?, content = ?, problem_id = ?, module_key = ?, updated_at = ? WHERE id = ?`,
+      title.trim(), sanitized, problemId || null, module, now, postId
     )
 
     return res.json({ message: '编辑成功' })
@@ -3008,6 +3207,9 @@ app.delete('/api/discussions/:id', async (req, res) => {
     await db.run(`DELETE FROM discussion_likes WHERE target_type = 'comment' AND target_id IN (SELECT id FROM discussion_comments WHERE post_id = ?)`, postId)
     await db.run(`DELETE FROM discussion_likes WHERE target_type = 'post' AND target_id = ?`, postId)
     await db.run(`DELETE FROM discussion_comments WHERE post_id = ?`, postId)
+    // 级联清理：通知与收藏中指向该帖子的记录
+    await db.run(`DELETE FROM notifications WHERE target_type = 'post' AND target_id = ?`, postId)
+    await db.run(`DELETE FROM bookmarks WHERE target_type = 'post' AND target_id = ?`, postId)
     await db.run(`DELETE FROM discussion_posts WHERE id = ?`, postId)
 
     return res.json({ message: '删除成功' })
@@ -3018,17 +3220,34 @@ app.delete('/api/discussions/:id', async (req, res) => {
 })
 
 // POST /api/discussions/:id/comments - Add comment or reply
+// 评论 5 秒冷却
+const commentRateLimits = new BoundedCache(5000, 5000)
+
 app.post('/api/discussions/:id/comments', async (req, res) => {
   const auth = await requireUser(req, res)
   if (!auth) return
   const { db, user } = auth
 
   try {
+    if (commentRateLimits.has(user.id)) {
+      return res.status(429).json({ message: '评论过于频繁，请稍后再试' })
+    }
+    commentRateLimits.set(user.id, Date.now())
     const postId = parseInt(req.params.id)
     if (!postId) return res.status(400).json({ message: '无效的帖子ID' })
 
     const post = await db.get(`SELECT id FROM discussion_posts WHERE id = ?`, postId)
     if (!post) return res.status(404).json({ message: '帖子不存在' })
+
+    // 黑名单拦截：帖子作者拉黑了我则不能评论
+    const postAuthor = await db.get(`SELECT user_id FROM discussion_posts WHERE id = ?`, postId)
+    if (postAuthor && postAuthor.user_id !== user.id) {
+      const blocked = await db.get(
+        `SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?`,
+        postAuthor.user_id, user.id
+      )
+      if (blocked) return res.status(403).json({ message: '对方已屏蔽你，无法评论' })
+    }
 
     const { content, parentId } = req.body || {}
     if (!content || !content.trim()) return res.status(400).json({ message: '评论内容不能为空' })
@@ -3053,6 +3272,37 @@ app.post('/api/discussions/:id/comments', async (req, res) => {
     await db.run(
       `UPDATE discussion_posts SET comment_count = comment_count + 1 WHERE id = ?`,
       postId
+    )
+    await bumpChatStat(db, user.id, { field: 'comment_count', points: 5 })
+
+    // 通知：评论了帖子作者 / 回复了评论作者 / @提及
+    const postRow = await db.get(
+      `SELECT user_id, title FROM discussion_posts WHERE id = ?`, postId
+    )
+    if (postRow && postRow.user_id !== user.id) {
+      await createNotification(db, {
+        userId: postRow.user_id, actorId: user.id, type: 'comment',
+        targetType: 'post', targetId: postId,
+        message: `评论了你的帖子《${String(postRow.title).slice(0, 30)}》`,
+        push: { title: '新评论', body: `评论了你的帖子《${String(postRow.title).slice(0, 20)}》`, url: `/chat/p/${postId}` },
+      })
+    }
+    if (parentId) {
+      const parent = await db.get(
+        `SELECT user_id FROM discussion_comments WHERE id = ?`, parentId
+      )
+      if (parent && parent.user_id !== user.id && parent.user_id !== postRow?.user_id) {
+        await createNotification(db, {
+          userId: parent.user_id, actorId: user.id, type: 'reply',
+          targetType: 'post', targetId: postId,
+          message: '回复了你的评论',
+          push: { title: '新回复', body: '回复了你的评论', url: `/chat/p/${postId}` },
+        })
+      }
+    }
+    await notifyMentions(
+      db, content.replace(/<[^>]*>/g, ' '), user.id, 'mention',
+      'post', postId, (id) => `在评论中提到了你（@${id}）`
     )
 
     return res.json({
@@ -3658,15 +3908,2071 @@ function scheduleLeaderboardHistory() {
   console.log('Leaderboard history scheduler initialized')
 }
 
+// ============================================================
+// 聊天中心 API（模块频道 / 实时聊天室 / 回应 / 已读 / 在线状态）
+// ============================================================
+
+const CHAT_VALID_MODULES = new Set(['general', 'oj', 'jieya', 'starcode'])
+const chatRateLimits = new BoundedCache(5000, 1000) // 1 秒发送冷却
+
+// 实时广播：scopeKey = `channel:${key}` | `room:${id}`
+const chatStreams = new Map() // scopeKey -> Set<res>
+const broadcastToScope = (scopeKey, payload) => {
+  const listeners = chatStreams.get(scopeKey)
+  if (!listeners) return
+  const data = `data: ${JSON.stringify(payload)}\n\n`
+  for (const res of listeners) {
+    try { res.write(data) } catch { /* 客户端已断开 */ }
+  }
+}
+
+const touchPresence = async (db, userId) => {
+  try {
+    await db.run(
+      `INSERT INTO user_presence (user_id, last_seen_at) VALUES (?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET last_seen_at = excluded.last_seen_at`,
+      userId, new Date().toISOString()
+    )
+  } catch { /* 忽略 */ }
+}
+
+const PRESENCE_ONLINE_MS = 60 * 1000 // 60 秒内活跃视为在线
+
+const formatChatMessage = (m, myUserId) => ({
+  id: m.id,
+  senderId: m.sender_id,
+  senderName: m.sender_name,
+  senderAvatar: m.sender_avatar,
+  content: m.content,
+  createdAt: m.created_at,
+  reactions: m.reactions || [],
+  threadParentId: m.thread_parent_id ?? null,
+  threadReplyCount: m.thread_reply_count ?? 0,
+})
+
+const loadChatMessageRows = async (db, whereSql, params, limit, beforeId) => {
+  const beforeClause = beforeId ? 'AND cm.id < ?' : ''
+  const rows = await db.all(
+    `SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar,
+            (SELECT COUNT(*) FROM chat_messages r WHERE r.thread_parent_id = cm.id) as thread_reply_count
+     FROM chat_messages cm
+     LEFT JOIN users u ON cm.sender_id = u.id
+     WHERE ${whereSql} AND cm.thread_parent_id IS NULL ${beforeClause}
+     ORDER BY cm.id DESC
+     LIMIT ?`,
+    ...params, ...(beforeId ? [beforeId] : []), limit
+  )
+  return rows.reverse()
+}
+
+const attachReactions = async (db, messages, myUserId) => {
+  if (messages.length === 0) return messages
+  const ids = messages.map((m) => m.id)
+  const rows = await db.all(
+    `SELECT message_id, emoji, COUNT(*) as count,
+            SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) as mine
+     FROM chat_reactions
+     WHERE message_id IN (${ids.map(() => '?').join(',')})
+     GROUP BY message_id, emoji`,
+    myUserId, ...ids
+  )
+  const byMessage = new Map()
+  for (const row of rows) {
+    if (!byMessage.has(row.message_id)) byMessage.set(row.message_id, [])
+    byMessage.get(row.message_id).push({
+      emoji: row.emoji,
+      count: row.count,
+      mine: row.mine > 0,
+    })
+  }
+  return messages.map((m) => ({ ...m, reactions: byMessage.get(m.id) || [] }))
+}
+
+const getChatUnreadForUser = async (db, user) => {
+  // 模块频道的未读 = 该模块下比已读位置更新的帖子数（发帖制板块）
+  const channels = await db.all(
+    `SELECT cc.key,
+            (SELECT COUNT(*) FROM discussion_posts dp
+             WHERE dp.module_key = cc.key AND dp.id > COALESCE(
+               (SELECT last_read_message_id FROM chat_read_state
+                WHERE user_id = ? AND scope_type = 'channel' AND scope_id = cc.key), 0)
+               AND dp.user_id != ?) as unread
+     FROM chat_channels cc`,
+    user.id, user.id
+  )
+  const rooms = await db.all(
+    `SELECT cr.id,
+            (SELECT COUNT(*) FROM chat_messages cm
+             WHERE cm.room_id = cr.id AND cm.id > COALESCE(
+               (SELECT last_read_message_id FROM chat_read_state
+                WHERE user_id = ? AND scope_type = 'room' AND scope_id = CAST(cr.id AS TEXT)), 0)
+               AND cm.sender_id != ?) as unread
+     FROM chat_rooms cr
+     WHERE cr.type = 'public'
+        OR EXISTS (SELECT 1 FROM chat_room_members m WHERE m.room_id = cr.id AND m.user_id = ?)`,
+    user.id, user.id, user.id
+  )
+  return {
+    channels: Object.fromEntries(channels.map((c) => [c.key, c.unread])),
+    rooms: Object.fromEntries(rooms.map((r) => [r.id, r.unread])),
+    total: channels.reduce((s, c) => s + c.unread, 0) + rooms.reduce((s, r) => s + r.unread, 0),
+  }
+}
+
+// 聊天流公共封装：校验登录 + 设置 SSE 头 + 注册广播监听
+const openChatStream = async (req, res, scopeKey, onClose) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return null
+  const { db, user } = auth
+  // 房间流校验：房间存在且（公开 或 成员），避免非成员订阅私密房间
+  if (scopeKey.startsWith('room:')) {
+    const roomId = parseInt(scopeKey.slice(5), 10)
+    const room = roomId ? await db.get(`SELECT * FROM chat_rooms WHERE id = ?`, roomId) : null
+    if (!room) {
+      if (!res.headersSent) res.status(404).json({ message: '房间不存在' })
+      return null
+    }
+    if (room.type === 'invite') {
+      const member = await db.get(
+        `SELECT 1 FROM chat_room_members WHERE room_id = ? AND user_id = ?`, roomId, user.id
+      )
+      if (!member) {
+        if (!res.headersSent) res.status(403).json({ message: '需要加入后才能查看' })
+        return null
+      }
+    }
+  }
+  await touchPresence(db, user.id)
+
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+  res.flushHeaders()
+  res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`)
+
+  let closed = false
+  if (!chatStreams.has(scopeKey)) chatStreams.set(scopeKey, new Set())
+  chatStreams.get(scopeKey).add(res)
+
+  const ping = setInterval(() => {
+    if (closed) return
+    try { res.write(`data: ${JSON.stringify({ type: 'ping' })}\n\n`) } catch { /* ignore */ }
+  }, 15000)
+
+  req.on('close', () => {
+    closed = true
+    clearInterval(ping)
+    const set = chatStreams.get(scopeKey)
+    if (set) {
+      set.delete(res)
+      if (set.size === 0) chatStreams.delete(scopeKey)
+    }
+    onClose?.()
+  })
+  return { db, user }
+}
+
+// ---------- 频道 ----------
+
+app.get('/api/chat/channels', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const channels = await db.all(
+      `SELECT cc.key, cc.name, cc.icon, cc.description, cc.sort_order
+       FROM chat_channels cc ORDER BY cc.sort_order ASC`
+    )
+    const unread = await getChatUnreadForUser(db, user)
+    return res.json({
+      channels: channels.map((c) => ({
+        key: c.key, name: c.name, icon: c.icon,
+        description: c.description, sortOrder: c.sort_order,
+        unread: unread.channels[c.key] || 0,
+      })),
+    })
+  } catch (error) {
+    console.error('Failed to list channels:', error)
+    return res.status(500).json({ message: '获取频道失败' })
+  }
+})
+
+app.get('/api/chat/channels/:key/messages', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const key = req.params.key
+    if (!CHAT_VALID_MODULES.has(key)) return res.status(404).json({ message: '频道不存在' })
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50))
+    const beforeId = req.query.before ? parseInt(req.query.before) : null
+    const rows = await loadChatMessageRows(db, 'cm.channel_key = ?', [key], limit + 1, beforeId)
+    const hasMore = rows.length > limit
+    const messages = await attachReactions(db, rows.slice(0, limit), user.id)
+    return res.json({ messages: messages.map((m) => formatChatMessage(m, user.id)), hasMore })
+  } catch (error) {
+    console.error('Failed to load channel messages:', error)
+    return res.status(500).json({ message: '获取消息失败' })
+  }
+})
+
+app.post('/api/chat/channels/:key/messages', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const key = req.params.key
+    if (!CHAT_VALID_MODULES.has(key)) return res.status(404).json({ message: '频道不存在' })
+    const { content } = req.body || {}
+    const text = String(content ?? '').trim()
+    if (!text) return res.status(400).json({ message: '消息不能为空' })
+    if (text.length > 8000) return res.status(400).json({ message: '消息不能超过8000字符' })
+    if (chatRateLimits.has(user.id)) return res.status(429).json({ message: '发送过快，请稍后再试' })
+    chatRateLimits.set(user.id, Date.now())
+
+    const result = await db.run(
+      `INSERT INTO chat_messages (channel_key, room_id, sender_id, content, created_at)
+       VALUES (?, NULL, ?, ?, ?)`,
+      key, user.id, text, new Date().toISOString()
+    )
+    await touchPresence(db, user.id)
+    const rows = await db.all(
+      `SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar
+       FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id
+       WHERE cm.id = ?`, result.lastID
+    )
+    await bumpChatStat(db, user.id, { field: 'message_count', points: 1 })
+    const message = formatChatMessage(rows[0], user.id)
+    await notifyMentions(
+      db, text, user.id, 'mention', 'channel', null,
+      (id) => `在 #${key} 频道中提到了你（@${id}）`
+    )
+    broadcastToScope(`channel:${key}`, { type: 'message', message })
+    return res.json({ message })
+  } catch (error) {
+    console.error('Failed to send channel message:', error)
+    return res.status(500).json({ message: '发送失败' })
+  }
+})
+
+app.get('/api/chat/channels/:key/stream', (req, res) => {
+  void openChatStream(req, res, `channel:${req.params.key}`)
+})
+
+// ---------- 聊天室 ----------
+
+app.get('/api/chat/rooms', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const rooms = await db.all(
+      `SELECT cr.*, u.name as owner_name,
+              (SELECT COUNT(*) FROM chat_room_members m WHERE m.room_id = cr.id) as member_count
+       FROM chat_rooms cr
+       LEFT JOIN users u ON cr.owner_id = u.id
+       WHERE cr.type = 'public'
+          OR EXISTS (SELECT 1 FROM chat_room_members m WHERE m.room_id = cr.id AND m.user_id = ?)
+       ORDER BY cr.created_at DESC`,
+      user.id
+    )
+    const unread = await getChatUnreadForUser(db, user)
+    const members = await db.all(
+      `SELECT room_id, user_id FROM chat_room_members WHERE user_id = ?`, user.id
+    )
+    const joinedIds = new Set(members.map((m) => m.room_id))
+    return res.json({
+      rooms: rooms.map((r) => ({
+        id: r.id, name: r.name, description: r.description,
+        type: r.type, ownerId: r.owner_id, ownerName: r.owner_name,
+        memberCount: r.member_count, createdAt: r.created_at,
+        joined: joinedIds.has(r.id),
+        unread: unread.rooms[r.id] || 0,
+      })),
+    })
+  } catch (error) {
+    console.error('Failed to list rooms:', error)
+    return res.status(500).json({ message: '获取聊天室失败' })
+  }
+})
+
+app.post('/api/chat/rooms', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const { name, description, type } = req.body || {}
+    const roomName = String(name ?? '').trim()
+    if (!roomName) return res.status(400).json({ message: '房间名不能为空' })
+    if (roomName.length > 60) return res.status(400).json({ message: '房间名不能超过60字符' })
+    if (description && String(description).length > 300) {
+      return res.status(400).json({ message: '简介不能超过300字符' })
+    }
+    const roomType = type === 'invite' ? 'invite' : 'public'
+    const now = new Date().toISOString()
+    const result = await db.run(
+      `INSERT INTO chat_rooms (name, description, type, owner_id, created_at) VALUES (?, ?, ?, ?, ?)`,
+      roomName, String(description ?? '').trim(), roomType, user.id, now
+    )
+    await db.run(
+      `INSERT INTO chat_room_members (room_id, user_id, role, joined_at) VALUES (?, ?, 'owner', ?)`,
+      result.lastID, user.id, now
+    )
+    return res.json({ message: '创建成功', roomId: result.lastID })
+  } catch (error) {
+    console.error('Failed to create room:', error)
+    return res.status(500).json({ message: '创建失败' })
+  }
+})
+
+const getRoomDetail = async (db, roomId) => {
+  const room = await db.get(
+    `SELECT cr.*, u.name as owner_name,
+            (SELECT COUNT(*) FROM chat_room_members m WHERE m.room_id = cr.id) as member_count
+     FROM chat_rooms cr LEFT JOIN users u ON cr.owner_id = u.id
+     WHERE cr.id = ?`, roomId
+  )
+  if (!room) return null
+  const members = await db.all(
+    `SELECT m.user_id, m.role, m.joined_at, u.name as user_name, u.avatar as user_avatar,
+            (SELECT last_seen_at FROM user_presence p WHERE p.user_id = m.user_id) as last_seen_at
+     FROM chat_room_members m
+     LEFT JOIN users u ON m.user_id = u.id
+     WHERE m.room_id = ?
+     ORDER BY (m.role = 'owner') DESC, m.joined_at ASC`,
+    roomId
+  )
+  return {
+    id: room.id, name: room.name, description: room.description,
+    type: room.type, ownerId: room.owner_id, ownerName: room.owner_name,
+    memberCount: room.member_count, createdAt: room.created_at,
+    members: members.map((m) => ({
+      userId: m.user_id, userName: m.user_name, userAvatar: m.user_avatar,
+      role: m.role,
+      online: Boolean(m.last_seen_at) && Date.now() - new Date(m.last_seen_at).getTime() <= PRESENCE_ONLINE_MS,
+    })),
+  }
+}
+
+app.get('/api/chat/rooms/:id', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const roomId = parseInt(req.params.id)
+    if (!roomId) return res.status(400).json({ message: '无效的房间ID' })
+    const room = await db.get(`SELECT * FROM chat_rooms WHERE id = ?`, roomId)
+    if (!room) return res.status(404).json({ message: '房间不存在' })
+    if (room.type === 'invite') {
+      const member = await db.get(
+        `SELECT role FROM chat_room_members WHERE room_id = ? AND user_id = ?`, roomId, user.id
+      )
+      if (!member) return res.status(403).json({ message: '这是邀请制房间，需要房主邀请才能加入' })
+    }
+    const detail = await getRoomDetail(db, roomId)
+    const myMembership = detail.members.find((m) => m.userId === user.id)
+    return res.json({ room: { ...detail, myRole: myMembership?.role || null } })
+  } catch (error) {
+    console.error('Failed to get room:', error)
+    return res.status(500).json({ message: '获取房间失败' })
+  }
+})
+
+app.post('/api/chat/rooms/:id/join', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const roomId = parseInt(req.params.id)
+    if (!roomId) return res.status(400).json({ message: '无效的房间ID' })
+    const room = await db.get(`SELECT * FROM chat_rooms WHERE id = ?`, roomId)
+    if (!room) return res.status(404).json({ message: '房间不存在' })
+    if (room.type === 'invite') {
+      const member = await db.get(
+        `SELECT 1 FROM chat_room_members WHERE room_id = ? AND user_id = ?`, roomId, user.id
+      )
+      if (!member) return res.status(403).json({ message: '这是邀请制房间，需要房主邀请才能加入' })
+      return res.json({ message: '已加入', joined: true })
+    }
+    await db.run(
+      `INSERT OR IGNORE INTO chat_room_members (room_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)`,
+      roomId, user.id, new Date().toISOString()
+    )
+    const detail = await getRoomDetail(db, roomId)
+    broadcastToScope(`room:${roomId}`, { type: 'members', members: detail.members })
+    return res.json({ message: '已加入房间', joined: true })
+  } catch (error) {
+    console.error('Failed to join room:', error)
+    return res.status(500).json({ message: '加入失败' })
+  }
+})
+
+app.post('/api/chat/rooms/:id/leave', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const roomId = parseInt(req.params.id)
+    if (!roomId) return res.status(400).json({ message: '无效的房间ID' })
+    const membership = await db.get(
+      `SELECT role FROM chat_room_members WHERE room_id = ? AND user_id = ?`, roomId, user.id
+    )
+    if (!membership) return res.json({ message: '你不在这个房间里' })
+    if (membership.role === 'owner') {
+      return res.status(400).json({ message: '房主不能离开，可以解散房间' })
+    }
+    await db.run(`DELETE FROM chat_room_members WHERE room_id = ? AND user_id = ?`, roomId, user.id)
+    const detail = await getRoomDetail(db, roomId)
+    broadcastToScope(`room:${roomId}`, { type: 'members', members: detail.members })
+    return res.json({ message: '已离开房间' })
+  } catch (error) {
+    console.error('Failed to leave room:', error)
+    return res.status(500).json({ message: '操作失败' })
+  }
+})
+
+app.delete('/api/chat/rooms/:id', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const roomId = parseInt(req.params.id)
+    if (!roomId) return res.status(400).json({ message: '无效的房间ID' })
+    const room = await db.get(`SELECT * FROM chat_rooms WHERE id = ?`, roomId)
+    if (!room) return res.status(404).json({ message: '房间不存在' })
+    if (room.owner_id !== user.id && !user.is_admin) {
+      return res.status(403).json({ message: '只有房主可以解散房间' })
+    }
+    await db.run(`DELETE FROM chat_rooms WHERE id = ?`, roomId)
+    await db.run(`DELETE FROM notifications WHERE target_type = 'room' AND target_id = ?`, roomId)
+    broadcastToScope(`room:${roomId}`, { type: 'closed' })
+    return res.json({ message: '房间已解散' })
+  } catch (error) {
+    console.error('Failed to delete room:', error)
+    return res.status(500).json({ message: '操作失败' })
+  }
+})
+
+// 房主邀请/移除成员
+app.post('/api/chat/rooms/:id/members', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const roomId = parseInt(req.params.id)
+    if (!roomId) return res.status(400).json({ message: '无效的房间ID' })
+    const { userId } = req.body || {}
+    if (!userId) return res.status(400).json({ message: '缺少用户ID' })
+    const room = await db.get(`SELECT * FROM chat_rooms WHERE id = ?`, roomId)
+    if (!room) return res.status(404).json({ message: '房间不存在' })
+    const membership = await db.get(
+      `SELECT role FROM chat_room_members WHERE room_id = ? AND user_id = ?`, roomId, user.id
+    )
+    if (!membership || membership.role !== 'owner') {
+      return res.status(403).json({ message: '只有房主可以邀请成员' })
+    }
+    const target = await db.get(`SELECT id FROM users WHERE id = ?`, userId)
+    if (!target) return res.status(404).json({ message: '用户不存在' })
+    const inviteResult = await db.run(
+      `INSERT OR IGNORE INTO chat_room_members (room_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)`,
+      roomId, userId, new Date().toISOString()
+    )
+    if (inviteResult.changes > 0) {
+      await createNotification(db, {
+        userId, actorId: user.id, type: 'invite',
+        targetType: 'room', targetId: roomId,
+        message: `邀请你加入聊天室《${room.name}》`,
+        push: { title: '房间邀请', body: `邀请你加入聊天室《${room.name}》`, url: `/chat/room/${roomId}` },
+      })
+    }
+    const detail = await getRoomDetail(db, roomId)
+    broadcastToScope(`room:${roomId}`, { type: 'members', members: detail.members })
+    return res.json({ message: '已邀请加入', members: detail.members })
+  } catch (error) {
+    console.error('Failed to invite member:', error)
+    return res.status(500).json({ message: '邀请失败' })
+  }
+})
+
+app.delete('/api/chat/rooms/:id/members/:userId', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const roomId = parseInt(req.params.id)
+    const targetId = req.params.userId
+    if (!roomId) return res.status(400).json({ message: '无效的房间ID' })
+    const room = await db.get(`SELECT * FROM chat_rooms WHERE id = ?`, roomId)
+    if (!room) return res.status(404).json({ message: '房间不存在' })
+    const membership = await db.get(
+      `SELECT role FROM chat_room_members WHERE room_id = ? AND user_id = ?`, roomId, user.id
+    )
+    if (!membership || membership.role !== 'owner') {
+      return res.status(403).json({ message: '只有房主可以移除成员' })
+    }
+    if (targetId === room.owner_id) return res.status(400).json({ message: '不能移除房主' })
+    await db.run(`DELETE FROM chat_room_members WHERE room_id = ? AND user_id = ?`, roomId, targetId)
+    const detail = await getRoomDetail(db, roomId)
+    broadcastToScope(`room:${roomId}`, { type: 'members', members: detail.members })
+    return res.json({ message: '已移除成员', members: detail.members })
+  } catch (error) {
+    console.error('Failed to remove member:', error)
+    return res.status(500).json({ message: '操作失败' })
+  }
+})
+
+// 房间消息
+app.get('/api/chat/rooms/:id/messages', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const roomId = parseInt(req.params.id)
+    if (!roomId) return res.status(400).json({ message: '无效的房间ID' })
+    const room = await db.get(`SELECT * FROM chat_rooms WHERE id = ?`, roomId)
+    if (!room) return res.status(404).json({ message: '房间不存在' })
+    if (room.type === 'invite') {
+      const member = await db.get(
+        `SELECT 1 FROM chat_room_members WHERE room_id = ? AND user_id = ?`, roomId, user.id
+      )
+      if (!member) return res.status(403).json({ message: '需要加入后才能查看' })
+    }
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50))
+    const beforeId = req.query.before ? parseInt(req.query.before) : null
+    const rows = await loadChatMessageRows(db, 'cm.room_id = ?', [roomId], limit + 1, beforeId)
+    const hasMore = rows.length > limit
+    const messages = await attachReactions(db, rows.slice(0, limit), user.id)
+    return res.json({ messages: messages.map((m) => formatChatMessage(m, user.id)), hasMore })
+  } catch (error) {
+    console.error('Failed to load room messages:', error)
+    return res.status(500).json({ message: '获取消息失败' })
+  }
+})
+
+app.post('/api/chat/rooms/:id/messages', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const roomId = parseInt(req.params.id)
+    if (!roomId) return res.status(400).json({ message: '无效的房间ID' })
+    const room = await db.get(`SELECT * FROM chat_rooms WHERE id = ?`, roomId)
+    if (!room) return res.status(404).json({ message: '房间不存在' })
+    if (room.type === 'invite') {
+      const member = await db.get(
+        `SELECT 1 FROM chat_room_members WHERE room_id = ? AND user_id = ?`, roomId, user.id
+      )
+      if (!member) return res.status(403).json({ message: '需要加入后才能发言' })
+    }
+    const { content } = req.body || {}
+    const text = String(content ?? '').trim()
+    if (!text) return res.status(400).json({ message: '消息不能为空' })
+    if (text.length > 8000) return res.status(400).json({ message: '消息不能超过8000字符' })
+    if (chatRateLimits.has(user.id)) return res.status(429).json({ message: '发送过快，请稍后再试' })
+    chatRateLimits.set(user.id, Date.now())
+
+    const result = await db.run(
+      `INSERT INTO chat_messages (channel_key, room_id, sender_id, content, created_at)
+       VALUES (NULL, ?, ?, ?, ?)`,
+      roomId, user.id, text, new Date().toISOString()
+    )
+    await touchPresence(db, user.id)
+    const rows = await db.all(
+      `SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar
+       FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id
+       WHERE cm.id = ?`, result.lastID
+    )
+    await bumpChatStat(db, user.id, { field: 'message_count', points: 1 })
+    const message = formatChatMessage(rows[0], user.id)
+    await notifyMentions(
+      db, text, user.id, 'mention', 'room', roomId,
+      (id) => `在聊天室《${room.name}》中提到了你（@${id}）`
+    )
+    broadcastToScope(`room:${roomId}`, { type: 'message', message })
+    return res.json({ message })
+  } catch (error) {
+    console.error('Failed to send room message:', error)
+    return res.status(500).json({ message: '发送失败' })
+  }
+})
+
+app.get('/api/chat/rooms/:id/stream', (req, res) => {
+  void openChatStream(req, res, `room:${req.params.id}`)
+})
+
+// 输入中指示器：广播 typing 事件给同频道的其他连接
+app.post('/api/chat/typing', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const { scopeType, scopeId } = req.body || {}
+    if ((scopeType !== 'channel' && scopeType !== 'room') || !scopeId) {
+      return res.status(400).json({ message: '无效的范围' })
+    }
+    const scopeKey = scopeType === 'channel' ? `channel:${scopeId}` : `room:${scopeId}`
+    await touchPresence(db, user.id)
+    broadcastToScope(scopeKey, { type: 'typing', userId: user.id, userName: user.name })
+    return res.json({ success: true })
+  } catch (error) {
+    console.error('Failed to broadcast typing:', error)
+    return res.status(500).json({ message: '操作失败' })
+  }
+})
+
+// 表情回应（切换）
+
+app.post('/api/chat/messages/:id/reactions', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const messageId = parseInt(req.params.id)
+    if (!messageId) return res.status(400).json({ message: '无效的消息ID' })
+    const { emoji } = req.body || {}
+    const cleanEmoji = String(emoji ?? '').trim()
+    if (!cleanEmoji || cleanEmoji.length > 16) return res.status(400).json({ message: '无效的表情' })
+    const message = await db.get(`SELECT * FROM chat_messages WHERE id = ?`, messageId)
+    if (!message) return res.status(404).json({ message: '消息不存在' })
+    if (!(await assertChatScopeAccess(db, user, message))) {
+      return res.status(403).json({ message: '需要加入后才能操作' })
+    }
+
+    const existing = await db.get(
+      `SELECT id FROM chat_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?`,
+      messageId, user.id, cleanEmoji
+    )
+    if (existing) {
+      await db.run(`DELETE FROM chat_reactions WHERE id = ?`, existing.id)
+    } else {
+      await db.run(
+        `INSERT INTO chat_reactions (message_id, user_id, emoji, created_at) VALUES (?, ?, ?, ?)`,
+        messageId, user.id, cleanEmoji, new Date().toISOString()
+      )
+      if (message.sender_id !== user.id) {
+        await bumpChatStat(db, message.sender_id, { field: 'reaction_received', points: 2 })
+      }
+    }
+    const reactionRows = await db.all(
+      `SELECT emoji, COUNT(*) as count,
+              SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) as mine
+       FROM chat_reactions WHERE message_id = ? GROUP BY emoji`,
+      user.id, messageId
+    )
+    const reactions = reactionRows.map((r) => ({
+      emoji: r.emoji, count: r.count, mine: r.mine > 0,
+    }))
+    const scopeKey = message.channel_key
+      ? `channel:${message.channel_key}`
+      : `room:${message.room_id}`
+    broadcastToScope(scopeKey, { type: 'reaction', messageId, reactions })
+    return res.json({ reactions })
+  } catch (error) {
+    console.error('Failed to toggle reaction:', error)
+    return res.status(500).json({ message: '操作失败' })
+  }
+})
+
+// ---------- 话题线程（消息下开回复串） ----------
+
+// 读取父消息所在 scope，供回复校验与广播使用
+const getChatMessageScope = async (db, messageId) => {
+  return db.get(
+    `SELECT id, channel_key, room_id, sender_id, content FROM chat_messages WHERE id = ?`,
+    messageId
+  )
+}
+
+// 校验用户能否访问消息所在 scope（邀请制房间需为成员）
+const assertChatScopeAccess = async (db, user, scopeRow) => {
+  if (!scopeRow?.room_id) return true // 频道消息无需校验
+  const room = await db.get(`SELECT type FROM chat_rooms WHERE id = ?`, scopeRow.room_id)
+  if (!room) return false
+  if (room.type === 'public') return true
+  const member = await db.get(
+    `SELECT 1 FROM chat_room_members WHERE room_id = ? AND user_id = ?`,
+    scopeRow.room_id, user.id
+  )
+  return Boolean(member)
+}
+
+app.get('/api/chat/messages/:id/replies', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const messageId = parseInt(req.params.id)
+    if (!messageId) return res.status(400).json({ message: '无效的消息ID' })
+    const parent = await getChatMessageScope(db, messageId)
+    if (!parent) return res.status(404).json({ message: '消息不存在' })
+    if (!(await assertChatScopeAccess(db, user, parent))) {
+      return res.status(403).json({ message: '需要加入后才能查看' })
+    }
+
+    const rows = await db.all(
+      `SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar,
+              (SELECT COUNT(*) FROM chat_messages r WHERE r.thread_parent_id = cm.id) as thread_reply_count
+       FROM chat_messages cm
+       LEFT JOIN users u ON cm.sender_id = u.id
+       WHERE cm.thread_parent_id = ?
+       ORDER BY cm.id ASC
+       LIMIT 200`,
+      messageId
+    )
+    const replies = await attachReactions(db, rows, user.id)
+    return res.json({ replies: replies.map((m) => formatChatMessage(m, user.id)) })
+  } catch (error) {
+    console.error('Failed to load thread replies:', error)
+    return res.status(500).json({ message: '获取回复失败' })
+  }
+})
+
+app.post('/api/chat/messages/:id/replies', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const messageId = parseInt(req.params.id)
+    if (!messageId) return res.status(400).json({ message: '无效的消息ID' })
+    const parent = await getChatMessageScope(db, messageId)
+    if (!parent) return res.status(404).json({ message: '消息不存在' })
+    if (!(await assertChatScopeAccess(db, user, parent))) {
+      return res.status(403).json({ message: '需要加入后才能发言' })
+    }
+
+    const { content } = req.body || {}
+    const text = String(content ?? '').trim()
+    if (!text) return res.status(400).json({ message: '回复不能为空' })
+    if (text.length > 8000) return res.status(400).json({ message: '回复不能超过8000字符' })
+    if (chatRateLimits.has(user.id)) return res.status(429).json({ message: '发送过快，请稍后再试' })
+    chatRateLimits.set(user.id, Date.now())
+
+    const result = await db.run(
+      `INSERT INTO chat_messages (channel_key, room_id, sender_id, content, created_at, thread_parent_id)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      parent.channel_key, parent.room_id, user.id, text, new Date().toISOString(), messageId
+    )
+    await bumpChatStat(db, user.id, { field: 'reply_count', points: 2 })
+    await touchPresence(db, user.id)
+    await notifyMentions(
+      db, text, user.id, 'mention',
+      parent.channel_key ? 'channel' : 'room', parent.channel_key || parent.room_id,
+      (id) => `在一条消息的回复中提到了你（@${id}）`
+    )
+
+    const rows = await db.all(
+      `SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar, 0 as thread_reply_count
+       FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id
+       WHERE cm.id = ?`, result.lastID
+    )
+    const reply = formatChatMessage(rows[0], user.id)
+    const scopeKey = parent.channel_key ? `channel:${parent.channel_key}` : `room:${parent.room_id}`
+    broadcastToScope(scopeKey, { type: 'thread_reply', message: reply })
+    return res.json({ reply })
+  } catch (error) {
+    console.error('Failed to reply in thread:', error)
+    return res.status(500).json({ message: '回复失败' })
+  }
+})
+
+// ---------- 聊天室邀请链接 ----------
+
+app.post('/api/chat/rooms/:id/invite-link', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const roomId = parseInt(req.params.id)
+    const room = await db.get(`SELECT * FROM chat_rooms WHERE id = ?`, roomId)
+    if (!room) return res.status(404).json({ message: '房间不存在' })
+    if (room.owner_id !== user.id && !user.is_admin) {
+      return res.status(403).json({ message: '只有房主可以生成邀请链接' })
+    }
+    const { expiresInHours, maxUses } = req.body || {}
+    const maxUsesClean = Math.min(100, Math.max(1, parseInt(maxUses) || 1))
+    const expiresHours = Math.min(720, Math.max(1, parseInt(expiresInHours) || 24))
+    const expiresAt = new Date(Date.now() + expiresHours * 3600 * 1000).toISOString()
+    const token = randomBytes(16).toString('hex')
+    await db.run(
+      `INSERT INTO room_invite_links (room_id, token, created_by, expires_at, max_uses, use_count, created_at)
+       VALUES (?, ?, ?, ?, ?, 0, ?)`,
+      roomId, token, user.id, expiresAt, maxUsesClean, new Date().toISOString()
+    )
+    return res.json({ message: '邀请链接已生成', token, expiresAt, maxUses: maxUsesClean })
+  } catch (error) {
+    console.error('Failed to create invite link:', error)
+    return res.status(500).json({ message: '生成失败' })
+  }
+})
+
+// 邀请链接信息（未登录可查，用于展示房间名）
+app.get('/api/chat/rooms/invite/:token', async (req, res) => {
+  try {
+    const db = await getDb()
+    const link = await db.get(
+      `SELECT l.*, cr.name as room_name, cr.type as room_type,
+              u.name as owner_name
+       FROM room_invite_links l
+       JOIN chat_rooms cr ON cr.id = l.room_id
+       LEFT JOIN users u ON u.id = cr.owner_id
+       WHERE l.token = ?`, req.params.token
+    )
+    if (!link) return res.status(404).json({ message: '邀请链接无效或已被使用' })
+    if (link.expires_at && new Date(link.expires_at).getTime() < Date.now()) {
+      return res.status(410).json({ message: '邀请链接已过期' })
+    }
+    if (link.use_count >= link.max_uses) {
+      return res.status(410).json({ message: '邀请链接已达使用上限' })
+    }
+    return res.json({
+      room: {
+        id: link.room_id, name: link.room_name, type: link.room_type,
+        ownerName: link.owner_name,
+      },
+    })
+  } catch (error) {
+    console.error('Failed to get invite link:', error)
+    return res.status(500).json({ message: '获取失败' })
+  }
+})
+
+// 通过邀请链接加入房间
+app.post('/api/chat/rooms/invite/:token/join', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const link = await db.get(
+      `SELECT * FROM room_invite_links WHERE token = ?`, req.params.token
+    )
+    if (!link) return res.status(404).json({ message: '邀请链接无效或已被使用' })
+    if (link.expires_at && new Date(link.expires_at).getTime() < Date.now()) {
+      return res.status(410).json({ message: '邀请链接已过期' })
+    }
+    if (link.use_count >= link.max_uses) {
+      return res.status(410).json({ message: '邀请链接已达使用上限' })
+    }
+    await db.run(
+      `INSERT OR IGNORE INTO chat_room_members (room_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)`,
+      link.room_id, user.id, new Date().toISOString()
+    )
+    await db.run(
+      `UPDATE room_invite_links SET use_count = use_count + 1 WHERE id = ?`, link.id
+    )
+    const room = await db.get(`SELECT name FROM chat_rooms WHERE id = ?`, link.room_id)
+    return res.json({ message: `已加入《${room?.name}》`, roomId: link.room_id })
+  } catch (error) {
+    console.error('Failed to join via invite link:', error)
+    return res.status(500).json({ message: '加入失败' })
+  }
+})
+
+// ---------- 收藏 ----------
+
+app.post('/api/bookmarks', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const { targetType, targetId } = req.body || {}
+    const type = targetType === 'problem' ? 'problem' : 'post'
+    const id = parseInt(targetId)
+    if (!id) return res.status(400).json({ message: '无效的目标' })
+    if (type === 'post') {
+      const post = await db.get(`SELECT id FROM discussion_posts WHERE id = ?`, id)
+      if (!post) return res.status(404).json({ message: '帖子不存在' })
+    } else {
+      const problem = await db.get(`SELECT id FROM problems WHERE id = ?`, id)
+      if (!problem) return res.status(404).json({ message: '题目不存在' })
+    }
+    const existing = await db.get(
+      `SELECT id FROM bookmarks WHERE user_id = ? AND target_type = ? AND target_id = ?`,
+      user.id, type, id
+    )
+    if (existing) {
+      await db.run(`DELETE FROM bookmarks WHERE id = ?`, existing.id)
+      return res.json({ bookmarked: false })
+    }
+    await db.run(
+      `INSERT INTO bookmarks (user_id, target_type, target_id, created_at) VALUES (?, ?, ?, ?)`,
+      user.id, type, id, new Date().toISOString()
+    )
+    return res.json({ bookmarked: true })
+  } catch (error) {
+    console.error('Failed to toggle bookmark:', error)
+    return res.status(500).json({ message: '操作失败' })
+  }
+})
+
+app.get('/api/bookmarks', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const targetType = req.query.targetType === 'problem' ? 'problem' : 'post'
+    const ids = await db.all(
+      `SELECT target_id FROM bookmarks WHERE user_id = ? AND target_type = ? ORDER BY created_at DESC`,
+      user.id, targetType
+    )
+    if (targetType === 'post') {
+      if (ids.length === 0) return res.json({ posts: [] })
+      const posts = await db.all(
+        `SELECT dp.id, dp.title, dp.user_id, dp.comment_count, dp.like_count, dp.created_at,
+                u.name as user_name
+         FROM discussion_posts dp LEFT JOIN users u ON dp.user_id = u.id
+         WHERE dp.id IN (${ids.map(() => '?').join(',')})
+         ORDER BY dp.created_at DESC`,
+        ...ids.map((row) => row.target_id)
+      )
+      return res.json({
+        posts: posts.map((p) => ({
+          id: p.id, title: p.title, userId: p.user_id, userName: p.user_name,
+          commentCount: p.comment_count, likeCount: p.like_count, createdAt: p.created_at,
+        })),
+      })
+    }
+    return res.json({ problems: ids.map((row) => row.target_id) })
+  } catch (error) {
+    console.error('Failed to list bookmarks:', error)
+    return res.status(500).json({ message: '获取收藏失败' })
+  }
+})
+
+// 检查单个目标是否已收藏
+app.get('/api/bookmarks/status', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const targetType = req.query.targetType === 'problem' ? 'problem' : 'post'
+    const targetId = parseInt(req.query.targetId)
+    if (!targetId) return res.status(400).json({ message: '无效的目标' })
+    const row = await db.get(
+      `SELECT 1 FROM bookmarks WHERE user_id = ? AND target_type = ? AND target_id = ?`,
+      user.id, targetType, targetId
+    )
+    return res.json({ bookmarked: Boolean(row) })
+  } catch (error) {
+    console.error('Failed to get bookmark status:', error)
+    return res.status(500).json({ message: '查询失败' })
+  }
+})
+
+// ---------- 已读状态 ----------
+
+app.post('/api/chat/read', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const { scopeType, scopeId } = req.body || {}
+    if (scopeType !== 'channel' && scopeType !== 'room') {
+      return res.status(400).json({ message: '无效的范围' })
+    }
+    if (!scopeId) return res.status(400).json({ message: '缺少范围ID' })
+    let maxId = 0
+    if (scopeType === 'channel') {
+      // 频道已读 = 记录该模块下最新的帖子 id
+      if (!CHAT_VALID_MODULES.has(scopeId)) return res.status(400).json({ message: '无效的频道' })
+      const maxRow = await db.get(
+        `SELECT MAX(id) as max_id FROM discussion_posts WHERE module_key = ?`, scopeId
+      )
+      maxId = maxRow?.max_id || 0
+    } else {
+      const maxRow = await db.get(
+        `SELECT MAX(id) as max_id FROM chat_messages WHERE room_id = ?`, parseInt(scopeId)
+      )
+      maxId = maxRow?.max_id || 0
+    }
+    await db.run(
+      `INSERT INTO chat_read_state (user_id, scope_type, scope_id, last_read_message_id)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, scope_type, scope_id)
+       DO UPDATE SET last_read_message_id = MAX(last_read_message_id, excluded.last_read_message_id)`,
+      user.id, scopeType, String(scopeId), maxId
+    )
+    return res.json({ success: true })
+  } catch (error) {
+    console.error('Failed to mark read:', error)
+    return res.status(500).json({ message: '操作失败' })
+  }
+})
+
+// ---------- 在线状态 ----------
+
+app.post('/api/chat/presence', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  await touchPresence(db, user.id)
+  await touchChatActivity(db, user.id)
+  return res.json({ success: true })
+})
+
+app.get('/api/chat/presence', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db } = auth
+  try {
+    const ids = String(req.query.ids || '').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 200)
+    if (ids.length === 0) return res.json({ online: {} })
+    const rows = await db.all(
+      `SELECT user_id, last_seen_at FROM user_presence
+       WHERE user_id IN (${ids.map(() => '?').join(',')})`,
+      ...ids
+    )
+    const online = {}
+    for (const row of rows) {
+      online[row.user_id] = Date.now() - new Date(row.last_seen_at).getTime() <= PRESENCE_ONLINE_MS
+    }
+    return res.json({ online })
+  } catch (error) {
+    console.error('Failed to get presence:', error)
+    return res.status(500).json({ message: '获取在线状态失败' })
+  }
+})
+
+// ---------- 聊天消息搜索（模块频道 + 可见聊天室） ----------
+
+app.get('/api/chat/search', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const q = (req.query.q || '').trim()
+    if (!q) return res.json({ messages: [] })
+    const limit = Math.min(30, Math.max(1, parseInt(req.query.limit) || 20))
+    const rows = await db.all(
+      `SELECT cm.id, cm.channel_key, cm.room_id, cm.sender_id, cm.content, cm.created_at,
+              u.name as sender_name, u.avatar as sender_avatar,
+              cr.name as room_name
+       FROM chat_messages cm
+       LEFT JOIN users u ON cm.sender_id = u.id
+       LEFT JOIN chat_rooms cr ON cm.room_id = cr.id
+       WHERE cm.content LIKE ?
+         AND (cm.channel_key IS NOT NULL
+              OR cm.room_id IN (
+                SELECT id FROM chat_rooms WHERE type = 'public'
+                UNION
+                SELECT room_id FROM chat_room_members WHERE user_id = ?
+              ))
+         AND cm.thread_parent_id IS NULL
+       ORDER BY cm.id DESC
+       LIMIT ?`,
+      `%${q}%`, user.id, limit
+    )
+    return res.json({
+      messages: rows.map((m) => ({
+        id: m.id,
+        channelKey: m.channel_key,
+        roomId: m.room_id,
+        roomName: m.room_name,
+        senderId: m.sender_id,
+        senderName: m.sender_name,
+        senderAvatar: m.sender_avatar,
+        content: m.content,
+        createdAt: m.created_at,
+      })),
+    })
+  } catch (error) {
+    console.error('Failed to search chat messages:', error)
+    return res.status(500).json({ message: '搜索失败' })
+  }
+})
+
+// 未读汇总
+
+app.get('/api/chat/unread', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    return res.json(await getChatUnreadForUser(db, user))
+  } catch (error) {
+    console.error('Failed to get chat unread:', error)
+    return res.status(500).json({ message: '获取未读失败' })
+  }
+})
+
+// ============================================================
+// 好友系统 API（互相关注即成为好友）
+// ============================================================
+
+const getFollowRelations = async (db, viewerId, targetId) => {
+  const [following, followedBy, followerCount, followingCount, friendCount] = await Promise.all([
+    db.get(`SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?`, viewerId, targetId),
+    db.get(`SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?`, targetId, viewerId),
+    db.get(`SELECT COUNT(*) as c FROM follows WHERE followee_id = ?`, targetId),
+    db.get(`SELECT COUNT(*) as c FROM follows WHERE follower_id = ?`, targetId),
+    db.get(
+      `SELECT COUNT(*) as c FROM follows f1
+       JOIN follows f2 ON f1.followee_id = f2.follower_id AND f2.followee_id = ?
+       WHERE f1.follower_id = ?`,
+      targetId, targetId
+    ),
+  ])
+  const isFollowing = Boolean(following)
+  const isFollowedBy = Boolean(followedBy)
+  return {
+    following: isFollowing,
+    followedBy: isFollowedBy,
+    isFriend: isFollowing && isFollowedBy,
+    followerCount: followerCount?.c || 0,
+    followingCount: followingCount?.c || 0,
+    friendCount: friendCount?.c || 0,
+  }
+}
+
+// 用户档案（登录可选：未登录时 relations 全部为空）
+app.get('/api/users/:id/profile', async (req, res) => {
+  try {
+    const db = await getDb()
+    const targetId = req.params.id
+    const target = await db.get(
+      `SELECT id, name, avatar, is_admin, bio, created_at FROM users WHERE id = ?`, targetId
+    )
+    if (!target) return res.status(404).json({ message: '用户不存在' })
+
+    const token = getAuthToken(req)
+    let viewer = null
+    if (token) viewer = await getUserByToken(db, token)
+    if (viewer && viewer.id !== targetId) {
+      // 被对方屏蔽时无法查看档案
+      const blocked = await db.get(
+        `SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?`,
+        targetId, viewer.id
+      )
+      if (blocked) return res.status(403).json({ message: '对方已屏蔽你，无法查看该档案' })
+    }
+    const relations = viewer
+      ? await getFollowRelations(db, viewer.id, targetId)
+      : { following: false, followedBy: false, isFriend: false, followerCount: 0, followingCount: 0 }
+    const blockedByViewer = viewer ? Boolean(await db.get(
+      `SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?`, viewer.id, targetId
+    )) : false
+
+    return res.json({
+      user: {
+        id: target.id, name: target.name, avatar: target.avatar,
+        isAdmin: Boolean(target.is_admin), bio: target.bio || '', createdAt: target.created_at,
+      },
+      relations,
+      blocked: blockedByViewer,
+    })
+  } catch (error) {
+    console.error('Failed to get user profile:', error)
+    return res.status(500).json({ message: '获取用户档案失败' })
+  }
+})
+
+// 修改自己的简介
+app.put('/api/me/bio', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const { bio } = req.body || {}
+    const cleanBio = String(bio ?? '').trim().slice(0, 200)
+    await db.run(`UPDATE users SET bio = ? WHERE id = ?`, cleanBio, user.id)
+    return res.json({ message: '简介已更新', bio: cleanBio })
+  } catch (error) {
+    console.error('Failed to update bio:', error)
+    return res.status(500).json({ message: '更新失败' })
+  }
+})
+
+// ---------- 黑名单 ----------
+
+app.post('/api/users/:id/block', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const targetId = req.params.id
+    if (targetId === user.id) return res.status(400).json({ message: '不能屏蔽自己' })
+    const target = await db.get(`SELECT id FROM users WHERE id = ?`, targetId)
+    if (!target) return res.status(404).json({ message: '用户不存在' })
+    await db.run(
+      `INSERT OR IGNORE INTO blocks (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`,
+      user.id, targetId, new Date().toISOString()
+    )
+    // 屏蔽时自动解除相互关注
+    await db.run(`DELETE FROM follows WHERE (follower_id = ? AND followee_id = ?) OR (follower_id = ? AND followee_id = ?)`,
+      user.id, targetId, targetId, user.id)
+    return res.json({ message: '已屏蔽对方', blocked: true })
+  } catch (error) {
+    console.error('Failed to block user:', error)
+    return res.status(500).json({ message: '操作失败' })
+  }
+})
+
+app.delete('/api/users/:id/block', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const targetId = req.params.id
+    await db.run(`DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?`, user.id, targetId)
+    return res.json({ message: '已取消屏蔽', blocked: false })
+  } catch (error) {
+    console.error('Failed to unblock user:', error)
+    return res.status(500).json({ message: '操作失败' })
+  }
+})
+
+app.get('/api/me/blocks', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const rows = await db.all(
+      `SELECT b.blocked_id as id, u.name, u.avatar, b.created_at
+       FROM blocks b JOIN users u ON u.id = b.blocked_id
+       WHERE b.blocker_id = ?
+       ORDER BY b.created_at DESC`,
+      user.id
+    )
+    return res.json({ users: rows })
+  } catch (error) {
+    console.error('Failed to list blocks:', error)
+    return res.status(500).json({ message: '获取屏蔽列表失败' })
+  }
+})
+
+app.post('/api/users/:id/follow', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const targetId = req.params.id
+    if (targetId === user.id) return res.status(400).json({ message: '不能关注自己' })
+    const target = await db.get(`SELECT id FROM users WHERE id = ? AND is_banned = 0`, targetId)
+    if (!target) return res.status(404).json({ message: '用户不存在' })
+    const followResult = await db.run(
+      `INSERT OR IGNORE INTO follows (follower_id, followee_id, created_at) VALUES (?, ?, ?)`,
+      user.id, targetId, new Date().toISOString()
+    )
+    if (followResult.changes > 0) {
+      await createNotification(db, {
+        userId: targetId, actorId: user.id, type: 'follow',
+        message: '关注了你',
+        push: { title: '新关注', body: '关注了你', url: `/user/${user.id}` },
+      })
+    }
+    const relations = await getFollowRelations(db, user.id, targetId)
+    return res.json({ message: relations.isFriend ? '你们已经是好友了' : '关注成功', relations })
+  } catch (error) {
+    console.error('Failed to follow user:', error)
+    return res.status(500).json({ message: '关注失败' })
+  }
+})
+
+app.delete('/api/users/:id/follow', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const targetId = req.params.id
+    await db.run(`DELETE FROM follows WHERE follower_id = ? AND followee_id = ?`, user.id, targetId)
+    const relations = await getFollowRelations(db, user.id, targetId)
+    return res.json({ message: '已取消关注', relations })
+  } catch (error) {
+    console.error('Failed to unfollow user:', error)
+    return res.status(500).json({ message: '取消关注失败' })
+  }
+})
+
+const formatFollowUser = (row) => ({
+  id: row.id,
+  name: row.name,
+  avatar: row.avatar,
+  online: Boolean(row.last_seen_at) && Date.now() - new Date(row.last_seen_at).getTime() <= PRESENCE_ONLINE_MS,
+})
+
+// 我的好友（互相关注）
+app.get('/api/me/friends', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const rows = await db.all(
+      `SELECT f1.followee_id as id, u.name, u.avatar, p.last_seen_at
+       FROM follows f1
+       JOIN follows f2 ON f1.followee_id = f2.follower_id AND f2.followee_id = ?
+       JOIN users u ON u.id = f1.followee_id
+       LEFT JOIN user_presence p ON p.user_id = u.id
+       WHERE f1.follower_id = ?
+       ORDER BY p.last_seen_at DESC, f1.created_at DESC`,
+      user.id, user.id
+    )
+    return res.json({ friends: rows.map(formatFollowUser) })
+  } catch (error) {
+    console.error('Failed to list friends:', error)
+    return res.status(500).json({ message: '获取好友列表失败' })
+  }
+})
+
+// 我关注的人
+app.get('/api/me/following', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const rows = await db.all(
+      `SELECT f.followee_id as id, u.name, u.avatar, p.last_seen_at, f.created_at,
+              EXISTS(SELECT 1 FROM follows f2
+                     WHERE f2.follower_id = f.followee_id AND f2.followee_id = ?) as is_friend
+       FROM follows f
+       JOIN users u ON u.id = f.followee_id
+       LEFT JOIN user_presence p ON p.user_id = u.id
+       WHERE f.follower_id = ?
+       ORDER BY f.created_at DESC`,
+      user.id, user.id
+    )
+    return res.json({ users: rows.map((row) => ({ ...formatFollowUser(row), isFriend: Boolean(row.is_friend), followedAt: row.created_at })) })
+  } catch (error) {
+    console.error('Failed to list following:', error)
+    return res.status(500).json({ message: '获取关注列表失败' })
+  }
+})
+
+// 我的粉丝
+app.get('/api/me/followers', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const rows = await db.all(
+      `SELECT f.follower_id as id, u.name, u.avatar, p.last_seen_at, f.created_at,
+              EXISTS(SELECT 1 FROM follows f2
+                     WHERE f2.follower_id = ? AND f2.followee_id = f.follower_id) as is_friend
+       FROM follows f
+       JOIN users u ON u.id = f.follower_id
+       LEFT JOIN user_presence p ON p.user_id = u.id
+       WHERE f.followee_id = ?
+       ORDER BY f.created_at DESC`,
+      user.id, user.id
+    )
+    return res.json({ users: rows.map((row) => ({ ...formatFollowUser(row), isFriend: Boolean(row.is_friend), followedAt: row.created_at })) })
+  } catch (error) {
+    console.error('Failed to list followers:', error)
+    return res.status(500).json({ message: '获取粉丝列表失败' })
+  }
+})
+
+// ============================================================
+// Web Push 推送通知（浏览器通知）
+// VAPID 密钥：优先读环境变量；否则自动生成并保存到 server/.vapid.json
+// ============================================================
+
+let vapidKeys = null
+const getVapidKeys = () => {
+  if (vapidKeys) return vapidKeys
+  if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+    vapidKeys = { publicKey: process.env.VAPID_PUBLIC_KEY, privateKey: process.env.VAPID_PRIVATE_KEY }
+    return vapidKeys
+  }
+  const filePath = new URL('./.vapid.json', import.meta.url).pathname
+  if (existsSync(filePath)) {
+    vapidKeys = JSON.parse(readFileSync(filePath, 'utf8'))
+    return vapidKeys
+  }
+  const generated = webpush.generateVAPIDKeys()
+  writeFileSync(filePath, JSON.stringify(generated, null, 2))
+  vapidKeys = generated
+  return vapidKeys
+}
+
+const initPush = () => {
+  const keys = getVapidKeys()
+  webpush.setVapidDetails('mailto:admin@starstack.local', keys.publicKey, keys.privateKey)
+  console.log('Web Push initialized')
+}
+
+// 给指定用户的所有订阅发推送；订阅失效（404/410）自动移除
+const sendPushToUser = async (db, userId, { title, body, url }) => {
+  try {
+    const subs = await db.all(
+      `SELECT endpoint, keys_json FROM push_subscriptions WHERE user_id = ?`, userId
+    )
+    if (subs.length === 0) return
+    const payload = JSON.stringify({ title, body, url })
+    for (const sub of subs) {
+      try {
+        await webpush.sendNotification({ endpoint: sub.endpoint, keys: JSON.parse(sub.keys_json) }, payload)
+      } catch (error) {
+        if (error?.statusCode === 404 || error?.statusCode === 410) {
+          await db.run(`DELETE FROM push_subscriptions WHERE endpoint = ?`, sub.endpoint)
+        }
+      }
+    }
+  } catch {
+    // 推送失败不影响主流程
+  }
+}
+
+app.get('/api/push/vapid-public-key', (req, res) => {
+  res.json({ publicKey: getVapidKeys().publicKey })
+})
+
+app.post('/api/push/subscribe', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const { subscription } = req.body || {}
+    if (!subscription?.endpoint || !subscription?.keys) {
+      return res.status(400).json({ message: '无效的订阅信息' })
+    }
+    await db.run(
+      `INSERT OR REPLACE INTO push_subscriptions (user_id, endpoint, keys_json, created_at)
+       VALUES (?, ?, ?, ?)`,
+      user.id, subscription.endpoint, JSON.stringify(subscription.keys), new Date().toISOString()
+    )
+    return res.json({ success: true })
+  } catch (error) {
+    console.error('Failed to save push subscription:', error)
+    return res.status(500).json({ message: '保存订阅失败' })
+  }
+})
+
+app.delete('/api/push/subscribe', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const endpoint = String(req.query.endpoint || '')
+    if (endpoint) {
+      await db.run(`DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?`, user.id, endpoint)
+    } else {
+      await db.run(`DELETE FROM push_subscriptions WHERE user_id = ?`, user.id)
+    }
+    return res.json({ success: true })
+  } catch (error) {
+    console.error('Failed to remove push subscription:', error)
+    return res.status(500).json({ message: '移除订阅失败' })
+  }
+})
+
+// ============================================================
+// 通知中心（关注 / 评论 / 回复 / @提及 / 房间邀请）
+// ============================================================
+
+const createNotification = async (db, { userId, actorId, type, targetType, targetId, message, push }) => {
+  if (!userId || userId === actorId) return
+  try {
+    await db.run(
+      `INSERT INTO notifications (user_id, actor_id, type, target_type, target_id, message, is_read, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+      userId, actorId, type, targetType || null, targetId || null, message, new Date().toISOString()
+    )
+    // 同步发送浏览器推送
+    if (push) {
+      const actor = await db.get(`SELECT name FROM users WHERE id = ?`, actorId)
+      await sendPushToUser(db, userId, {
+        title: push.title,
+        body: `${actor?.name || '有人'} ${push.body}`,
+        url: push.url,
+      })
+    }
+  } catch (error) {
+    console.error('Failed to create notification:', error)
+  }
+}
+
+// 解析文本中的 @用户名/ID 并逐个通知（排除自己）
+const MENTION_RE = /@([a-zA-Z0-9_-]{1,32})/g
+const notifyMentions = async (db, text, actorId, type, targetType, targetId, messageBuilder) => {
+  const ids = new Set()
+  let match
+  const regex = new RegExp(MENTION_RE.source, 'g')
+  while ((match = regex.exec(text)) !== null) ids.add(match[1])
+  // @提及推送的目标页
+  const mentionUrl = targetType === 'room'
+    ? `/chat/room/${targetId}`
+    : targetType === 'channel'
+      ? `/chat/c/${targetId}`
+      : `/chat/p/${targetId}`
+  for (const id of ids) {
+    if (id === actorId) continue
+    const target = await db.get(`SELECT id FROM users WHERE id = ? AND is_banned = 0`, id)
+    if (!target) continue
+    await createNotification(db, {
+      userId: id, actorId, type, targetType, targetId,
+      message: messageBuilder(id),
+      push: { title: '@提及', body: messageBuilder(id), url: mentionUrl },
+    })
+  }
+}
+
+app.get('/api/notifications', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const page = Math.max(1, parseInt(req.query.page) || 1)
+    const pageSize = Math.min(50, Math.max(1, parseInt(req.query.pageSize) || 20))
+    const offset = (page - 1) * pageSize
+    const rows = await db.all(
+      `SELECT n.*, u.name as actor_name, u.avatar as actor_avatar
+       FROM notifications n
+       LEFT JOIN users u ON n.actor_id = u.id
+       WHERE n.user_id = ?
+       ORDER BY n.created_at DESC
+       LIMIT ? OFFSET ?`,
+      user.id, pageSize, offset
+    )
+    const countRow = await db.get(
+      `SELECT COUNT(*) as total,
+              SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread
+       FROM notifications WHERE user_id = ?`,
+      user.id
+    )
+    return res.json({
+      notifications: rows.map((n) => ({
+        id: n.id,
+        type: n.type,
+        actor: { id: n.actor_id, name: n.actor_name, avatar: n.actor_avatar },
+        message: n.message,
+        targetType: n.target_type,
+        targetId: n.target_id,
+        isRead: Boolean(n.is_read),
+        createdAt: n.created_at,
+      })),
+      unreadCount: countRow?.unread || 0,
+      total: countRow?.total || 0,
+      page,
+      pageSize,
+    })
+  } catch (error) {
+    console.error('Failed to list notifications:', error)
+    return res.status(500).json({ message: '获取通知失败' })
+  }
+})
+
+app.get('/api/notifications/unread-count', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const row = await db.get(
+      `SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0`,
+      user.id
+    )
+    return res.json({ unreadCount: row?.count || 0 })
+  } catch (error) {
+    console.error('Failed to count notifications:', error)
+    return res.status(500).json({ message: '获取未读通知失败' })
+  }
+})
+
+app.post('/api/notifications/read', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const { id, all } = req.body || {}
+    if (all) {
+      await db.run(`UPDATE notifications SET is_read = 1 WHERE user_id = ?`, user.id)
+    } else if (id) {
+      await db.run(
+        `UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?`,
+        parseInt(id), user.id
+      )
+    } else {
+      return res.status(400).json({ message: '缺少参数' })
+    }
+    const row = await db.get(
+      `SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0`,
+      user.id
+    )
+    return res.json({ success: true, unreadCount: row?.count || 0 })
+  } catch (error) {
+    console.error('Failed to mark notifications read:', error)
+    return res.status(500).json({ message: '操作失败' })
+  }
+})
+
+// ============================================================
+// 游戏化：聊天统计 / 活跃度 / 聊天成就
+// ============================================================
+
+const CHAT_ACHIEVEMENT_DEFS = [
+  { type: 'chat_first', name: '初次发声', icon: '💬', desc: '发出第一条聊天消息', check: (s) => s.message_count >= 1 },
+  { type: 'chat_100', name: '话痨新星', icon: '🗣️', desc: '累计发送 100 条消息', check: (s) => s.message_count >= 100 },
+  { type: 'chat_1000', name: '深空电台', icon: '📡', desc: '累计发送 1000 条消息', check: (s) => s.message_count >= 1000 },
+  { type: 'chat_reply_50', name: '接话大师', icon: '↩️', desc: '累计回复 50 条话题线程', check: (s) => s.reply_count >= 50 },
+  { type: 'chat_active_10', name: '常驻旅客', icon: '🌙', desc: '累计活跃 10 天', check: (s) => s.active_days >= 10 },
+  { type: 'chat_active_30', name: '星际公民', icon: '🪐', desc: '累计活跃 30 天', check: (s) => s.active_days >= 30 },
+  { type: 'chat_liked_10', name: '人气磁铁', icon: '🧲', desc: '累计收到 10 个表情回应', check: (s) => s.reaction_received >= 10 },
+  { type: 'chat_liked_100', name: '全站红人', icon: '🌟', desc: '累计收到 100 个表情回应', check: (s) => s.reaction_received >= 100 },
+  { type: 'chat_post_5', name: '广场作家', icon: '✍️', desc: '累计发布 5 篇帖子', check: (s) => s.post_count >= 5 },
+]
+
+// 本地日期 YYYY-MM-DD
+const localDay = (date = new Date()) => {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+// 累计活跃天数（从活跃日志去重计数）
+const countActiveDays = async (db, userId) => {
+  const row = await db.get(
+    `SELECT COUNT(*) as c FROM (SELECT DISTINCT day FROM chat_activity_log WHERE user_id = ?)`,
+    userId
+  )
+  return row?.c || 0
+}
+
+// 记录聊天行为：更新统计 + 当日活跃分 + 成就判定
+const bumpChatStat = async (db, userId, { field, points }) => {
+  if (!userId) return
+  try {
+    await db.run(
+      `INSERT INTO chat_stats (user_id, message_count, reply_count, post_count, comment_count, reaction_received, activity_score, last_active_at)
+       VALUES (?, 0, 0, 0, 0, 0, 0, ?)
+       ON CONFLICT(user_id) DO UPDATE SET
+         ${field} = ${field} + 1,
+         activity_score = activity_score + ?,
+         last_active_at = excluded.last_active_at`,
+      userId, new Date().toISOString(), points
+    )
+    const day = localDay()
+    await db.run(
+      `INSERT INTO chat_activity_log (user_id, day, score) VALUES (?, ?, ?)
+       ON CONFLICT(user_id, day) DO UPDATE SET score = score + excluded.score`,
+      userId, day, points
+    )
+    // 成就判定
+    const statRow = await db.get(`SELECT * FROM chat_stats WHERE user_id = ?`, userId)
+    if (!statRow) return
+    const activeDays = await countActiveDays(db, userId)
+    const stats = { ...statRow, active_days: activeDays }
+    for (const def of CHAT_ACHIEVEMENT_DEFS) {
+      if (def.check(stats)) {
+        await db.run(
+          `INSERT OR IGNORE INTO chat_achievements (user_id, type, unlocked_at) VALUES (?, ?, ?)`,
+          userId, def.type, new Date().toISOString()
+        )
+      }
+    }
+  } catch {
+    // 统计失败不影响主流程
+  }
+}
+
+// 心跳时记录活跃（不积分，只计活跃天数）
+const touchChatActivity = async (db, userId) => {
+  try {
+    const day = localDay()
+    await db.run(
+      `INSERT OR IGNORE INTO chat_activity_log (user_id, day, score) VALUES (?, ?, 0)`,
+      userId, day
+    )
+    await db.run(
+      `INSERT INTO chat_stats (user_id, message_count, reply_count, post_count, comment_count, reaction_received, activity_score, last_active_at)
+       VALUES (?, 0, 0, 0, 0, 0, 0, ?)
+       ON CONFLICT(user_id) DO UPDATE SET last_active_at = excluded.last_active_at`,
+      userId, new Date().toISOString()
+    )
+    // 活跃天数成就
+    const activeDays = await countActiveDays(db, userId)
+    for (const def of CHAT_ACHIEVEMENT_DEFS) {
+      if (def.type.startsWith('chat_active') && def.check({ active_days: activeDays })) {
+        await db.run(
+          `INSERT OR IGNORE INTO chat_achievements (user_id, type, unlocked_at) VALUES (?, ?, ?)`,
+          userId, def.type, new Date().toISOString()
+        )
+      }
+    }
+  } catch {
+    // 忽略
+  }
+}
+
+// 我的聊天统计 + 已解锁成就
+app.get('/api/chat/stats/me', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const statRow = await db.get(`SELECT * FROM chat_stats WHERE user_id = ?`, user.id)
+    const achievements = await db.all(
+      `SELECT type, unlocked_at FROM chat_achievements WHERE user_id = ? ORDER BY unlocked_at ASC`,
+      user.id
+    )
+    const activeDays = await countActiveDays(db, user.id)
+    return res.json({
+      stats: {
+        messageCount: statRow?.message_count || 0,
+        replyCount: statRow?.reply_count || 0,
+        postCount: statRow?.post_count || 0,
+        commentCount: statRow?.comment_count || 0,
+        reactionReceived: statRow?.reaction_received || 0,
+        activityScore: statRow?.activity_score || 0,
+        activeDays,
+      },
+      achievements: achievements.map((a) => ({
+        type: a.type,
+        ...(CHAT_ACHIEVEMENT_DEFS.find((d) => d.type === a.type) || { name: a.type, icon: '🏅', desc: '' }),
+        unlockedAt: a.unlocked_at,
+      })),
+    })
+  } catch (error) {
+    console.error('Failed to get chat stats:', error)
+    return res.status(500).json({ message: '获取统计失败' })
+  }
+})
+
+// 他人聊天成就（档案页展示）
+app.get('/api/chat/achievements/:userId', async (req, res) => {
+  try {
+    const db = await getDb()
+    const rows = await db.all(
+      `SELECT type, unlocked_at FROM chat_achievements WHERE user_id = ? ORDER BY unlocked_at ASC`,
+      req.params.userId
+    )
+    return res.json({
+      achievements: rows.map((a) => ({
+        type: a.type,
+        ...(CHAT_ACHIEVEMENT_DEFS.find((d) => d.type === a.type) || { name: a.type, icon: '🏅', desc: '' }),
+        unlockedAt: a.unlocked_at,
+      })),
+    })
+  } catch (error) {
+    console.error('Failed to get chat achievements:', error)
+    return res.status(500).json({ message: '获取成就失败' })
+  }
+})
+
+// 社区活跃榜（近 N 天，按活跃分排名）
+app.get('/api/chat/activity/leaderboard', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    const days = Math.min(30, Math.max(1, parseInt(req.query.days) || 7))
+    const since = localDay(new Date(Date.now() - (days - 1) * 86400000))
+    const rows = await db.all(
+      `SELECT l.user_id, u.name as user_name, u.avatar as user_avatar, SUM(l.score) as score
+       FROM chat_activity_log l
+       LEFT JOIN users u ON u.id = l.user_id
+       WHERE l.day >= ? AND l.score > 0
+       GROUP BY l.user_id
+       ORDER BY score DESC
+       LIMIT 20`,
+      since
+    )
+    const myRow = await db.get(
+      `SELECT user_id, SUM(score) as score FROM chat_activity_log
+       WHERE day >= ? AND user_id = ?
+       GROUP BY user_id`, since, user.id
+    )
+    const myScore = myRow?.score || 0
+    let myRank = null
+    if (myScore > 0) {
+      const rankRow = await db.get(
+        `SELECT COUNT(*) + 1 as rank FROM (
+           SELECT user_id FROM chat_activity_log
+           WHERE day >= ? AND score > 0
+           GROUP BY user_id HAVING SUM(score) > ?
+         )`, since, myScore
+      )
+      myRank = rankRow?.rank || null
+    }
+    return res.json({
+      days,
+      leaderboard: rows.map((r, index) => ({
+        rank: index + 1,
+        userId: r.user_id, userName: r.user_name, userAvatar: r.user_avatar,
+        score: r.score,
+      })),
+      me: { userId: user.id, score: myScore, rank: myRank },
+    })
+  } catch (error) {
+    console.error('Failed to get activity leaderboard:', error)
+    return res.status(500).json({ message: '获取活跃榜失败' })
+  }
+})
+
+// ============================================================
+// 举报系统（帖子 / 评论 / 聊天消息 / 用户）
+// ============================================================
+
+const reportRateLimits = new BoundedCache(5000, 10000) // 10 秒冷却
+
+app.post('/api/reports', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    if (reportRateLimits.has(user.id)) {
+      return res.status(429).json({ message: '举报过于频繁，请稍后再试' })
+    }
+    const { targetType, targetId, reason } = req.body || {}
+    const type = ['post', 'comment', 'message', 'user'].includes(targetType) ? targetType : null
+    if (!type || !targetId) return res.status(400).json({ message: '无效的举报目标' })
+    // 用户类型存字符串 ID，其余存数字 ID
+    const id = type === 'user' ? String(targetId) : parseInt(targetId)
+    if (type !== 'user' && !id) return res.status(400).json({ message: '无效的举报目标' })
+    const cleanReason = String(reason ?? '').trim().slice(0, 200) || '未填写原因'
+
+    // 目标存在性校验
+    if (type === 'post') {
+      const row = await db.get(`SELECT id FROM discussion_posts WHERE id = ?`, id)
+      if (!row) return res.status(404).json({ message: '帖子不存在' })
+    } else if (type === 'comment') {
+      const row = await db.get(`SELECT id FROM discussion_comments WHERE id = ?`, id)
+      if (!row) return res.status(404).json({ message: '评论不存在' })
+    } else if (type === 'message') {
+      const row = await db.get(`SELECT id FROM chat_messages WHERE id = ?`, id)
+      if (!row) return res.status(404).json({ message: '消息不存在' })
+    } else {
+      const row = await db.get(`SELECT id FROM users WHERE id = ?`, id)
+      if (!row) return res.status(404).json({ message: '用户不存在' })
+    }
+
+    reportRateLimits.set(user.id, Date.now())
+    await db.run(
+      `INSERT INTO reports (reporter_id, target_type, target_id, reason, status, created_at)
+       VALUES (?, ?, ?, ?, 'open', ?)`,
+      user.id, type, id, cleanReason, new Date().toISOString()
+    )
+    return res.json({ message: '举报已提交，管理员会尽快处理' })
+  } catch (error) {
+    console.error('Failed to create report:', error)
+    return res.status(500).json({ message: '举报失败' })
+  }
+})
+
+// ---------- 管理端 ----------
+
+// 站点数据看板
+app.get('/api/admin/stats', async (req, res) => {
+  const auth = await requireAdmin(req, res)
+  if (!auth) return
+  const { db } = auth
+  try {
+    const [users, posts, comments, chatMessages, rooms, reports, todayActive] = await Promise.all([
+      db.get(`SELECT COUNT(*) as c FROM users`),
+      db.get(`SELECT COUNT(*) as c FROM discussion_posts`),
+      db.get(`SELECT COUNT(*) as c FROM discussion_comments`),
+      db.get(`SELECT COUNT(*) as c FROM chat_messages`),
+      db.get(`SELECT COUNT(*) as c FROM chat_rooms`),
+      db.get(`SELECT COUNT(*) as c FROM reports WHERE status = 'open'`),
+      db.get(`SELECT COUNT(*) as c FROM chat_activity_log WHERE day = ?`, localDay()),
+    ])
+    return res.json({
+      stats: {
+        users: users?.c || 0,
+        posts: posts?.c || 0,
+        comments: comments?.c || 0,
+        chatMessages: chatMessages?.c || 0,
+        rooms: rooms?.c || 0,
+        openReports: reports?.c || 0,
+        todayActive: todayActive?.c || 0,
+      },
+    })
+  } catch (error) {
+    console.error('Failed to get admin stats:', error)
+    return res.status(500).json({ message: '获取统计失败' })
+  }
+})
+
+// 举报列表（含目标摘要）
+app.get('/api/admin/reports', async (req, res) => {
+  const auth = await requireAdmin(req, res)
+  if (!auth) return
+  const { db } = auth
+  try {
+    const status = req.query.status === 'resolved' ? 'resolved' : 'open'
+    const rows = await db.all(
+      `SELECT r.*, u.name as reporter_name,
+              t.name as target_user_name
+       FROM reports r
+       LEFT JOIN users u ON r.reporter_id = u.id
+       LEFT JOIN users t ON r.target_type = 'user' AND t.id = CAST(r.target_id AS TEXT)
+       WHERE r.status = ?
+       ORDER BY r.created_at DESC
+       LIMIT 50`,
+      status
+    )
+    const enriched = []
+    for (const row of rows) {
+      let summary = ''
+      if (row.target_type === 'post') {
+        const p = await db.get(`SELECT title FROM discussion_posts WHERE id = ?`, row.target_id)
+        summary = p ? `帖子：《${p.title}》` : '（已删除）'
+      } else if (row.target_type === 'comment') {
+        const c = await db.get(`SELECT content FROM discussion_comments WHERE id = ?`, row.target_id)
+        summary = c ? `评论：${String(c.content).replace(/<[^>]+>/g, ' ').slice(0, 60)}` : '（已删除）'
+      } else if (row.target_type === 'message') {
+        const m = await db.get(`SELECT content FROM chat_messages WHERE id = ?`, row.target_id)
+        summary = m ? `消息：${String(m.content).slice(0, 60)}` : '（已删除）'
+      } else {
+        summary = row.target_user_name ? `用户：${row.target_user_name}` : '（用户已删除）'
+      }
+      enriched.push({
+        id: row.id,
+        reporterId: row.reporter_id,
+        reporterName: row.reporter_name,
+        targetType: row.target_type,
+        targetId: row.target_id,
+        reason: row.reason,
+        status: row.status,
+        summary,
+        createdAt: row.created_at,
+      })
+    }
+    return res.json({ reports: enriched })
+  } catch (error) {
+    console.error('Failed to list reports:', error)
+    return res.status(500).json({ message: '获取举报失败' })
+  }
+})
+
+// 处理举报（标记解决）
+app.post('/api/admin/reports/:id/resolve', async (req, res) => {
+  const auth = await requireAdmin(req, res)
+  if (!auth) return
+  const { db } = auth
+  try {
+    const reportId = parseInt(req.params.id)
+    await db.run(`UPDATE reports SET status = 'resolved' WHERE id = ?`, reportId)
+    return res.json({ message: '已处理' })
+  } catch (error) {
+    console.error('Failed to resolve report:', error)
+    return res.status(500).json({ message: '操作失败' })
+  }
+})
+
+// 管理员删除聊天消息（广播给在线客户端）
+app.delete('/api/admin/messages/:id', async (req, res) => {
+  const auth = await requireAdmin(req, res)
+  if (!auth) return
+  const { db } = auth
+  try {
+    const messageId = parseInt(req.params.id)
+    const message = await db.get(`SELECT * FROM chat_messages WHERE id = ?`, messageId)
+    if (!message) return res.status(404).json({ message: '消息不存在' })
+    const scopeKey = message.channel_key ? `channel:${message.channel_key}` : `room:${message.room_id}`
+    await db.run(`DELETE FROM chat_messages WHERE id = ?`, messageId)
+    broadcastToScope(scopeKey, { type: 'message_deleted', messageId })
+    return res.json({ message: '消息已删除' })
+  } catch (error) {
+    console.error('Failed to delete message:', error)
+    return res.status(500).json({ message: '操作失败' })
+  }
+})
+
+// ============================================================
+// ============================================================
+// SSO 共享登录（同域名子项目接入）
+// 场景一（同域名子路径 / 子域名）：子项目通过 ?token= 或 Authorization 头校验
+// 场景二（iframe 嵌入）：public/sso.html 读取本地 token 后 postMessage 给父窗口
+// ============================================================
+
+app.get('/api/sso/session', async (req, res) => {
+  try {
+    const db = await getDb()
+    let token = getAuthToken(req)
+    // 支持 ?token= 查询参数（子项目跳转带参场景）
+    if (!token && req.query.token) token = String(req.query.token).slice(0, 128)
+    if (!token) return res.json({ user: null })
+    const user = await getUserByToken(db, token)
+    if (!user) return res.json({ user: null })
+    return res.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        avatar: user.avatar,
+        isAdmin: Boolean(user.is_admin),
+        isBanned: Boolean(user.is_banned),
+      },
+      token,
+    })
+  } catch (error) {
+    console.error('Failed to get sso session:', error)
+    return res.status(500).json({ message: '获取会话失败' })
+  }
+})
+
+// POST 版：token 走请求体，避免进 URL/访问日志/浏览器历史（推荐子项目使用）
+app.post('/api/sso/session', async (req, res) => {
+  try {
+    const db = await getDb()
+    let token = getAuthToken(req)
+    if (!token && req.body?.token) token = String(req.body.token).slice(0, 128)
+    if (!token) return res.json({ user: null })
+    const user = await getUserByToken(db, token)
+    if (!user) return res.json({ user: null })
+    return res.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        avatar: user.avatar,
+        isAdmin: Boolean(user.is_admin),
+        isBanned: Boolean(user.is_banned),
+      },
+      token,
+    })
+  } catch (error) {
+    console.error('Failed to get sso session:', error)
+    return res.status(500).json({ message: '获取会话失败' })
+  }
+})
+
+// 消息保留策略：超过保留期限（默认 90 天）的聊天室消息与私信自动清理
+// ============================================================
+const MESSAGE_RETENTION_DAYS = 90
+
+const cleanupExpiredMessages = async () => {
+  try {
+    const db = await getDb()
+    const cutoff = new Date(Date.now() - MESSAGE_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString()
+    const chatResult = await db.run(`DELETE FROM chat_messages WHERE created_at < ?`, cutoff)
+    const dmResult = await db.run(`DELETE FROM messages WHERE created_at < ?`, cutoff)
+    // 清理已无消息的会话
+    await db.run(
+      `DELETE FROM conversations WHERE id NOT IN (SELECT DISTINCT conversation_id FROM messages)`
+    )
+    if (chatResult.changes > 0 || dmResult.changes > 0) {
+      console.log(`[retention] cleaned chat=${chatResult.changes} dm=${dmResult.changes}`)
+    }
+  } catch (error) {
+    console.error('[retention] cleanup failed:', error)
+  }
+}
+
+const scheduleMessageCleanup = () => {
+  const now = new Date()
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+  const delay = tomorrow.getTime() - now.getTime() + 60_000
+  setTimeout(() => {
+    void cleanupExpiredMessages()
+    setInterval(() => {
+      void cleanupExpiredMessages()
+    }, 24 * 60 * 60 * 1000)
+  }, delay)
+  console.log(`Message retention scheduler initialized (${MESSAGE_RETENTION_DAYS} days)`)
+}
+
 const PORT = Number(process.env.PORT) || 5174
 initDb()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`StarStack API running at http://localhost:${PORT}`)
+      // Initialize web push
+      initPush()
       // Initialize leaderboard history scheduler
       scheduleLeaderboardHistory()
       // Save initial history
       void saveLeaderboardHistory(true)
+      // Message retention cleanup
+      scheduleMessageCleanup()
     })
   })
   .catch((error) => {

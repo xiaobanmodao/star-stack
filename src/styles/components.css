@@ -227,3 +227,7 @@
     justify-content: flex-start;
   }
 }
+
+:root[data-theme='light'] .ui-button.primary {
+  color: #ffffff;
+}

@@ -7,8 +7,9 @@ set -e
 
 # 配置
 BACKUP_DIR="/www/backup/starstack"
-DB_PATH="/www/wwwroot/star-stack/server/data/starstack.db"
+DB_PATH="/www/wwwroot/star-stack/server/data/starstack.sqlite"
 KEEP_DAYS=7  # 保留最近 7 天的备份
+# SQLite WAL 模式下请使用 sqlite3 .backup 进行一致性备份（见下方备份命令）
 
 # 颜色
 GREEN='\033[0;32m'
@@ -34,9 +35,16 @@ fi
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="$BACKUP_DIR/starstack_${TIMESTAMP}.db"
 
-# 执行备份
+# 执行备份（WAL 模式下用 sqlite3 .backup 保证一致性，同时备份 -wal/-shm 尾日志）
 echo "正在备份数据库..."
-cp "$DB_PATH" "$BACKUP_FILE"
+if command -v sqlite3 > /dev/null 2>&1; then
+  sqlite3 "$DB_PATH" ".backup '$BACKUP_FILE'"
+else
+  cp "$DB_PATH" "$BACKUP_FILE"
+  # 复制 WAL 尾日志（若存在）
+  [ -f "$DB_PATH-wal" ] && cp "$DB_PATH-wal" "${BACKUP_FILE}-wal"
+  [ -f "$DB_PATH-shm" ] && cp "$DB_PATH-shm" "${BACKUP_FILE}-shm"
+fi
 
 # 压缩备份
 echo "正在压缩备份文件..."

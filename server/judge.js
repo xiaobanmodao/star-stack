@@ -85,9 +85,21 @@ if (sandboxAvailable) {
   console.warn('Sandbox disabled: sandbox.sh not found at', SANDBOX_SH)
 }
 
+// 生产环境强制沙箱：Linux 无沙箱或非 Linux 平台一律拒绝评测（防止用户代码无资源限制运行）
+// 开发环境（NODE_ENV !== production）允许本地评测以便调试
+const allowUnsafeJudge = process.env.NODE_ENV !== 'production'
+if (!sandboxAvailable && !allowUnsafeJudge) {
+  console.error('Refusing to judge: sandbox unavailable in production mode')
+}
+
 // 在 Linux 上通过沙箱执行命令，限制网络/内存/进程数
 const runCommand = (cmd, args, options = {}) =>
   new Promise((resolve) => {
+    // 生产环境无沙箱：拒绝执行
+    if (!sandboxAvailable && !allowUnsafeJudge) {
+      resolve({ stdout: '', stderr: '评测沙箱不可用，请联系管理员', code: -1, timedOut: true })
+      return
+    }
     const start = Date.now()
     const timeoutMs = options.timeout ?? TIME_LIMIT_MS
     const timeLimitSec = Math.ceil(timeoutMs / 1000) + 1 // 沙箱超时比应用超时多 1 秒
