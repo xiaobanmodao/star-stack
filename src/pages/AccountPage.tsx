@@ -311,6 +311,11 @@ export default function AccountPage() {
           <div className="profile-user-copy">
             <div className="account-name" data-user-name>{currentUser.name}</div>
             <div className="account-id" data-user-id>@{currentUser.id}</div>
+            {currentUser.level && (
+              <Badge tone="info" className="profile-level-badge">
+                {currentUser.icon || '✦'} Lv.{currentUser.level} {currentUser.title || '星尘'}
+              </Badge>
+            )}
           </div>
           {OJ_ENABLED && stats.rank && stats.rank > 0 && (
             <Badge tone="info" className="profile-rank-badge">全站排名 #{stats.rank}</Badge>

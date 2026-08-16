@@ -237,6 +237,7 @@ export const initDb = async () => {
       password_hash TEXT NOT NULL,
       is_admin INTEGER NOT NULL DEFAULT 0,
       is_banned INTEGER NOT NULL DEFAULT 0,
+      onboarded_at TEXT,
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS sessions (
@@ -386,6 +387,7 @@ export const initDb = async () => {
       current_streak INTEGER DEFAULT 0,
       max_streak INTEGER DEFAULT 0,
       last_submission_date TEXT,
+      xp INTEGER DEFAULT 0,
       rank INTEGER DEFAULT 0,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
@@ -806,6 +808,9 @@ export const initDb = async () => {
   if (!userColumns.some((col) => col.name === 'bio')) {
     await db.exec(`ALTER TABLE users ADD COLUMN bio TEXT DEFAULT ''`)
   }
+  if (!userColumns.some((col) => col.name === 'onboarded_at')) {
+    await db.exec(`ALTER TABLE users ADD COLUMN onboarded_at TEXT`)
+  }
 
   // Migration: discussion_posts.is_pinned / pinned_at（帖子置顶）
   const discussionPostColumns = await db.all(`PRAGMA table_info(discussion_posts)`)
@@ -827,6 +832,12 @@ export const initDb = async () => {
   await db.exec(
     `CREATE INDEX IF NOT EXISTS idx_posts_solution_problem ON discussion_posts(is_solution, problem_id, created_at)`
   )
+
+  // Migration: user_stats.xp（站内等级经验）
+  const userStatsColumns = await db.all(`PRAGMA table_info(user_stats)`)
+  if (!userStatsColumns.some((col) => col.name === 'xp')) {
+    await db.exec(`ALTER TABLE user_stats ADD COLUMN xp INTEGER DEFAULT 0`)
+  }
 
   // Initialize user_stats for existing users
   const existingUsers = await db.all(`SELECT id FROM users`)

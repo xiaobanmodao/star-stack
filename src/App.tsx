@@ -5,6 +5,7 @@ import { AppContext } from './context/AppContext'
 import { OJ_ENABLED, TOKEN_KEY } from './constants'
 import FloatingChat from './components/chat/FloatingChat'
 import NotificationBell from './components/NotificationBell'
+import OnboardingModal from './components/OnboardingModal'
 import SearchOverlay from './components/SearchOverlay'
 import ThemeToggle from './components/ThemeToggle'
 import { fetchJson, isPollingPageVisible } from './utils'
@@ -183,6 +184,12 @@ const UserMenu = ({ currentUser, initial, navigate, location, openLogoutConfirm 
         )}
       </div>
       <div className={`user-menu-panel ${userMenuOpen ? 'open' : ''}`} role="menu" aria-label="用户菜单">
+        <div className="user-menu-level">
+          <span aria-hidden="true">{currentUser.icon || '✦'}</span>
+          <span>Lv.{currentUser.level ?? 1}</span>
+          <strong>{currentUser.title || '星尘'}</strong>
+        </div>
+        <div className="user-menu-divider" aria-hidden="true" />
         <button className="user-menu-item" type="button" onClick={() => {
           if (location.pathname !== '/account') navigate('/account');
           setUserMenuOpen(false);
@@ -229,6 +236,7 @@ function App() {
   const [authSuccess, setAuthSuccess] = useState('')
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
   const [logoutNotice, setLogoutNotice] = useState('')
   const [currentUser, setCurrentUser] = useState<UserRecord | null>(null)
   const [authFrom, setAuthFrom] = useState('/')
@@ -360,6 +368,22 @@ function App() {
       clearInterval(pollingInterval)
     }
   }, [currentUser, fetchUnreadCount])
+
+  // 新手引导：首次登录后弹出
+  useEffect(() => {
+    if (!currentUser || currentUser.onboarded) return
+    const timer = window.setTimeout(() => setShowOnboarding(true), 800)
+    return () => window.clearTimeout(timer)
+  }, [currentUser])
+
+  const handleOnboardingClose = useCallback(async () => {
+    setShowOnboarding(false)
+    if (!currentUser || currentUser.onboarded) return
+    const { response } = await fetchJson('/api/me/onboarded', { method: 'POST' })
+    if (response.ok) {
+      setCurrentUser({ ...currentUser, onboarded: true })
+    }
+  }, [currentUser, setCurrentUser])
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -793,6 +817,9 @@ function App() {
         </div>
         <FloatingChat />
         <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
+        {showOnboarding && currentUser && !currentUser.onboarded && (
+          <OnboardingModal onClose={() => void handleOnboardingClose()} />
+        )}
         </AppContext.Provider>
       )}
     </>

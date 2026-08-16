@@ -1,3 +1,34 @@
+// 站内等级（星空主题，按累计 XP 升级）
+export const LEVELS = [
+  { minXp: 0, title: '星尘', icon: '✦' },
+  { minXp: 100, title: '流星', icon: '☄️' },
+  { minXp: 300, title: '新星', icon: '🌟' },
+  { minXp: 700, title: '行星', icon: '🪐' },
+  { minXp: 1500, title: '恒星', icon: '☀️' },
+  { minXp: 3000, title: '超新星', icon: '💥' },
+  { minXp: 6000, title: '黑洞', icon: '🕳️' },
+]
+
+export const getLevelInfo = (xp = 0) => {
+  let levelIndex = 0
+  for (let i = 0; i < LEVELS.length; i++) {
+    if (xp >= LEVELS[i].minXp) levelIndex = i
+  }
+  const current = LEVELS[levelIndex]
+  const next = LEVELS[levelIndex + 1] || null
+  return {
+    xp,
+    level: levelIndex + 1,
+    title: current.title,
+    icon: current.icon,
+    nextTitle: next?.title || null,
+    nextXp: next?.minXp ?? null,
+    progress: next
+      ? Math.min(100, Math.round(((xp - current.minXp) / (next.minXp - current.minXp)) * 100))
+      : 100,
+  }
+}
+
 // Achievement definitions
 const ACHIEVEMENTS = {
   FIRST_AC: { id: 'first_ac', name: '初次通过', icon: '🎯', desc: '完成第一道题目' },

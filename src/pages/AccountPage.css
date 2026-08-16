@@ -79,6 +79,15 @@
   font-size: 12px;
 }
 
+.profile-v2 .profile-level-badge {
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--ss-color-border) !important;
+  background: var(--ss-hover-layer) !important;
+  color: var(--ss-color-accent) !important;
+}
+
 .profile-v2 .profile-rank-badge {
   justify-content: center;
   width: 100%;

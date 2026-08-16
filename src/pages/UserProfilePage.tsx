@@ -172,6 +172,11 @@ export default function UserProfilePage() {
             <div className="profile-user-copy">
               <div className="account-name" data-user-name>{user.name}</div>
               <div className="account-id" data-user-id>@{user.id}</div>
+              {user.level && (
+                <Badge tone="info" className="profile-level-badge">
+                  {user.icon || '✦'} Lv.{user.level} {user.title || '星尘'}
+                </Badge>
+              )}
             </div>
             {isSelf ? (
               bioEdit ? (

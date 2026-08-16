@@ -13,6 +13,7 @@ import {
   updateRankings,
   getDifficultyStats,
   getHeatmapData,
+  getLevelInfo,
   recalculateUserRating
 } from './stats.js'
 
@@ -130,7 +131,7 @@ const getUserByToken = async (db, token) => {
     return null
   }
   const user = await db.get(
-    `SELECT id, name, password_hash, is_admin, is_banned, avatar, bio, created_at
+    `SELECT id, name, password_hash, is_admin, is_banned, avatar, bio, onboarded_at, created_at
      FROM users WHERE id = ?`,
     session.user_id
   )
@@ -178,6 +179,37 @@ const requireUser = async (req, res) => {
 }
 
 const sanitizeProblemText = (value) => sanitizeHtml(String(value ?? '').trim())
+
+// 获取用户等级信息（基于 user_stats.xp）
+const getUserLevelInfo = async (db, userId) => {
+  const row = await db.get(`SELECT xp FROM user_stats WHERE user_id = ?`, userId)
+  return getLevelInfo(row?.xp || 0)
+}
+
+// 给用户增加 XP，并返回最新等级信息
+const addXp = async (db, userId, amount) => {
+  if (!userId || !amount) return null
+  await db.run(
+    `INSERT INTO user_stats (user_id, xp) VALUES (?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET xp = xp + excluded.xp`,
+    userId,
+    amount
+  )
+  return getUserLevelInfo(db, userId)
+}
+
+const serializeUser = async (db, user) => {
+  const levelInfo = await getUserLevelInfo(db, user.id)
+  return {
+    id: user.id,
+    name: user.name,
+    avatar: user.avatar,
+    isAdmin: Boolean(user.is_admin),
+    isBanned: Boolean(user.is_banned),
+    onboarded: Boolean(user.onboarded_at),
+    ...levelInfo,
+  }
+}
 
 app.get('/api/health', (req, res) => {
   res.json({ ok: true })
@@ -262,7 +294,7 @@ app.post('/api/login', async (req, res) => {
   }
   const db = await getDb()
   const user = await db.get(
-    `SELECT id, name, password_hash, is_admin, is_banned, avatar FROM users WHERE id = ?`,
+    `SELECT id, name, password_hash, is_admin, is_banned, avatar, onboarded_at FROM users WHERE id = ?`,
     id
   )
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
@@ -284,15 +316,10 @@ app.post('/api/login', async (req, res) => {
     user.id,
     new Date().toISOString()
   )
+  const serialized = await serializeUser(db, user)
   return res.json({
     token,
-    user: {
-      id: user.id,
-      name: user.name,
-      isAdmin: Boolean(user.is_admin),
-      isBanned: Boolean(user.is_banned),
-      avatar: user.avatar,
-    },
+    user: serialized,
   })
 })
 
@@ -310,14 +337,9 @@ app.get('/api/me', async (req, res) => {
     await db.run(`DELETE FROM sessions WHERE token = ?`, token)
     return res.status(403).json({ message: '账号已被封禁' })
   }
+  const serialized = await serializeUser(db, user)
   return res.json({
-    user: {
-      id: user.id,
-      name: user.name,
-      avatar: user.avatar,
-      isAdmin: Boolean(user.is_admin),
-      isBanned: Boolean(user.is_banned),
-    },
+    user: serialized,
   })
 })
 
@@ -350,13 +372,10 @@ app.patch('/api/me/name', async (req, res) => {
     return res.status(403).json({ message: '账号已被封禁' })
   }
   await db.run(`UPDATE users SET name = ? WHERE id = ?`, name.trim(), user.id)
+  user.name = name.trim()
+  const serialized = await serializeUser(db, user)
   return res.json({
-    user: {
-      id: user.id,
-      name: name.trim(),
-      isAdmin: Boolean(user.is_admin),
-      isBanned: Boolean(user.is_banned),
-    },
+    user: serialized,
   })
 })
 
@@ -421,14 +440,10 @@ app.post('/api/me/avatar', async (req, res) => {
     return res.status(403).json({ message: '账号已被封禁' })
   }
   await db.run(`UPDATE users SET avatar = ? WHERE id = ?`, avatar, user.id)
+  user.avatar = avatar
+  const serialized = await serializeUser(db, user)
   return res.json({
-    user: {
-      id: user.id,
-      name: user.name,
-      avatar: avatar,
-      isAdmin: Boolean(user.is_admin),
-      isBanned: Boolean(user.is_banned),
-    },
+    user: serialized,
   })
 })
 
@@ -721,6 +736,7 @@ app.post('/api/oj/problems/:id/solutions', async (req, res) => {
       now
     )
 
+    await addXp(db, user.id, 20)
     return res.json({ success: true, postId: result.lastID })
   } catch (error) {
     console.error('Failed to create solution:', error)
@@ -1845,13 +1861,16 @@ app.get('/api/user/profile/:userId', async (req, res) => {
     // Get difficulty stats
     const difficultyStats = await getDifficultyStats(db, userId)
 
+    const levelInfo = getLevelInfo(stats.xp || 0)
+
     return res.json({
       user: {
         id: user.id,
         name: user.name,
         avatar: user.avatar,
         createdAt: user.created_at,
-        isAdmin: user.is_admin === 1
+        isAdmin: user.is_admin === 1,
+        ...levelInfo,
       },
       stats: {
         totalSubmissions: stats.total_submissions,
@@ -1861,6 +1880,7 @@ app.get('/api/user/profile/:userId', async (req, res) => {
         acceptanceRate: stats.acceptance_rate,
         currentStreak: stats.current_streak,
         maxStreak: stats.max_streak,
+        xp: stats.xp || 0,
         rank: stats.rank
       },
       difficultyStats
@@ -3246,6 +3266,7 @@ app.post('/api/discussions', async (req, res) => {
     )
 
     postRateLimits.set(user.id, Date.now())
+    await addXp(db, user.id, 20)
     await bumpChatStat(db, user.id, { field: 'post_count', points: 10 })
     await notifyMentions(
       db, content.replace(/<[^>]*>/g, ' '), user.id, 'mention',
@@ -3430,6 +3451,7 @@ app.post('/api/discussions/:id/comments', async (req, res) => {
       postId
     )
     await bumpChatStat(db, user.id, { field: 'comment_count', points: 5 })
+    await addXp(db, user.id, 5)
 
     // 通知：评论了帖子作者 / 回复了评论作者 / @提及
     const postRow = await db.get(
@@ -4299,6 +4321,7 @@ app.post('/api/chat/channels/:key/messages', async (req, res) => {
        WHERE cm.id = ?`, result.lastID
     )
     await bumpChatStat(db, user.id, { field: 'message_count', points: 1 })
+    await addXp(db, user.id, 2)
     const message = formatChatMessage(rows[0], user.id)
     await notifyMentions(
       db, text, user.id, 'mention', 'channel', null,
@@ -4640,6 +4663,7 @@ app.post('/api/chat/rooms/:id/messages', async (req, res) => {
        WHERE cm.id = ?`, result.lastID
     )
     await bumpChatStat(db, user.id, { field: 'message_count', points: 1 })
+    await addXp(db, user.id, 2)
     const message = formatChatMessage(rows[0], user.id)
     await notifyMentions(
       db, text, user.id, 'mention', 'room', roomId,
@@ -4810,6 +4834,7 @@ app.post('/api/chat/messages/:id/replies', async (req, res) => {
       parent.channel_key, parent.room_id, user.id, text, new Date().toISOString(), messageId
     )
     await bumpChatStat(db, user.id, { field: 'reply_count', points: 2 })
+    await addXp(db, user.id, 2)
     await touchPresence(db, user.id)
     await notifyMentions(
       db, text, user.id, 'mention',
@@ -5208,10 +5233,14 @@ app.get('/api/users/:id/profile', async (req, res) => {
       `SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?`, viewer.id, targetId
     )) : false
 
+    const statsRow = await db.get(`SELECT xp FROM user_stats WHERE user_id = ?`, targetId)
+    const levelInfo = getLevelInfo(statsRow?.xp || 0)
+
     return res.json({
       user: {
         id: target.id, name: target.name, avatar: target.avatar,
         isAdmin: Boolean(target.is_admin), bio: target.bio || '', createdAt: target.created_at,
+        ...levelInfo,
       },
       relations,
       blocked: blockedByViewer,
@@ -5235,6 +5264,24 @@ app.put('/api/me/bio', async (req, res) => {
   } catch (error) {
     console.error('Failed to update bio:', error)
     return res.status(500).json({ message: '更新失败' })
+  }
+})
+
+// 完成新手引导
+app.post('/api/me/onboarded', async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  try {
+    await db.run(
+      `UPDATE users SET onboarded_at = ? WHERE id = ?`,
+      new Date().toISOString(),
+      user.id
+    )
+    return res.json({ success: true, onboarded: true })
+  } catch (error) {
+    console.error('Failed to mark onboarding done:', error)
+    return res.status(500).json({ message: '操作失败' })
   }
 })
 
@@ -5873,6 +5920,9 @@ app.post('/api/me/checkin', async (req, res) => {
       today,
       new Date().toISOString()
     )
+    if (!alreadyChecked) {
+      await addXp(db, user.id, 10)
+    }
     const status = await getCheckinStatus(db, user.id)
     return res.json({ success: true, alreadyChecked, ...status })
   } catch (error) {

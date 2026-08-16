@@ -5,6 +5,14 @@ export type UserRecord = {
   isAdmin?: boolean
   isBanned?: boolean
   createdAt?: string
+  onboarded?: boolean
+  xp?: number
+  level?: number
+  title?: string
+  icon?: string
+  nextTitle?: string | null
+  nextXp?: number | null
+  progress?: number
 }
 
 export type OjProblemSummary = {
@@ -63,6 +71,7 @@ export type ProfileStats = {
     acceptanceRate?: number
     currentStreak?: number
     maxStreak?: number
+    xp?: number
   }
   difficultyStats: Record<string, DifficultyStats>
 }
@@ -374,6 +383,13 @@ export type UserProfile = {
   isAdmin: boolean
   bio?: string
   createdAt: string
+  xp?: number
+  level?: number
+  title?: string
+  icon?: string
+  nextTitle?: string | null
+  nextXp?: number | null
+  progress?: number
 }
 
 export type UserProfileResponse = {

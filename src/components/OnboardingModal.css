@@ -1,0 +1,50 @@
+/* 新手引导弹窗 */
+.onboarding-modal {
+  width: min(440px, calc(100vw - 32px));
+  text-align: center;
+}
+
+.onboarding-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.onboarding-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--ss-color-border);
+  transition: background-color var(--ss-motion-normal), width var(--ss-motion-normal);
+}
+
+.onboarding-dots span.active {
+  width: 20px;
+  background: var(--ss-color-accent);
+}
+
+.onboarding-icon {
+  display: grid;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 14px;
+  place-items: center;
+  border: 1px solid var(--ss-color-border);
+  border-radius: 50%;
+  background: var(--ss-hover-layer);
+  font-size: 34px;
+}
+
+.onboarding-modal h2 {
+  margin: 0 0 8px;
+  color: var(--ss-color-text);
+  font-size: 22px;
+}
+
+.onboarding-modal p {
+  margin: 0 0 20px;
+  color: var(--ss-color-text-muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
