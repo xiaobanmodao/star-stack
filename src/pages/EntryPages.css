@@ -310,8 +310,20 @@
 
 .oj-workbench-jump-control {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 8px;
+}
+
+.oj-quick-jump-prefix {
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-hover-layer);
+  color: var(--ss-color-text-muted);
+  font-family: var(--ss-font-mono);
+  font-size: 13px;
 }
 
 .oj-workbench-jump-control .auth-input {

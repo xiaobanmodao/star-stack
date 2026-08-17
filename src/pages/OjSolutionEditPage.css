@@ -1,0 +1,38 @@
+/* 写题解完整页面 */
+.oj-solution-edit-page {
+  width: min(100%, 1080px);
+  margin: 0 auto;
+}
+
+.oj-solution-edit-card {
+  display: grid;
+  gap: 18px;
+  padding: 24px !important;
+  border-color: var(--ss-color-border) !important;
+  border-radius: var(--ss-radius-lg) !important;
+  background: var(--ss-bg-panel) !important;
+}
+
+.oj-solution-edit-field {
+  display: grid;
+  gap: 8px;
+}
+
+.oj-solution-edit-field > span {
+  color: var(--ss-color-text-muted);
+  font-size: 13px;
+}
+
+.oj-solution-edit-field input {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 14px;
+  font-size: 15px;
+}
+
+.oj-solution-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}

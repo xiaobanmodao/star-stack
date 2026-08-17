@@ -13217,3 +13217,46 @@ body,
 :root[data-theme='light'] .oj-badge.省选 {
   color: var(--ss-color-accent) !important;
 }
+
+/* ---------- 统一主按钮颜色（修复历史层覆盖导致按钮颜色不规范） ---------- */
+.ui-button.primary,
+button.primary {
+  background: var(--ss-color-accent) !important;
+  border-color: var(--ss-color-accent) !important;
+  color: var(--ss-color-bg) !important;
+}
+
+.ui-button.primary:hover:not(:disabled),
+button.primary:hover {
+  background: var(--ss-color-accent-strong) !important;
+  border-color: var(--ss-color-accent-strong) !important;
+  color: var(--ss-color-bg) !important;
+  filter: none !important;
+}
+
+:root[data-theme='light'] .ui-button.primary,
+:root[data-theme='light'] button.primary {
+  color: var(--ss-color-bg) !important;
+}
+
+:root[data-theme='light'] .ui-button.primary:hover:not(:disabled),
+:root[data-theme='light'] button.primary:hover {
+  color: var(--ss-color-bg) !important;
+}
+
+/* ---------- 全局输入/编辑区呼吸感 ---------- */
+.auth-input,
+.auth-input-like,
+textarea,
+input[type="text"],
+input[type="password"],
+input[type="search"] {
+  min-height: 44px !important;
+  padding: 10px 14px !important;
+  font-size: 14px !important;
+}
+
+.rich-editor-content,
+.rich-editor-preview {
+  min-height: 300px !important;
+}

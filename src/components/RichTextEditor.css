@@ -42,13 +42,13 @@
 
 .rich-editor-content,
 .rich-editor-preview {
-  min-height: 180px;
-  max-height: 480px;
+  min-height: 300px;
+  max-height: 720px;
   overflow-y: auto;
-  padding: 12px 14px;
+  padding: 16px 18px;
   color: var(--ss-color-text);
-  font-size: 14px;
-  line-height: 1.75;
+  font-size: 15px;
+  line-height: 1.8;
   outline: none;
 }
 

@@ -1,6 +1,6 @@
 /* 题解区页面 */
 .oj-solutions-page {
-  width: min(100%, 980px);
+  width: min(100%, 1080px);
   margin: 0 auto;
 }
 
@@ -9,45 +9,25 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 18px;
 }
 
 .oj-solutions-form-error {
-  margin-bottom: 12px;
-}
-
-.oj-solution-editor-card {
-  display: grid;
-  gap: 12px;
-  padding: 16px !important;
   margin-bottom: 14px;
-  border-color: var(--ss-color-border) !important;
-  border-radius: var(--ss-radius-lg) !important;
-  background: var(--ss-bg-panel) !important;
-}
-
-.oj-solution-editor-title input {
-  width: 100%;
-}
-
-.oj-solution-editor-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
 }
 
 .oj-solutions-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .oj-solution-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   width: 100%;
-  padding: 14px 16px;
+  padding: 16px 18px;
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
   background: var(--ss-bg-panel);
@@ -64,36 +44,39 @@
 
 .oj-solution-card-main {
   display: grid;
-  gap: 5px;
+  gap: 6px;
+  flex: 1;
   min-width: 0;
 }
 
 .oj-solution-card-main strong {
   color: var(--ss-color-text);
-  font-size: 15px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 16px;
+  line-height: 1.5;
+  overflow: visible;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .oj-solution-card-main span {
   color: var(--ss-color-text-muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .oj-solution-card-meta {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   flex-shrink: 0;
 }
 
 .oj-solution-card-meta em {
   color: var(--ss-color-text-muted);
-  font-size: 12px;
+  font-size: 13px;
   font-style: normal;
+  white-space: nowrap;
 }
 
 .oj-solutions-loading {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }

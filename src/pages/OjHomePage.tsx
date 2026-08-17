@@ -100,11 +100,11 @@ export default function OjHomePage() {
         <Panel className="oj-workbench-jump" elevated>
           <div className="oj-workbench-jump-head">
             <span>Quick Jump</span>
-            <strong>P</strong>
           </div>
           <label>
             输入题号
             <div className="oj-workbench-jump-control">
+              <span className="oj-quick-jump-prefix" aria-hidden="true">P</span>
               <input
                 className="auth-input small"
                 placeholder="例如 1001"
