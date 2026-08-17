@@ -63,7 +63,7 @@ body {
   width: var(--sidebar-width, 173px);
   /* padding 与折叠态保持一致：宽度展开 + 标签淡入即可，避免内部重排造成抖动 */
   padding: 16px 8px;
-  box-shadow: 12px 0 30px color-mix(in srgb, var(--ss-bg-code) 25%, transparent);
+  box-shadow: 12px 0 30px var(--ss-bg-code-25);
 }
 
 
@@ -228,7 +228,7 @@ body {
   height: 8px;
   border-radius: 50%;
   background: var(--ss-color-accent-strong);
-  box-shadow: 0 0 10px color-mix(in srgb, var(--ss-color-accent) 70%, transparent);
+  box-shadow: 0 0 10px var(--ss-accent-70);
 }
 
 .content {
@@ -322,7 +322,7 @@ body {
   padding: 0 12px;
   border-radius: 12px;
   border: 1px solid var(--ss-accent-border-soft);
-  background: color-mix(in srgb, var(--ss-bg-code) 78%, transparent);
+  background: var(--ss-bg-code-78);
   color: var(--text);
   box-shadow: inset 0 1px 0 var(--ss-hover-layer);
   white-space: nowrap;
@@ -332,7 +332,7 @@ button.lang-switch-trigger:hover {
   transform: none;
   filter: none;
   border-color: var(--ss-accent-border);
-  background: color-mix(in srgb, var(--ss-bg-code) 92%, transparent);
+  background: var(--ss-bg-code-92);
 }
 
 .lang-switch-flag {
@@ -371,8 +371,8 @@ button.lang-switch-trigger:hover {
   padding: 6px;
   border-radius: 12px;
   border: 1px solid var(--ss-accent-border-soft);
-  background: color-mix(in srgb, var(--ss-bg-code) 96%, transparent);
-  box-shadow: 0 18px 36px color-mix(in srgb, var(--ss-bg-code) 45%, transparent);
+  background: var(--ss-bg-code-96);
+  box-shadow: 0 18px 36px var(--ss-bg-code-45);
   z-index: 30;
 }
 
@@ -417,8 +417,8 @@ button.lang-switch-item:hover {
 .logout-notice {
   padding: 6px 12px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--ss-color-text) 70%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ss-color-success) 45%, transparent);
+  background: var(--ss-text-70);
+  border: 1px solid var(--ss-success-45);
   color: var(--ss-color-success);
   font-size: 12px;
   letter-spacing: 0.1em;
@@ -431,7 +431,7 @@ button.lang-switch-item:hover {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: color-mix(in srgb, var(--ss-bg-code) 78%, transparent);
+  background: var(--ss-bg-code-78);
   backdrop-filter: blur(6px);
 }
 
@@ -442,9 +442,9 @@ button.lang-switch-item:hover {
   padding: 12px 16px;
   border-radius: 14px;
   border: 1px solid var(--ss-accent-border-soft);
-  background: color-mix(in srgb, var(--ss-bg-code) 92%, transparent);
+  background: var(--ss-bg-code-92);
   color: var(--text);
-  box-shadow: 0 18px 40px color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
+  box-shadow: 0 18px 40px var(--ss-bg-code-30);
   font-size: 13px;
   letter-spacing: 0.04em;
 }
@@ -481,7 +481,7 @@ button.lang-switch-item:hover {
   border-radius: 22px;
   border: 1px solid var(--border);
   background: var(--panel);
-  box-shadow: 0 20px 60px color-mix(in srgb, var(--ss-bg-code) 40%, transparent);
+  box-shadow: 0 20px 60px var(--ss-bg-code-40);
 }
 
 .hero-left h1 {
@@ -764,9 +764,9 @@ button.small {
   min-width: 190px;
   padding: 10px;
   border-radius: 14px;
-  background: color-mix(in srgb, var(--ss-bg-code) 96%, transparent);
+  background: var(--ss-bg-code-96);
   border: 1px solid var(--ss-accent-border-soft);
-  box-shadow: 0 18px 40px color-mix(in srgb, var(--ss-bg-code) 60%, transparent);
+  box-shadow: 0 18px 40px var(--ss-bg-code-60);
   opacity: 0;
   transform: translateY(-6px);
   pointer-events: none;
@@ -867,7 +867,7 @@ button.small {
 .auth-backdrop {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, var(--ss-bg-code) 68%, transparent);
+  background: var(--ss-bg-code-68);
   display: grid;
   place-items: center;
   z-index: 20;
@@ -884,13 +884,13 @@ button.small {
   border-radius: 20px;
   border: 1px solid var(--border);
   padding: 22px;
-  box-shadow: 0 30px 80px color-mix(in srgb, var(--ss-bg-code) 50%, transparent);
+  box-shadow: 0 30px 80px var(--ss-bg-code-50);
 }
 
 .confirm-backdrop {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, var(--ss-bg-code) 70%, transparent);
+  background: var(--ss-bg-code-70);
   display: grid;
   place-items: center;
   z-index: 2500; /* 高于浮窗(2000)/通知面板(1500)，低于全局搜索(3000) */
@@ -903,7 +903,7 @@ button.small {
   border-radius: 18px;
   border: 1px solid var(--border);
   padding: 20px;
-  box-shadow: 0 24px 60px color-mix(in srgb, var(--ss-bg-code) 55%, transparent);
+  box-shadow: 0 24px 60px var(--ss-bg-code-55);
   display: grid;
   gap: 10px;
 }
@@ -1010,8 +1010,8 @@ button.small {
 
 .auth-error {
   color: var(--ss-color-danger);
-  background: color-mix(in srgb, var(--ss-color-danger) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ss-color-danger) 30%, transparent);
+  background: var(--ss-danger-12);
+  border: 1px solid var(--ss-danger-30);
   padding: 8px 10px;
   border-radius: 10px;
   font-size: 12px;
@@ -1019,8 +1019,8 @@ button.small {
 
 .auth-success {
   color: var(--ss-color-success);
-  background: color-mix(in srgb, var(--ss-color-success) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ss-color-success) 30%, transparent);
+  background: var(--ss-success-12);
+  border: 1px solid var(--ss-success-30);
   padding: 8px 10px;
   border-radius: 10px;
   font-size: 12px;
@@ -1050,7 +1050,7 @@ button.small {
   padding: 24px;
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
+  background: var(--ss-bg-code-80);
 }
 
 .account-avatar {
@@ -1084,7 +1084,7 @@ button.small {
   content: '';
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, var(--ss-bg-code) 50%, transparent);
+  background: var(--ss-bg-code-50);
   display: grid;
   place-items: center;
 }
@@ -1161,7 +1161,7 @@ button.small {
   gap: 6px;
   align-items: stretch;
   padding: 10px 12px;
-  background: color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
+  background: var(--ss-bg-code-20);
   border: 1px solid var(--border);
   border-radius: 8px;
   min-width: 280px;
@@ -1203,11 +1203,11 @@ button.small {
 .oj-weekly-chart {
   flex: 1;
   padding: 16px;
-  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
+  background: var(--ss-bg-code-30);
   border: 1px solid var(--ss-accent-bg-strong);
   border-radius: 12px;
   min-width: 550px;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
+  box-shadow: 0 2px 8px var(--ss-bg-code-20);
   position: relative;
 }
 
@@ -1248,7 +1248,7 @@ button.small {
 /* 图表 Tooltip - 现代化设计 */
 .chart-tooltip {
   position: fixed;
-  background: color-mix(in srgb, var(--ss-bg-code) 98%, transparent);
+  background: var(--ss-bg-code-98);
   border: 1px solid var(--ss-accent-border);
   border-radius: 8px;
   padding: 10px 12px;
@@ -1256,7 +1256,7 @@ button.small {
   transform: translate(-50%, calc(-100% - 10px));
   z-index: 10000;
   min-width: 130px;
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--ss-bg-code) 70%, transparent),
+  box-shadow: 0 8px 24px var(--ss-bg-code-70),
               0 0 0 1px var(--ss-hover-layer) inset;
   backdrop-filter: blur(12px);
   transition: left 0.15s ease-out, top 0.15s ease-out, opacity 0.2s ease;
@@ -1285,7 +1285,7 @@ button.small {
   height: 0;
   border-left: 6px solid transparent;
   border-right: 6px solid transparent;
-  border-top: 6px solid color-mix(in srgb, var(--ss-bg-code) 98%, transparent);
+  border-top: 6px solid var(--ss-bg-code-98);
 }
 
 .chart-tooltip-date {
@@ -1320,8 +1320,8 @@ button.small {
 }
 
 .chart-tooltip-dot.accepted {
-  background: color-mix(in srgb, var(--ss-color-success) 100%, transparent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--ss-color-success) 80%, transparent);
+  background: var(--ss-success-100);
+  box-shadow: 0 0 8px var(--ss-success-80);
 }
 
 .chart-tooltip-label {
@@ -1379,7 +1379,7 @@ button.small {
   padding: 8px 16px;
   border-radius: 8px;
   border: 1px solid var(--ss-accent-border);
-  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
+  background: var(--ss-bg-code-80);
   color: var(--text);
   font-size: 14px;
   font-weight: 500;
@@ -1409,7 +1409,7 @@ button.small {
   padding: 0 8px;
   border-radius: 8px;
   border: 1px solid var(--ss-accent-border);
-  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
+  background: var(--ss-bg-code-80);
   color: var(--text);
   font-size: 14px;
   font-weight: 500;
@@ -1455,7 +1455,7 @@ button.small {
   padding: 0 8px;
   border-radius: 8px;
   border: 1px solid var(--ss-accent-border);
-  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
+  background: var(--ss-bg-code-80);
   color: var(--text);
   font-size: 14px;
   text-align: center;
@@ -1465,7 +1465,7 @@ button.small {
 .pagination-input:focus {
   outline: none;
   border-color: var(--ss-accent-border-strong);
-  background: color-mix(in srgb, var(--ss-bg-code) 95%, transparent);
+  background: var(--ss-bg-code-95);
 }
 
 .pagination-go {
@@ -1551,44 +1551,44 @@ button.small {
 
 .oj-badge.入门 {
   color: var(--ss-color-danger);
-  background: color-mix(in srgb, var(--ss-color-danger) 15%, transparent);
-  border-color: color-mix(in srgb, var(--ss-color-danger) 40%, transparent);
+  background: var(--ss-danger-15);
+  border-color: var(--ss-danger-40);
 }
 
 .oj-badge.普及- {
   color: var(--ss-color-warning);
-  background: color-mix(in srgb, var(--ss-color-danger) 15%, transparent);
-  border-color: color-mix(in srgb, var(--ss-color-danger) 40%, transparent);
+  background: var(--ss-danger-15);
+  border-color: var(--ss-danger-40);
 }
 
 .oj-badge.普及 {
   color: var(--ss-color-warning);
-  background: color-mix(in srgb, var(--ss-color-warning) 15%, transparent);
-  border-color: color-mix(in srgb, var(--ss-color-warning) 40%, transparent);
+  background: var(--ss-warning-15);
+  border-color: var(--ss-warning-40);
 }
 
 .oj-badge.提高- {
   color: var(--ss-color-warning);
-  background: color-mix(in srgb, var(--ss-color-warning) 15%, transparent);
-  border-color: color-mix(in srgb, var(--ss-color-warning) 40%, transparent);
+  background: var(--ss-warning-15);
+  border-color: var(--ss-warning-40);
 }
 
 .oj-badge.提高 {
   color: var(--ss-color-success);
-  background: color-mix(in srgb, var(--ss-color-success) 15%, transparent);
-  border-color: color-mix(in srgb, var(--ss-color-success) 40%, transparent);
+  background: var(--ss-success-15);
+  border-color: var(--ss-success-40);
 }
 
 .oj-badge.省选 {
   color: var(--ss-color-accent);
-  background: color-mix(in srgb, var(--ss-color-accent) 15%, transparent);
-  border-color: color-mix(in srgb, var(--ss-color-accent) 40%, transparent);
+  background: var(--ss-accent-15);
+  border-color: var(--ss-accent-40);
 }
 
 .oj-badge.noi {
   color: var(--ss-color-text-muted);
-  background: color-mix(in srgb, var(--ss-color-text) 15%, transparent);
-  border-color: color-mix(in srgb, var(--ss-color-text) 40%, transparent);
+  background: var(--ss-text-15);
+  border-color: var(--ss-text-40);
 }
 
 .oj-detail {
@@ -1867,7 +1867,7 @@ button.small {
   margin: 14px 0;
   padding: 14px 16px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--ss-bg-code) 94%, transparent);
+  background: var(--ss-bg-code-94);
   border: 1px solid var(--ss-color-border);
   overflow: auto;
 }
@@ -1955,7 +1955,7 @@ button.small {
   margin: 0;
   padding: 12px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--ss-bg-code) 90%, transparent);
+  background: var(--ss-bg-code-90);
   border: 1px solid var(--border);
   color: var(--ss-color-text);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -2073,7 +2073,7 @@ button.small {
   height: 220px;
   border-radius: 16px;
   border: 1px dashed var(--ss-hover-layer);
-  background: color-mix(in srgb, var(--ss-bg-code) 60%, transparent);
+  background: var(--ss-bg-code-60);
   overflow: hidden;
   display: grid;
   place-items: center;
@@ -2155,7 +2155,7 @@ button.small {
   height: 16px;
   background: var(--ss-color-warning);
   border-radius: 0 0 8px 8px;
-  box-shadow: 0 0 12px color-mix(in srgb, var(--ss-color-danger) 80%, transparent);
+  box-shadow: 0 0 12px var(--ss-danger-80);
   opacity: 0;
   animation: rocket-flame 0.2s infinite;
 }
@@ -2165,7 +2165,7 @@ button.small {
   bottom: 0;
   width: 4px;
   height: 140px;
-  background: color-mix(in srgb, var(--ss-color-danger) 25%, transparent);
+  background: var(--ss-danger-25);
   opacity: 0;
 }
 
@@ -2210,7 +2210,7 @@ button.small {
   border-radius: 50%;
   background: var(--ss-color-warning);
   opacity: 0;
-  filter: drop-shadow(0 0 20px color-mix(in srgb, var(--ss-color-accent) 80%, transparent));
+  filter: drop-shadow(0 0 20px var(--ss-accent-80));
   position: absolute;
 }
 
@@ -2229,14 +2229,14 @@ button.small {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--ss-color-accent) 60%, transparent);
+  border: 2px solid var(--ss-accent-60);
   opacity: 0;
 }
 
 .firework-ring.ring-b {
   width: 20px;
   height: 20px;
-  border-color: color-mix(in srgb, var(--ss-color-accent) 70%, transparent);
+  border-color: var(--ss-accent-70);
 }
 
 .fireworks span {
@@ -2289,7 +2289,7 @@ button.small {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--ss-color-text) 40%, transparent);
+  background: var(--ss-text-40);
 }
 
 .crash-smoke span:nth-child(1) {
@@ -2322,7 +2322,7 @@ button.small {
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  text-shadow: 0 0 20px currentColor, 0 0 40px currentColor, 0 4px 8px color-mix(in srgb, var(--ss-bg-code) 50%, transparent);
+  text-shadow: 0 0 20px currentColor, 0 0 40px currentColor, 0 4px 8px var(--ss-bg-code-50);
   animation: result-text-appear 0.6s ease-out forwards;
   opacity: 0;
   transform: scale(0.5);
@@ -2375,18 +2375,18 @@ button.small {
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--ss-bg-code) 70%, transparent);
+  background: var(--ss-bg-code-70);
   font-size: 12px;
   color: var(--muted);
 }
 
 .submit-result.ok {
-  border-color: color-mix(in srgb, var(--ss-color-success) 50%, transparent);
+  border-color: var(--ss-success-50);
   color: var(--ss-color-success);
 }
 
 .submit-result.bad {
-  border-color: color-mix(in srgb, var(--ss-color-danger) 50%, transparent);
+  border-color: var(--ss-danger-50);
   color: var(--ss-color-danger);
 }
 
@@ -2410,7 +2410,7 @@ button.small {
   padding: 16px;
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--ss-bg-code) 75%, transparent);
+  background: var(--ss-bg-code-75);
   color: var(--text);
 }
 
@@ -2456,7 +2456,7 @@ button.small {
   gap: 16px;
   padding: 20px;
   border-radius: 20px;
-  border: 1px solid color-mix(in srgb, var(--ss-color-success) 24%, transparent);
+  border: 1px solid var(--ss-success-24);
   background: none;
 }
 
@@ -2495,7 +2495,7 @@ button.small {
   gap: 8px;
   padding: 14px 16px;
   border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--ss-color-success) 14%, transparent);
+  border: 1px solid var(--ss-success-14);
   background: var(--ss-hover-layer);
 }
 
@@ -2539,7 +2539,7 @@ button.small {
   align-items: center;
   padding: 14px 16px;
   border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--ss-color-success) 14%, transparent);
+  border: 1px solid var(--ss-success-14);
   background: var(--ss-hover-layer);
 }
 
@@ -2549,7 +2549,7 @@ button.small {
   display: grid;
   place-items: center;
   border-radius: 14px;
-  background: color-mix(in srgb, var(--ss-color-success) 12%, transparent);
+  background: var(--ss-success-12);
   font-size: 22px;
 }
 
@@ -2695,7 +2695,7 @@ button.small {
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
+  background: var(--ss-bg-code-80);
   font-size: 12px;
   color: var(--muted);
 }
@@ -2731,7 +2731,7 @@ button.small {
   padding: 12px 14px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--ss-bg-code) 65%, transparent);
+  background: var(--ss-bg-code-65);
   display: grid;
   gap: 12px;
 }
@@ -2745,7 +2745,7 @@ button.small {
   margin: 0;
   padding: 12px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--ss-bg-code) 90%, transparent);
+  background: var(--ss-bg-code-90);
   border: 1px solid var(--border);
   color: var(--ss-color-text);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -2767,7 +2767,7 @@ button.small {
 .ide-backdrop {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, var(--ss-bg-code) 75%, transparent);
+  background: var(--ss-bg-code-75);
   display: grid;
   place-items: center;
   z-index: 30;
@@ -2861,7 +2861,7 @@ button.small {
 }
 
 .ide-btn-primary:hover {
-  background: color-mix(in srgb, var(--ss-color-accent) 95%, transparent);
+  background: var(--ss-accent-95);
   /* transform removed: 克制化 */
   box-shadow: 0 4px 12px var(--ss-accent-border);
 }
@@ -3074,8 +3074,8 @@ button.small {
 
 .ide-error {
   padding: 10px 16px;
-  background: color-mix(in srgb, var(--ss-color-danger) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ss-color-danger) 40%, transparent);
+  background: var(--ss-danger-15);
+  border: 1px solid var(--ss-danger-40);
   border-radius: 6px;
   color: var(--ss-color-danger);
   font-size: 13px;
@@ -3180,7 +3180,7 @@ button.small {
   min-height: 90px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--ss-bg-code) 90%, transparent);
+  background: var(--ss-bg-code-90);
   color: var(--ss-color-text);
   padding: 10px 12px;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -3200,7 +3200,7 @@ button.small {
 .testcase-item {
   border-radius: 14px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--ss-bg-code) 85%, transparent);
+  background: var(--ss-bg-code-85);
   padding: 12px 14px;
   display: grid;
   gap: 10px;
@@ -3223,7 +3223,7 @@ button.small {
   margin: 0;
   padding: 12px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--ss-bg-code) 90%, transparent);
+  background: var(--ss-bg-code-90);
   border: 1px solid var(--border);
   color: var(--ss-color-text);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -3318,7 +3318,7 @@ button.small {
 }
 
 button.danger {
-  border-color: color-mix(in srgb, var(--ss-color-danger) 60%, transparent);
+  border-color: var(--ss-danger-60);
   color: var(--ss-color-danger);
 }
 
@@ -4472,8 +4472,8 @@ button.primary:hover {
 
 .form-error {
   padding: 12px 16px;
-  background: color-mix(in srgb, var(--ss-color-danger) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ss-color-danger) 30%, transparent);
+  background: var(--ss-danger-10);
+  border: 1px solid var(--ss-danger-30);
   border-radius: 10px;
   color: var(--ss-color-danger);
   font-size: 14px;
@@ -4481,8 +4481,8 @@ button.primary:hover {
 
 .form-success {
   padding: 12px 16px;
-  background: color-mix(in srgb, var(--ss-color-success) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ss-color-success) 30%, transparent);
+  background: var(--ss-success-10);
+  border: 1px solid var(--ss-success-30);
   border-radius: 10px;
   color: var(--ss-color-success);
   font-size: 14px;
@@ -4574,9 +4574,9 @@ button.primary:hover {
 }
 
 .file-badge.out {
-  background: color-mix(in srgb, var(--ss-color-accent) 15%, transparent);
+  background: var(--ss-accent-15);
   color: var(--ss-color-accent);
-  border: 1px solid color-mix(in srgb, var(--ss-color-accent) 30%, transparent);
+  border: 1px solid var(--ss-accent-30);
 }
 
 .file-name {
@@ -4603,8 +4603,8 @@ button.danger {
 }
 
 button.danger:hover {
-  background: color-mix(in srgb, var(--ss-color-danger) 10%, transparent);
-  border-color: color-mix(in srgb, var(--ss-color-danger) 30%, transparent);
+  background: var(--ss-danger-10);
+  border-color: var(--ss-danger-30);
 }
 
 .my-problem-card {
@@ -4681,7 +4681,7 @@ button.danger:hover {
 .profile-card {
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
+  background: var(--ss-bg-code-80);
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -4733,7 +4733,7 @@ button.danger:hover {
 .heatmap-container {
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
+  background: var(--ss-bg-code-80);
   padding: 24px;
 }
 
@@ -4809,7 +4809,7 @@ button.danger:hover {
 .difficulty-progress-container {
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
+  background: var(--ss-bg-code-80);
   padding: 24px;
 }
 
@@ -4952,7 +4952,7 @@ button.danger:hover {
 .achievements-container {
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
+  background: var(--ss-bg-code-80);
   padding: 24px;
 }
 
@@ -5086,7 +5086,7 @@ button.danger:hover {
 
 .leaderboard-table td {
   padding: 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--ss-bg-code) 50%, transparent);
+  border-bottom: 1px solid var(--ss-bg-code-50);
 }
 
 .leaderboard-row {
@@ -5117,12 +5117,12 @@ button.danger:hover {
 
 .rank-change.up {
   color: var(--ss-color-success);
-  background: color-mix(in srgb, var(--ss-color-success) 15%, transparent);
+  background: var(--ss-success-15);
 }
 
 .rank-change.down {
   color: var(--ss-color-danger);
-  background: color-mix(in srgb, var(--ss-color-danger) 15%, transparent);
+  background: var(--ss-danger-15);
 }
 
 .rank-change.stable {
@@ -5132,7 +5132,7 @@ button.danger:hover {
 
 .rank-change.new {
   color: var(--ss-color-warning);
-  background: color-mix(in srgb, var(--ss-color-warning) 15%, transparent);
+  background: var(--ss-warning-15);
 }
 
 /* Leaderboard period label */
@@ -5174,27 +5174,27 @@ button.danger:hover {
 
 /* Leaderboard top 3 highlight */
 .leaderboard-row.top-1 {
-  background: color-mix(in srgb, var(--ss-color-warning) 6%, transparent);
+  background: var(--ss-warning-6);
 }
 
 .leaderboard-row.top-1:hover {
-  background: color-mix(in srgb, var(--ss-color-warning) 10%, transparent);
+  background: var(--ss-warning-10);
 }
 
 .leaderboard-row.top-2 {
-  background: color-mix(in srgb, var(--ss-color-text) 5%, transparent);
+  background: var(--ss-text-5);
 }
 
 .leaderboard-row.top-2:hover {
-  background: color-mix(in srgb, var(--ss-color-text) 8%, transparent);
+  background: var(--ss-text-8);
 }
 
 .leaderboard-row.top-3 {
-  background: color-mix(in srgb, var(--ss-color-danger) 5%, transparent);
+  background: var(--ss-danger-5);
 }
 
 .leaderboard-row.top-3:hover {
-  background: color-mix(in srgb, var(--ss-color-danger) 8%, transparent);
+  background: var(--ss-danger-8);
 }
 
 /* Leaderboard user cell clickable */
@@ -5416,32 +5416,32 @@ button.danger:hover {
 }
 
 .problem-plan-item-meta .difficulty-tag.入门 {
-  background: color-mix(in srgb, var(--ss-color-success) 20%, transparent);
+  background: var(--ss-success-20);
   color: var(--ss-color-success);
 }
 
 .problem-plan-item-meta .difficulty-tag.普及- {
-  background: color-mix(in srgb, var(--ss-color-success) 20%, transparent);
+  background: var(--ss-success-20);
   color: var(--ss-color-success);
 }
 
 .problem-plan-item-meta .difficulty-tag.普及 {
-  background: color-mix(in srgb, var(--ss-color-warning) 20%, transparent);
+  background: var(--ss-warning-20);
   color: var(--ss-color-warning);
 }
 
 .problem-plan-item-meta .difficulty-tag.普及\+ {
-  background: color-mix(in srgb, var(--ss-color-danger) 20%, transparent);
+  background: var(--ss-danger-20);
   color: var(--ss-color-warning);
 }
 
 .problem-plan-item-meta .difficulty-tag.提高 {
-  background: color-mix(in srgb, var(--ss-color-danger) 20%, transparent);
+  background: var(--ss-danger-20);
   color: var(--ss-color-danger);
 }
 
 .problem-plan-item-meta .difficulty-tag.提高\+ {
-  background: color-mix(in srgb, var(--ss-color-danger) 20%, transparent);
+  background: var(--ss-danger-20);
   color: var(--ss-color-danger);
 }
 
@@ -5462,7 +5462,7 @@ button.danger:hover {
 }
 
 .problem-plan-remove:hover {
-  background: color-mix(in srgb, var(--ss-color-danger) 20%, transparent);
+  background: var(--ss-danger-20);
   color: var(--ss-color-danger);
 }
 
@@ -5531,7 +5531,7 @@ button.danger:hover {
   margin: -32px;
   padding: 32px 40px;
   width: calc(100% + 64px);
-  background: color-mix(in srgb, var(--ss-bg-code) 40%, transparent);
+  background: var(--ss-bg-code-40);
   border-radius: 0;
 }
 
@@ -5559,8 +5559,8 @@ button.danger:hover {
 }
 
 .discussion-error {
-  background: color-mix(in srgb, var(--ss-color-danger) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ss-color-danger) 30%, transparent);
+  background: var(--ss-danger-12);
+  border: 1px solid var(--ss-danger-30);
   color: var(--ss-color-danger);
   padding: 10px 16px;
   border-radius: 10px;
@@ -5651,7 +5651,7 @@ button.danger:hover {
 .discussion-card:hover {
   background: var(--ss-accent-bg);
   border-color: var(--ss-accent-border);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--ss-bg-code) 12%, transparent);
+  box-shadow: 0 1px 3px var(--ss-bg-code-12);
 }
 
 .discussion-card-main {
@@ -5835,7 +5835,7 @@ button.danger:hover {
 }
 
 .post-content pre {
-  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
+  background: var(--ss-bg-code-30);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px 16px;
@@ -5880,13 +5880,13 @@ button.danger:hover {
 
 .like-btn:hover {
   color: var(--ss-color-danger);
-  border-color: color-mix(in srgb, var(--ss-color-danger) 30%, transparent);
+  border-color: var(--ss-danger-30);
 }
 
 .like-btn.liked {
   color: var(--ss-color-danger);
-  border-color: color-mix(in srgb, var(--ss-color-danger) 40%, transparent);
-  background: color-mix(in srgb, var(--ss-color-danger) 8%, transparent);
+  border-color: var(--ss-danger-40);
+  background: var(--ss-danger-8);
 }
 
 .like-btn svg {
@@ -6042,7 +6042,7 @@ button.danger:hover {
 
 .delete-btn:hover {
   color: var(--ss-color-danger);
-  background: color-mix(in srgb, var(--ss-color-danger) 8%, transparent);
+  background: var(--ss-danger-8);
 }
 
 .comment-replies {
@@ -6166,7 +6166,7 @@ button.danger:hover {
   margin-top: 4px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--ss-bg-code) 98%, transparent);
+  background: var(--ss-bg-code-98);
   backdrop-filter: blur(10px);
   z-index: 100;
   max-height: 200px;
@@ -6276,7 +6276,7 @@ button.danger:hover {
 }
 
 .rich-editor-content pre {
-  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
+  background: var(--ss-bg-code-30);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px 16px;
@@ -6299,7 +6299,7 @@ button.danger:hover {
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
+  background: var(--ss-bg-code-30);
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
@@ -6309,7 +6309,7 @@ button.danger:hover {
 
 .tag-selector-input:hover {
   border-color: var(--ss-accent-border);
-  background: color-mix(in srgb, var(--ss-bg-code) 40%, transparent);
+  background: var(--ss-bg-code-40);
 }
 
 .selected-tags {
@@ -6383,7 +6383,7 @@ button.danger:hover {
 .tag-selector-modal {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, var(--ss-bg-code) 70%, transparent);
+  background: var(--ss-bg-code-70);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -6402,7 +6402,7 @@ button.danger:hover {
   max-height: min(80vh, calc(100vh - 96px));
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 60px color-mix(in srgb, var(--ss-bg-code) 50%, transparent);
+  box-shadow: 0 20px 60px var(--ss-bg-code-50);
 }
 
 .tag-selector-header {
@@ -6466,7 +6466,7 @@ button.danger:hover {
 .tag-selector-item {
   position: relative;
   padding: 10px 14px;
-  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
+  background: var(--ss-bg-code-30);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -6593,7 +6593,7 @@ button.danger:hover {
 }
 
 .oj-recommendation-card {
-  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
+  background: var(--ss-bg-code-30);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
@@ -6672,7 +6672,7 @@ button.danger:hover {
 }
 
 .oj-quick-action-card {
-  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
+  background: var(--ss-bg-code-30);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 16px;
@@ -6745,14 +6745,14 @@ button.danger:hover {
   align-items: center;
   gap: 12px;
   padding: 10px;
-  background: color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
+  background: var(--ss-bg-code-20);
   border: 1px solid var(--border);
   border-radius: 8px;
   transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .oj-recent-ac-item:hover {
-  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
+  background: var(--ss-bg-code-30);
   border-color: var(--ss-accent-border);
 }
 
@@ -6867,7 +6867,7 @@ button.danger:hover {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
+  background: var(--ss-bg-code-20);
   border: 1px solid var(--border);
   border-radius: 6px;
 }
@@ -6895,7 +6895,7 @@ button.danger:hover {
   align-items: center;
   justify-content: space-between;
   padding: 6px 10px;
-  background: color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
+  background: var(--ss-bg-code-20);
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 12px;
@@ -6922,7 +6922,7 @@ button.danger:hover {
   align-items: center;
   gap: 12px;
   padding: 12px;
-  background: color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
+  background: var(--ss-bg-code-20);
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
@@ -7101,7 +7101,7 @@ button.danger:hover {
   background: var(--ss-color-danger);
   border-radius: 50%;
   border: 2px solid var(--ss-bg-panel-solid);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--ss-color-danger) 50%, transparent);
+  box-shadow: 0 0 6px var(--ss-danger-50);
   animation: dot-pulse 2s ease-in-out infinite;
 }
 
@@ -7116,7 +7116,7 @@ button.danger:hover {
   margin: -32px;
   padding: 32px 40px;
   width: calc(100% + 64px);
-  background: color-mix(in srgb, var(--ss-bg-code) 40%, transparent);
+  background: var(--ss-bg-code-40);
 }
 
 .message-list-header {
@@ -7154,7 +7154,7 @@ button.danger:hover {
 .conversation-card:hover {
   background: var(--ss-accent-bg);
   border-color: var(--ss-accent-border);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--ss-bg-code) 12%, transparent);
+  box-shadow: 0 1px 3px var(--ss-bg-code-12);
   /* transform removed: 克制化 */
 }
 
@@ -7233,7 +7233,7 @@ button.danger:hover {
   height: calc(100vh - var(--topbar-offset));
   margin: -32px;
   width: calc(100% + 64px);
-  background: color-mix(in srgb, var(--ss-bg-code) 40%, transparent);
+  background: var(--ss-bg-code-40);
 }
 
 .chat-header {
@@ -7430,7 +7430,7 @@ button.danger:hover {
 }
 
 .message-text code {
-  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
+  background: var(--ss-bg-code-30);
   padding: 2px 6px;
   border-radius: 4px;
   font-family: 'Consolas', 'Monaco', monospace;
@@ -7438,7 +7438,7 @@ button.danger:hover {
 }
 
 .message-text pre {
-  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
+  background: var(--ss-bg-code-30);
   padding: 12px;
   border-radius: 6px;
   overflow-x: auto;
@@ -7742,21 +7742,21 @@ button.danger:hover {
 }
 
 .starbot-badge-green {
-  background: color-mix(in srgb, var(--ss-color-success) 10%, transparent);
+  background: var(--ss-success-10);
   color: var(--ss-color-success);
-  border-color: color-mix(in srgb, var(--ss-color-success) 30%, transparent);
+  border-color: var(--ss-success-30);
 }
 
 .starbot-badge-blue {
-  background: color-mix(in srgb, var(--ss-color-accent) 10%, transparent);
+  background: var(--ss-accent-10);
   color: var(--ss-color-accent);
-  border-color: color-mix(in srgb, var(--ss-color-accent) 30%, transparent);
+  border-color: var(--ss-accent-30);
 }
 
 .starbot-badge-purple {
-  background: color-mix(in srgb, var(--ss-color-accent) 10%, transparent);
+  background: var(--ss-accent-10);
   color: var(--ss-color-accent);
-  border-color: color-mix(in srgb, var(--ss-color-accent) 30%, transparent);
+  border-color: var(--ss-accent-30);
 }
 
 .starbot-desc {
@@ -7806,7 +7806,7 @@ button.danger:hover {
   padding: 18px 20px;
   border-radius: 16px;
   border: 1px solid var(--ss-color-border);
-  background: color-mix(in srgb, var(--ss-bg-code) 72%, transparent);
+  background: var(--ss-bg-code-72);
   box-shadow: inset 0 1px 0 var(--ss-hover-layer);
 }
 
@@ -7963,7 +7963,7 @@ button.starbot-tutorial-stepchip:focus-visible {
 }
 
 .starbot-skill-card:hover {
-  border-color: color-mix(in srgb, var(--ss-color-accent) 35%, transparent);
+  border-color: var(--ss-accent-35);
 }
 
 .starbot-skill-icon {
@@ -7973,7 +7973,7 @@ button.starbot-tutorial-stepchip:focus-visible {
 .starbot-skill-name {
   font-size: 12px;
   color: var(--ss-color-accent);
-  background: color-mix(in srgb, var(--ss-color-accent) 10%, transparent);
+  background: var(--ss-accent-10);
   padding: 2px 7px;
   border-radius: 6px;
   width: fit-content;
@@ -8025,7 +8025,7 @@ button.starbot-tutorial-stepchip:focus-visible {
 
 /* Architecture */
 .starbot-arch-card {
-  background: color-mix(in srgb, var(--ss-bg-code) 85%, transparent);
+  background: var(--ss-bg-code-85);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 24px 28px;
@@ -8121,7 +8121,7 @@ button.starbot-tutorial-stepchip:focus-visible {
 }
 
 .starbot-install-card {
-  background: color-mix(in srgb, var(--ss-bg-code) 85%, transparent);
+  background: var(--ss-bg-code-85);
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
@@ -8130,7 +8130,7 @@ button.starbot-tutorial-stepchip:focus-visible {
 .starbot-page-tutorial .starbot-install-card {
   border-radius: 10px;
   border-color: var(--ss-hover-layer);
-  background: color-mix(in srgb, var(--ss-bg-code) 82%, transparent);
+  background: var(--ss-bg-code-82);
 }
 
 .starbot-install-label {
@@ -8237,10 +8237,10 @@ button.starbot-tutorial-stepchip:focus-visible {
   font-family: 'Consolas', 'Fira Code', monospace;
   font-size: 12px;
   color: var(--ss-color-success);
-  background: color-mix(in srgb, var(--ss-color-success) 8%, transparent);
+  background: var(--ss-success-8);
   padding: 2px 8px;
   border-radius: 6px;
-  border: 1px solid color-mix(in srgb, var(--ss-color-success) 20%, transparent);
+  border: 1px solid var(--ss-success-20);
   width: fit-content;
 }
 
@@ -8405,9 +8405,9 @@ body {
 .topbar {
   padding: 14px 24px;
   border-bottom: 1px solid var(--ss-color-border);
-  background: color-mix(in srgb, var(--ss-bg-code) 72%, transparent);
+  background: var(--ss-bg-code-72);
   backdrop-filter: blur(28px);
-  box-shadow: 0 10px 40px color-mix(in srgb, var(--ss-bg-code) 18%, transparent);
+  box-shadow: 0 10px 40px var(--ss-bg-code-18);
 }
 
 .topbar-left {
@@ -8425,7 +8425,7 @@ body {
   border: none;
   border-radius: 0;
   background: transparent;
-  color: color-mix(in srgb, var(--ss-color-accent) 52%, transparent);
+  color: var(--ss-accent-52);
   font-size: 10px;
   letter-spacing: 0.28em;
 }
@@ -8441,7 +8441,7 @@ body {
 }
 
 .sidebar:hover {
-  box-shadow: 18px 0 44px color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
+  box-shadow: 18px 0 44px var(--ss-bg-code-20);
 }
 
 .nav {
@@ -8469,14 +8469,14 @@ body {
   color: var(--ss-color-text);
   background: var(--ss-hover-layer);
   border-color: var(--ss-accent-bg-strong);
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--ss-bg-code) 16%, transparent);
+  box-shadow: 0 10px 24px var(--ss-bg-code-16);
 }
 
 .status-dot {
   width: 6px;
   height: 6px;
   background: var(--ss-color-accent-strong);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--ss-color-accent) 55%, transparent);
+  box-shadow: 0 0 8px var(--ss-accent-55);
 }
 
 .sidebar-footer,
@@ -8599,7 +8599,7 @@ select.auth-input {
   color: var(--ss-color-text);
   box-shadow:
     inset 0 1px 0 var(--ss-hover-layer),
-    0 14px 34px color-mix(in srgb, var(--ss-bg-code) 16%, transparent);
+    0 14px 34px var(--ss-bg-code-16);
   cursor: pointer;
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s, background-color 0.2s;
 }
@@ -8608,7 +8608,7 @@ select.auth-input {
   border-color: var(--ss-accent-border-soft);
   box-shadow:
     inset 0 1px 0 var(--ss-hover-layer),
-    0 16px 38px color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
+    0 16px 38px var(--ss-bg-code-20);
 }
 
 .custom-select.open .custom-select-trigger,
@@ -8635,7 +8635,7 @@ select.auth-input {
 }
 
 .custom-select-chevron {
-  color: color-mix(in srgb, var(--ss-color-accent) 84%, transparent);
+  color: var(--ss-accent-84);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -8660,7 +8660,7 @@ select.auth-input {
   border: 1px solid var(--ss-color-border);
   background: var(--ss-bg-panel);
   box-shadow:
-    0 20px 60px color-mix(in srgb, var(--ss-bg-code) 34%, transparent),
+    0 20px 60px var(--ss-bg-code-34),
     inset 0 1px 0 var(--ss-hover-layer);
   backdrop-filter: blur(16px);
 }
@@ -8699,7 +8699,7 @@ select.auth-input {
 
 .custom-select-option-desc {
   grid-column: 1 / 2;
-  color: color-mix(in srgb, var(--ss-color-accent) 72%, transparent);
+  color: var(--ss-accent-72);
   font-size: 12px;
 }
 
@@ -8825,7 +8825,7 @@ select.auth-input {
 .leaderboard-period {
   border-color: var(--ss-hover-layer);
   background: var(--ss-hover-layer);
-  color: color-mix(in srgb, var(--ss-color-accent) 74%, transparent);
+  color: var(--ss-accent-74);
 }
 
 .oj-hero-badge {
@@ -8855,7 +8855,7 @@ select.auth-input {
   border: 1px solid var(--ss-color-border);
   background: var(--ss-hover-layer);
   box-shadow:
-    0 24px 60px color-mix(in srgb, var(--ss-bg-code) 22%, transparent),
+    0 24px 60px var(--ss-bg-code-22),
     inset 0 1px 0 var(--ss-hover-layer);
 }
 
@@ -8935,7 +8935,7 @@ select.auth-input {
   border-radius: 22px;
   border-color: var(--ss-hover-layer);
   background: var(--ss-hover-layer);
-  box-shadow: 0 16px 34px color-mix(in srgb, var(--ss-bg-code) 16%, transparent);
+  box-shadow: 0 16px 34px var(--ss-bg-code-16);
 }
 
 .discussion-card,
@@ -8949,7 +8949,7 @@ select.auth-input {
 .oj-card:hover {
   /* transform removed: 克制化 */
   border-color: var(--ss-color-text-subtle);
-  box-shadow: 0 24px 40px color-mix(in srgb, var(--ss-bg-code) 22%, transparent);
+  box-shadow: 0 24px 40px var(--ss-bg-code-22);
 }
 
 .discussion-card-title,
@@ -9266,7 +9266,7 @@ select.auth-input {
 
 .hero-left-minimal .eyebrow {
   margin-bottom: 10px;
-  color: color-mix(in srgb, var(--ss-color-accent) 78%, transparent);
+  color: var(--ss-accent-78);
 }
 
 .hero-left-minimal .hero-actions {
@@ -9343,7 +9343,7 @@ body {
   border-bottom-color: var(--ss-color-text-subtle);
   backdrop-filter: blur(18px) saturate(140%);
   box-shadow:
-    0 10px 34px color-mix(in srgb, var(--ss-bg-code) 16%, transparent),
+    0 10px 34px var(--ss-bg-code-16),
     inset 0 1px 0 var(--ss-color-border);
 }
 
@@ -9396,7 +9396,7 @@ body {
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
     inset 0 -1px 0 var(--ss-hover-layer),
-    0 18px 50px color-mix(in srgb, var(--ss-bg-code) 16%, transparent);
+    0 18px 50px var(--ss-bg-code-16);
   backdrop-filter: blur(14px) saturate(145%);
   -webkit-backdrop-filter: blur(14px) saturate(145%);
 }
@@ -9409,7 +9409,7 @@ body {
   border: 1px solid var(--ss-color-border);
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
-    0 28px 80px color-mix(in srgb, var(--ss-bg-code) 16%, transparent);
+    0 28px 80px var(--ss-bg-code-16);
   backdrop-filter: blur(12px) saturate(145%);
 }
 
@@ -9434,7 +9434,7 @@ body {
   border-color: var(--ss-color-text-subtle);
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
-    0 26px 56px color-mix(in srgb, var(--ss-bg-code) 18%, transparent);
+    0 26px 56px var(--ss-bg-code-18);
 }
 
 .oj-code-label,
@@ -9445,7 +9445,7 @@ body {
 .leaderboard-period,
 .profile-rank-badge,
 .hero-orbit-status {
-  color: color-mix(in srgb, var(--ss-color-accent) 82%, transparent);
+  color: var(--ss-accent-82);
 }
 
 .oj-tag,
@@ -9531,7 +9531,7 @@ body {
   border-radius: 30px;
   background: var(--ss-bg-panel-solid);
   box-shadow:
-    0 28px 90px color-mix(in srgb, var(--ss-bg-code) 48%, transparent),
+    0 28px 90px var(--ss-bg-code-48),
     inset 0 1px 0 var(--ss-hover-layer);
 }
 
@@ -9605,11 +9605,11 @@ body {
 .hero-orbit-card {
   padding: 22px;
   border-radius: 24px;
-  border: 1px solid color-mix(in srgb, var(--ss-color-accent) 20%, transparent);
+  border: 1px solid var(--ss-accent-20);
   background: none;
   box-shadow:
     inset 0 1px 0 var(--ss-hover-layer),
-    0 18px 40px color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
+    0 18px 40px var(--ss-bg-code-30);
 }
 
 .hero-orbit-header {
@@ -9707,7 +9707,7 @@ body {
   border: 1px solid var(--ss-color-border) !important;
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
-    0 28px 80px color-mix(in srgb, var(--ss-bg-code) 14%, transparent) !important;
+    0 28px 80px var(--ss-bg-code-14) !important;
   backdrop-filter: blur(12px) saturate(135%) !important;
   -webkit-backdrop-filter: blur(12px) saturate(135%) !important;
 }
@@ -9777,7 +9777,7 @@ body {
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
     inset 0 -1px 0 var(--ss-hover-layer),
-    0 18px 48px color-mix(in srgb, var(--ss-bg-code) 14%, transparent) !important;
+    0 18px 48px var(--ss-bg-code-14) !important;
   backdrop-filter: blur(14px) saturate(140%) !important;
   -webkit-backdrop-filter: blur(14px) saturate(140%) !important;
 }
@@ -9798,7 +9798,7 @@ body {
   background: var(--ss-hover-layer);
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
-    0 24px 56px color-mix(in srgb, var(--ss-bg-code) 16%, transparent) !important;
+    0 24px 56px var(--ss-bg-code-16) !important;
 }
 
 .oj-page,
@@ -9843,7 +9843,7 @@ body {
 .profile-card,
 .heatmap-container,
 .leaderboard-table {
-  color: color-mix(in srgb, var(--ss-color-accent) 92%, transparent);
+  color: var(--ss-accent-92);
 }
 
 .hero-summary-label,
@@ -9852,7 +9852,7 @@ body {
 .oj-hero-kicker,
 .hero-orbit-kicker,
 .eyebrow {
-  color: color-mix(in srgb, var(--ss-color-accent) 72%, transparent) !important;
+  color: var(--ss-accent-72) !important;
 }
 
 .oj-hero-badge,
@@ -9913,7 +9913,7 @@ body {
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
     inset 0 -1px 0 var(--ss-hover-layer),
-    0 22px 54px color-mix(in srgb, var(--ss-bg-code) 18%, transparent) !important;
+    0 22px 54px var(--ss-bg-code-18) !important;
   backdrop-filter: blur(16px) saturate(145%) !important;
   -webkit-backdrop-filter: blur(16px) saturate(145%) !important;
 }
@@ -9923,7 +9923,7 @@ body {
 .problem-option,
 .tag-selector-item {
   border-radius: 12px;
-  color: color-mix(in srgb, var(--ss-color-accent) 90%, transparent) !important;
+  color: var(--ss-accent-90) !important;
 }
 
 button.lang-switch-item:hover,
@@ -10054,7 +10054,7 @@ body {
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
     inset 0 -1px 0 var(--ss-hover-layer),
-    0 18px 48px color-mix(in srgb, var(--ss-bg-code) 12%, transparent) !important;
+    0 18px 48px var(--ss-bg-code-12) !important;
   backdrop-filter: blur(10px) saturate(125%) !important;
   -webkit-backdrop-filter: blur(10px) saturate(125%) !important;
 }
@@ -10113,7 +10113,7 @@ body {
   /* transform removed: 克制化 */
   border-color: var(--ss-accent-border);
   box-shadow:
-    0 18px 36px color-mix(in srgb, var(--ss-bg-code) 28%, transparent),
+    0 18px 36px var(--ss-bg-code-28),
     inset 0 1px 0 var(--ss-hover-layer);
 }
 
@@ -10123,7 +10123,7 @@ body {
   border-radius: 28px;
   background: var(--ss-bg-panel-solid);
   box-shadow:
-    0 24px 70px color-mix(in srgb, var(--ss-bg-code) 40%, transparent),
+    0 24px 70px var(--ss-bg-code-40),
     inset 0 1px 0 var(--ss-hover-layer);
 }
 
@@ -10182,7 +10182,7 @@ body {
   border-radius: 999px;
   background: var(--ss-hover-layer);
   border: 1px solid var(--ss-accent-border-soft);
-  color: color-mix(in srgb, var(--ss-color-accent) 88%, transparent);
+  color: var(--ss-accent-88);
 }
 
 .oj-summary-grid {
@@ -10196,7 +10196,7 @@ body {
   border-radius: 22px;
   border: 1px solid var(--ss-color-border);
   background: var(--ss-hover-layer);
-  box-shadow: 0 16px 36px color-mix(in srgb, var(--ss-bg-code) 22%, transparent);
+  box-shadow: 0 16px 36px var(--ss-bg-code-22);
 }
 
 .oj-summary-card strong {
@@ -10266,7 +10266,7 @@ body {
   border-radius: 22px;
   background: var(--ss-hover-layer);
   border-color: var(--ss-accent-border-soft);
-  box-shadow: 0 16px 36px color-mix(in srgb, var(--ss-bg-code) 22%, transparent);
+  box-shadow: 0 16px 36px var(--ss-bg-code-22);
 }
 
 .oj-weekly-chart-title {
@@ -10289,7 +10289,7 @@ body {
 
 .oj-recommendation-card:hover {
   /* transform removed: 克制化 */
-  box-shadow: 0 16px 32px color-mix(in srgb, var(--ss-bg-code) 24%, transparent);
+  box-shadow: 0 16px 32px var(--ss-bg-code-24);
   border-color: var(--ss-accent-border);
   background: var(--ss-hover-layer);
 }
@@ -10320,7 +10320,7 @@ body {
 .oj-recent-ac-item:hover,
 .problem-plan-item:hover {
   /* transform removed: 克制化 */
-  box-shadow: 0 12px 24px color-mix(in srgb, var(--ss-bg-code) 18%, transparent);
+  box-shadow: 0 12px 24px var(--ss-bg-code-18);
 }
 
 @media (max-width: 1280px) {
@@ -10407,10 +10407,10 @@ body {
 :root {
   --bg: var(--ss-color-bg);
   --bg-elevated: var(--ss-color-bg);
-  --panel: color-mix(in srgb, var(--ss-bg-code) 82%, transparent);
+  --panel: var(--ss-bg-code-82);
   --panel-strong: var(--ss-bg-panel-solid);
-  --border: color-mix(in srgb, var(--ss-color-accent) 16%, transparent);
-  --border-strong: color-mix(in srgb, var(--ss-color-accent) 26%, transparent);
+  --border: var(--ss-accent-16);
+  --border-strong: var(--ss-accent-26);
   --text: var(--ss-color-bg-soft);
   --muted: var(--ss-color-text-muted);
   --accent: var(--ss-color-accent-strong);
@@ -10420,8 +10420,8 @@ body {
   --danger: var(--ss-color-danger);
   --radius-md: 16px;
   --radius-lg: 22px;
-  --shadow-soft: 0 18px 48px color-mix(in srgb, var(--ss-bg-code) 28%, transparent);
-  --shadow-strong: 0 30px 80px color-mix(in srgb, var(--ss-bg-code) 38%, transparent);
+  --shadow-soft: 0 18px 48px var(--ss-bg-code-28);
+  --shadow-strong: 0 30px 80px var(--ss-bg-code-38);
 }
 
 body {
@@ -10467,9 +10467,9 @@ select:focus-visible,
 .topbar {
   min-height: 68px;
   padding: 12px 24px !important;
-  background: color-mix(in srgb, var(--ss-bg-code) 82%, transparent) !important;
+  background: var(--ss-bg-code-82) !important;
   border-bottom: 1px solid var(--border) !important;
-  box-shadow: 0 12px 34px color-mix(in srgb, var(--ss-bg-code) 20%, transparent) !important;
+  box-shadow: 0 12px 34px var(--ss-bg-code-20) !important;
   backdrop-filter: blur(18px) saturate(135%) !important;
   -webkit-backdrop-filter: blur(18px) saturate(135%) !important;
 }
@@ -10505,9 +10505,9 @@ select:focus-visible,
 
 .sidebar {
   padding: 14px 10px !important;
-  background: color-mix(in srgb, var(--ss-bg-code) 78%, transparent) !important;
+  background: var(--ss-bg-code-78) !important;
   border-right: 1px solid var(--border) !important;
-  box-shadow: 12px 0 32px color-mix(in srgb, var(--ss-bg-code) 12%, transparent);
+  box-shadow: 12px 0 32px var(--ss-bg-code-12);
   backdrop-filter: blur(18px) saturate(135%) !important;
   -webkit-backdrop-filter: blur(18px) saturate(135%) !important;
 }
@@ -10604,7 +10604,7 @@ button.ghost,
 .filter-tab,
 .topbar-message-btn,
 .ide-btn-secondary {
-  color: color-mix(in srgb, var(--ss-color-accent) 90%, transparent) !important;
+  color: var(--ss-accent-90) !important;
   background: var(--ss-hover-layer) !important;
   border: 1px solid var(--border) !important;
   box-shadow: none !important;
@@ -10644,7 +10644,7 @@ input[type="password"] {
   min-height: 42px;
   border-radius: 10px !important;
   color: var(--text) !important;
-  background: color-mix(in srgb, var(--ss-bg-code) 50%, transparent) !important;
+  background: var(--ss-bg-code-50) !important;
   border: 1px solid var(--border) !important;
   box-shadow: inset 0 1px 0 var(--ss-hover-layer);
 }
@@ -10703,7 +10703,7 @@ input[type="password"]:focus {
   border: 1px solid var(--border);
   border-radius: 18px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--ss-bg-code) 34%, transparent);
+  background: var(--ss-bg-code-34);
 }
 
 .hero-summary-row {
@@ -10790,7 +10790,7 @@ input[type="password"]:focus {
   border: 1px solid var(--ss-color-border) !important;
   border-radius: 999px !important;
   background: var(--ss-hover-layer) !important;
-  color: color-mix(in srgb, var(--ss-color-accent) 84%, transparent) !important;
+  color: var(--ss-accent-84) !important;
 }
 
 .oj-hero-stack {
@@ -10897,8 +10897,8 @@ input[type="password"]:focus {
 .admin-table {
   border-radius: 16px !important;
   border: 1px solid var(--border) !important;
-  background: color-mix(in srgb, var(--ss-bg-code) 78%, transparent) !important;
-  box-shadow: 0 10px 26px color-mix(in srgb, var(--ss-bg-code) 18%, transparent) !important;
+  background: var(--ss-bg-code-78) !important;
+  box-shadow: 0 10px 26px var(--ss-bg-code-18) !important;
 }
 
 .oj-card,
@@ -10912,7 +10912,7 @@ input[type="password"]:focus {
 .discussion-card:hover,
 .conversation-card:hover {
   border-color: var(--ss-accent-border-soft) !important;
-  background: color-mix(in srgb, var(--ss-bg-code) 90%, transparent) !important;
+  background: var(--ss-bg-code-90) !important;
   /* transform removed: 克制化 */
 }
 
@@ -10926,7 +10926,7 @@ input[type="password"]:focus {
 .oj-card-meta,
 .discussion-card-meta,
 .conversation-preview {
-  color: color-mix(in srgb, var(--ss-color-accent) 68%, transparent) !important;
+  color: var(--ss-accent-68) !important;
 }
 
 .oj-code-label {
@@ -10950,7 +10950,7 @@ input[type="password"]:focus {
 
 .oj-tag,
 .oj-tag-small {
-  color: color-mix(in srgb, var(--ss-color-accent) 72%, transparent) !important;
+  color: var(--ss-accent-72) !important;
   background: transparent !important;
 }
 
@@ -10972,7 +10972,7 @@ input[type="password"]:focus {
 .leaderboard-table th,
 .admin-table th {
   background: var(--ss-hover-layer);
-  color: color-mix(in srgb, var(--ss-color-accent) 72%, transparent) !important;
+  color: var(--ss-accent-72) !important;
   letter-spacing: 0.06em !important;
 }
 
@@ -10986,15 +10986,15 @@ input[type="password"]:focus {
 }
 
 .leaderboard-row.top-1 {
-  background: color-mix(in srgb, var(--ss-color-warning) 8%, transparent) !important;
+  background: var(--ss-warning-8) !important;
 }
 
 .leaderboard-row.top-2 {
-  background: color-mix(in srgb, var(--ss-color-accent) 7%, transparent) !important;
+  background: var(--ss-accent-7) !important;
 }
 
 .leaderboard-row.top-3 {
-  background: color-mix(in srgb, var(--ss-color-accent) 8%, transparent) !important;
+  background: var(--ss-accent-8) !important;
 }
 
 .rank-medal {
@@ -11004,7 +11004,7 @@ input[type="password"]:focus {
 .discussion-card-stats .stat-item,
 .discussion-card-problem {
   border-radius: 999px;
-  color: color-mix(in srgb, var(--ss-color-accent) 76%, transparent) !important;
+  color: var(--ss-accent-76) !important;
 }
 
 .discussion-problem-banner {
@@ -11032,7 +11032,7 @@ input[type="password"]:focus {
 .submission-code {
   border-radius: var(--radius-lg) !important;
   border: 1px solid var(--border) !important;
-  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent) !important;
+  background: var(--ss-bg-code-80) !important;
   box-shadow: var(--shadow-soft) !important;
 }
 
@@ -11062,7 +11062,7 @@ input[type="password"]:focus {
 .ide-run-output pre {
   border-radius: 12px !important;
   border: 1px solid var(--ss-color-border) !important;
-  background: color-mix(in srgb, var(--ss-bg-code) 72%, transparent) !important;
+  background: var(--ss-bg-code-72) !important;
 }
 
 .ide-panel.side {
@@ -11297,7 +11297,7 @@ input[type="password"]:focus {
   background: var(--ss-hover-layer);
   color: var(--text);
   text-align: left;
-  box-shadow: 0 14px 36px color-mix(in srgb, var(--ss-bg-code) 22%, transparent);
+  box-shadow: 0 14px 36px var(--ss-bg-code-22);
   overflow: hidden;
   position: relative;
 }
@@ -11334,7 +11334,7 @@ input[type="password"]:focus {
 }
 
 .home-card-kicker {
-  color: color-mix(in srgb, var(--ss-color-accent) 72%, transparent);
+  color: var(--ss-accent-72);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -11349,7 +11349,7 @@ input[type="password"]:focus {
 
 .home-command-card p {
   margin: 0;
-  color: color-mix(in srgb, var(--ss-color-accent) 70%, transparent);
+  color: var(--ss-accent-70);
   font-size: 13px;
   line-height: 1.7;
 }
@@ -11960,7 +11960,7 @@ button.ghost:hover,
 }
 
 .page-kicker {
-  color: color-mix(in srgb, var(--ss-color-accent) 70%, transparent);
+  color: var(--ss-accent-70);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -12220,14 +12220,14 @@ button.ghost:hover,
 /* Final cohesive UI reset: soft surfaces, no fragmented lines */
 :root {
   --final-bg: var(--ss-color-bg);
-  --final-surface: color-mix(in srgb, var(--ss-bg-code) 68%, transparent);
-  --final-surface-strong: color-mix(in srgb, var(--ss-bg-code) 84%, transparent);
+  --final-surface: var(--ss-bg-code-68);
+  --final-surface-strong: var(--ss-bg-code-84);
   --final-surface-soft: var(--ss-color-border);
   --final-hover: var(--ss-hover-layer);
   --final-border: var(--ss-color-border);
   --final-border-strong: var(--ss-color-border);
   --final-text: var(--ss-color-bg-soft);
-  --final-muted: color-mix(in srgb, var(--ss-color-accent) 66%, transparent);
+  --final-muted: var(--ss-accent-66);
   --final-radius: 18px;
   --final-radius-lg: 24px;
 }
@@ -12547,7 +12547,7 @@ button.ghost,
   padding: 14px;
   border-radius: var(--final-radius-lg);
   background: var(--ss-bg-panel-opaque);
-  box-shadow: 0 28px 80px color-mix(in srgb, var(--ss-bg-code) 38%, transparent);
+  box-shadow: 0 28px 80px var(--ss-bg-code-38);
   backdrop-filter: blur(16px) saturate(125%);
   -webkit-backdrop-filter: blur(16px) saturate(125%);
 }
@@ -12627,8 +12627,8 @@ button.ghost,
 
 .mobile-tabbar {
   border: 0 !important;
-  background: color-mix(in srgb, var(--ss-bg-code) 88%, transparent) !important;
-  box-shadow: 0 16px 40px color-mix(in srgb, var(--ss-bg-code) 28%, transparent);
+  background: var(--ss-bg-code-88) !important;
+  box-shadow: 0 16px 40px var(--ss-bg-code-28);
 }
 
 @media (max-width: 900px) {
@@ -12781,7 +12781,7 @@ body,
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
   background: var(--ss-bg-panel-solid);
-  box-shadow: 0 20px 60px color-mix(in srgb, var(--ss-bg-code) 40%, transparent);
+  box-shadow: 0 20px 60px var(--ss-bg-code-40);
   padding: 12px 14px;
   z-index: 1500;
   display: flex;
@@ -12822,7 +12822,7 @@ body,
 .theme-mode-row button.active {
   border-color: var(--ss-color-accent);
   color: var(--ss-color-text);
-  background: color-mix(in srgb, var(--ss-color-accent) 14%, transparent);
+  background: var(--ss-accent-14);
 }
 
 .theme-accent-row {
@@ -12906,9 +12906,9 @@ body,
 .oj-error {
   margin: 10px 0;
   padding: 9px 12px;
-  border: 1px solid color-mix(in srgb, var(--ss-color-danger) 35%, transparent);
+  border: 1px solid var(--ss-danger-35);
   border-radius: var(--ss-radius-md);
-  background: color-mix(in srgb, var(--ss-color-danger) 8%, transparent);
+  background: var(--ss-danger-8);
   color: var(--ss-color-danger);
   font-size: 13px;
 }
