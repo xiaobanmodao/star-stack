@@ -41,7 +41,7 @@
 .profile-v2 .profile-avatar-large {
   width: 104px;
   height: 104px;
-  border: 1px solid rgba(125, 211, 252, 0.32);
+  border: 1px solid var(--ss-accent-border);
   background: var(--ss-hover-layer);
   color: var(--ss-color-text);
   font-family: var(--ss-font-display);
@@ -51,7 +51,7 @@
 
 .profile-v2 .profile-avatar-large:hover {
   transform: translateY(-1px);
-  box-shadow: 0 0 0 4px rgba(125, 211, 252, 0.08);
+  box-shadow: 0 0 0 4px var(--ss-accent-bg);
 }
 
 .profile-v2 .profile-avatar-large img {
@@ -92,9 +92,9 @@
   justify-content: center;
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid rgba(125, 211, 252, 0.24) !important;
-  background: rgba(125, 211, 252, 0.08) !important;
-  color: #bae6fd !important;
+  border: 1px solid var(--ss-accent-border-soft) !important;
+  background: var(--ss-accent-bg) !important;
+  color: var(--ss-color-accent-strong) !important;
 }
 
 .profile-identity-metrics {
@@ -189,7 +189,7 @@
   position: relative;
   min-height: 260px;
   overflow: hidden;
-  border: 1px solid rgba(226, 232, 240, 0.12);
+  border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
   background: none;
 }
@@ -208,7 +208,7 @@
 .profile-star-path {
   position: absolute;
   inset: 14% 10%;
-  border: 1px solid rgba(125, 211, 252, 0.18);
+  border: 1px solid var(--ss-accent-border-soft);
   border-radius: 48% 52% 42% 58%;
   transform: rotate(-12deg);
 }
@@ -222,9 +222,9 @@
   width: 26px;
   height: 26px;
   place-items: center;
-  border: 1px solid rgba(226, 232, 240, 0.24);
+  border: 1px solid var(--ss-color-border-strong);
   border-radius: 50%;
-  background: rgba(15, 23, 42, 0.9);
+  background: var(--ss-star-node-bg);
   color: var(--ss-color-text);
   transform: translate(-50%, -50%);
 }
@@ -238,21 +238,21 @@
 .profile-star-node.level-2 {
   width: 30px;
   height: 30px;
-  border-color: rgba(125, 211, 252, 0.4);
+  border-color: var(--ss-accent-border);
 }
 
 .profile-star-node.level-3 {
   width: 34px;
   height: 34px;
-  border-color: rgba(74, 222, 128, 0.42);
-  background: rgba(6, 78, 59, 0.5);
+  border-color: var(--ss-success-border-strong);
+  background: var(--ss-success-bg-strong);
 }
 
 .profile-star-node.level-4 {
   width: 38px;
   height: 38px;
-  border-color: rgba(250, 204, 21, 0.42);
-  background: rgba(113, 63, 18, 0.42);
+  border-color: var(--ss-warning-border-strong);
+  background: var(--ss-warning-bg-strong);
 }
 
 .profile-stats-grid {
@@ -322,23 +322,23 @@
 }
 
 .profile-v2 .heatmap-cell:hover {
-  box-shadow: 0 0 0 2px rgba(125, 211, 252, 0.18);
+  box-shadow: 0 0 0 2px var(--ss-accent-border-soft);
 }
 
 .profile-v2 .heatmap-cell[data-level="1"] {
-  background: rgba(56, 189, 248, 0.32);
+  background: var(--ss-heat-1);
 }
 
 .profile-v2 .heatmap-cell[data-level="2"] {
-  background: rgba(56, 189, 248, 0.5);
+  background: var(--ss-heat-2);
 }
 
 .profile-v2 .heatmap-cell[data-level="3"] {
-  background: rgba(34, 197, 94, 0.58);
+  background: var(--ss-heat-3);
 }
 
 .profile-v2 .heatmap-cell[data-level="4"] {
-  background: rgba(250, 204, 21, 0.72);
+  background: var(--ss-heat-4);
 }
 
 .profile-difficulty-grid {
@@ -398,7 +398,7 @@
   height: 42px;
   place-items: center;
   border-radius: var(--ss-radius-md);
-  background: rgba(125, 211, 252, 0.08);
+  background: var(--ss-accent-bg);
   color: var(--ss-color-accent);
 }
 
@@ -473,7 +473,7 @@
   display: grid;
   gap: 2px;
   padding: 8px 4px;
-  border: 1px solid rgba(226, 232, 240, 0.1);
+  border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
   background: var(--ss-hover-layer);
   color: inherit;
@@ -483,8 +483,8 @@
 }
 
 .profile-follow-row button:hover {
-  border-color: rgba(125, 211, 252, 0.35);
-  background: rgba(125, 211, 252, 0.08);
+  border-color: var(--ss-accent-border);
+  background: var(--ss-accent-bg);
 }
 
 .profile-follow-row strong {
@@ -608,23 +608,23 @@
 
 /* ---------- 浅色主题：星图节点改浅底深字 ---------- */
 :root[data-theme='light'] .profile-star-node {
-  background: rgba(255, 255, 255, 0.92);
-  border-color: rgba(9, 105, 218, 0.4);
+  background: var(--ss-star-node-bg);
+  border-color: var(--ss-accent-border);
   color: var(--ss-color-text);
 }
 
 :root[data-theme='light'] .profile-star-node.level-2 {
-  border-color: rgba(9, 105, 218, 0.45);
+  border-color: var(--ss-accent-border);
 }
 
 :root[data-theme='light'] .profile-star-node.level-3 {
-  background: rgba(26, 127, 55, 0.08);
-  border-color: rgba(26, 127, 55, 0.45);
+  background: var(--ss-success-bg-strong);
+  border-color: var(--ss-success-border-strong);
 }
 
 :root[data-theme='light'] .profile-star-node.level-4 {
-  background: rgba(154, 103, 0, 0.08);
-  border-color: rgba(154, 103, 0, 0.45);
+  background: var(--ss-warning-bg-strong);
+  border-color: var(--ss-warning-border-strong);
 }
 
 /* ---------- 浅色主题：等级徽标近白字 → 星蓝强调色 ---------- */

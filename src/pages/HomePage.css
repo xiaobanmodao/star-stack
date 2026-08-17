@@ -70,7 +70,7 @@
 .portal-card:hover {
   border-color: var(--ss-color-accent);
   background: var(--ss-hover-layer);
-  box-shadow: 0 4px 18px rgba(31, 35, 40, 0.1);
+  box-shadow: var(--ss-shadow-card);
   transform: none;
 }
 
@@ -93,11 +93,11 @@ button.portal-card:active {
   filter: none !important;
   border-color: var(--ss-color-accent) !important;
   background: var(--ss-hover-layer) !important;
-  box-shadow: 0 4px 18px rgba(31, 35, 40, 0.1) !important;
+  box-shadow: var(--ss-shadow-card) !important;
 }
 
 button.portal-card:active {
-  box-shadow: 0 2px 10px rgba(31, 35, 40, 0.08) !important;
+  box-shadow: var(--ss-shadow-card-soft) !important;
   transform: translateY(1px) !important; /* 按下轻微下沉，反馈明确且克制 */
 }
 
@@ -145,7 +145,7 @@ button.portal-card:active {
 
 .portal-card-badges span {
   padding: 2px 9px;
-  border: 1px solid rgba(125, 211, 252, 0.25);
+  border: 1px solid var(--ss-accent-border-soft);
   border-radius: 999px;
   color: var(--ss-color-text-subtle);
   font-size: 11px;
@@ -218,7 +218,7 @@ button.portal-card:active {
 }
 
 .portal-community-links button:hover {
-  border-color: rgba(125, 211, 252, 0.28);
+  border-color: var(--ss-accent-border-soft);
   background: var(--ss-hover-layer);
 }
 

@@ -190,7 +190,7 @@
 }
 
 .oj-solution-item:hover {
-  border-color: rgba(125, 211, 252, 0.28);
+  border-color: var(--ss-accent-border-soft);
   background: var(--ss-hover-layer);
 }
 

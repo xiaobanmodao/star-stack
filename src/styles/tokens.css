@@ -57,7 +57,29 @@
 
   --ss-shadow-rest: none;
   --ss-shadow-raised: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --ss-shadow-card: 0 4px 18px rgba(31, 35, 40, 0.1);
+  --ss-shadow-card-soft: 0 2px 10px rgba(31, 35, 40, 0.08);
   --ss-focus-ring: 0 0 0 3px rgba(88, 166, 255, 0.25);
+
+  /* 语义化透明色（边框/浅底） */
+  --ss-accent-border-soft: rgba(125, 211, 252, 0.25);
+  --ss-accent-border: rgba(125, 211, 252, 0.35);
+  --ss-accent-bg: rgba(125, 211, 252, 0.08);
+  --ss-success-border: rgba(94, 230, 168, 0.24);
+  --ss-success-bg: rgba(94, 230, 168, 0.1);
+  --ss-danger-border: rgba(248, 113, 113, 0.35);
+  --ss-danger-bg: rgba(248, 113, 113, 0.05);
+
+  /* 热力图 / 星图节点 */
+  --ss-heat-1: rgba(56, 189, 248, 0.32);
+  --ss-heat-2: rgba(56, 189, 248, 0.5);
+  --ss-heat-3: rgba(34, 197, 94, 0.58);
+  --ss-heat-4: rgba(250, 204, 21, 0.72);
+  --ss-star-node-bg: rgba(15, 23, 42, 0.9);
+  --ss-success-border-strong: rgba(74, 222, 128, 0.42);
+  --ss-success-bg-strong: rgba(6, 78, 59, 0.5);
+  --ss-warning-border-strong: rgba(250, 204, 21, 0.42);
+  --ss-warning-bg-strong: rgba(113, 63, 18, 0.42);
 
   --ss-motion-fast: 100ms ease;
   --ss-motion-normal: 150ms ease;
@@ -104,7 +126,29 @@
   --ss-color-info: #0969da;
 
   --ss-shadow-raised: 0 1px 3px rgba(31, 35, 40, 0.12);
+  --ss-shadow-card: 0 4px 18px rgba(31, 35, 40, 0.1);
+  --ss-shadow-card-soft: 0 2px 10px rgba(31, 35, 40, 0.08);
   --ss-focus-ring: 0 0 0 3px rgba(9, 105, 218, 0.2);
+
+  /* 语义化透明色（浅色） */
+  --ss-accent-border-soft: rgba(9, 105, 218, 0.22);
+  --ss-accent-border: rgba(9, 105, 218, 0.35);
+  --ss-accent-bg: rgba(9, 105, 218, 0.06);
+  --ss-success-border: rgba(21, 128, 61, 0.25);
+  --ss-success-bg: rgba(21, 128, 61, 0.08);
+  --ss-danger-border: rgba(220, 38, 38, 0.3);
+  --ss-danger-bg: rgba(220, 38, 38, 0.05);
+
+  /* 热力图 / 星图节点（浅色） */
+  --ss-heat-1: rgba(56, 189, 248, 0.28);
+  --ss-heat-2: rgba(56, 189, 248, 0.45);
+  --ss-heat-3: rgba(34, 197, 94, 0.5);
+  --ss-heat-4: rgba(250, 204, 21, 0.65);
+  --ss-star-node-bg: rgba(255, 255, 255, 0.92);
+  --ss-success-border-strong: rgba(26, 127, 55, 0.45);
+  --ss-success-bg-strong: rgba(26, 127, 55, 0.08);
+  --ss-warning-border-strong: rgba(154, 103, 0, 0.45);
+  --ss-warning-bg-strong: rgba(154, 103, 0, 0.08);
 
   /* 表面背景（浅色） */
   --ss-bg-panel: #ffffff;
