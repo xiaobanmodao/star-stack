@@ -105,7 +105,7 @@ tsc / eslint / build 通过；audit 双主题 0 违规；无硬编码颜色；�
 - **安全**：登录限流（5 次失败锁 IP 10 分钟）、发帖/私信/聊天/评论/举报限流、token 30 天、SAFE_URL_RE 防 `//`、sanitizeHtml 白名单、评测沙箱（生产强制）。
 - **工程化**：Vitest 18 个单测（`npm test`，覆盖工具函数/AC 连击/等级 XP/富文本 XSS）+ GitHub Actions CI（lint/build/test）；`server/diagnose.js` 已修正为读取真实 `starstack.sqlite`。
 - **运维/可观测**：`backup.sh` 支持环境变量与 `--install-cron` 自动安装定时备份；前端全局错误上报到 `client_errors` 表；已移除无 UI 使用的频道实时消息/SSE 后端接口。
-- **CSS 颜色迁移进度**：除 `App.css` 外所有页面/组件 CSS 已迁移到 `--ss-*` 令牌（含 HomePage/AccountPage/OjJudgePage/ChatHub 等）；`App.css` 已从 638 处降到 293 处（主要是黑色阴影/深色遮罩/少量状态色）。
+- **CSS 颜色迁移进度**：✅ 已完成——全站 CSS 硬编码颜色已清零（881 处全部迁移到 `--ss-*` 令牌或 `color-mix`），含历史遗留 `App.css`。
 
 ---
 

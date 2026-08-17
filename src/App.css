@@ -63,7 +63,7 @@ body {
   width: var(--sidebar-width, 173px);
   /* padding 与折叠态保持一致：宽度展开 + 标签淡入即可，避免内部重排造成抖动 */
   padding: 16px 8px;
-  box-shadow: 12px 0 30px rgba(0, 0, 0, 0.25);
+  box-shadow: 12px 0 30px color-mix(in srgb, var(--ss-bg-code) 25%, transparent);
 }
 
 
@@ -227,8 +227,8 @@ body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #47f0ff;
-  box-shadow: 0 0 10px rgba(71, 240, 255, 0.7);
+  background: var(--ss-color-accent-strong);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--ss-color-accent) 70%, transparent);
 }
 
 .content {
@@ -322,7 +322,7 @@ body {
   padding: 0 12px;
   border-radius: 12px;
   border: 1px solid var(--ss-accent-border-soft);
-  background: rgba(6, 10, 18, 0.78);
+  background: color-mix(in srgb, var(--ss-bg-code) 78%, transparent);
   color: var(--text);
   box-shadow: inset 0 1px 0 var(--ss-hover-layer);
   white-space: nowrap;
@@ -332,7 +332,7 @@ button.lang-switch-trigger:hover {
   transform: none;
   filter: none;
   border-color: var(--ss-accent-border);
-  background: rgba(9, 15, 24, 0.92);
+  background: color-mix(in srgb, var(--ss-bg-code) 92%, transparent);
 }
 
 .lang-switch-flag {
@@ -371,8 +371,8 @@ button.lang-switch-trigger:hover {
   padding: 6px;
   border-radius: 12px;
   border: 1px solid var(--ss-accent-border-soft);
-  background: rgba(5, 9, 16, 0.96);
-  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.45);
+  background: color-mix(in srgb, var(--ss-bg-code) 96%, transparent);
+  box-shadow: 0 18px 36px color-mix(in srgb, var(--ss-bg-code) 45%, transparent);
   z-index: 30;
 }
 
@@ -417,9 +417,9 @@ button.lang-switch-item:hover {
 .logout-notice {
   padding: 6px 12px;
   border-radius: 12px;
-  background: rgba(28, 64, 48, 0.7);
-  border: 1px solid rgba(106, 212, 159, 0.45);
-  color: #b9f3d0;
+  background: color-mix(in srgb, var(--ss-color-text) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-color-success) 45%, transparent);
+  color: var(--ss-color-success);
   font-size: 12px;
   letter-spacing: 0.1em;
 }
@@ -431,7 +431,7 @@ button.lang-switch-item:hover {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(5, 8, 14, 0.78);
+  background: color-mix(in srgb, var(--ss-bg-code) 78%, transparent);
   backdrop-filter: blur(6px);
 }
 
@@ -442,9 +442,9 @@ button.lang-switch-item:hover {
   padding: 12px 16px;
   border-radius: 14px;
   border: 1px solid var(--ss-accent-border-soft);
-  background: rgba(9, 13, 21, 0.92);
+  background: color-mix(in srgb, var(--ss-bg-code) 92%, transparent);
   color: var(--text);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 18px 40px color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
   font-size: 13px;
   letter-spacing: 0.04em;
 }
@@ -481,7 +481,7 @@ button.lang-switch-item:hover {
   border-radius: 22px;
   border: 1px solid var(--border);
   background: var(--panel);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 20px 60px color-mix(in srgb, var(--ss-bg-code) 40%, transparent);
 }
 
 .hero-left h1 {
@@ -764,9 +764,9 @@ button.small {
   min-width: 190px;
   padding: 10px;
   border-radius: 14px;
-  background: rgba(6, 10, 18, 0.96);
+  background: color-mix(in srgb, var(--ss-bg-code) 96%, transparent);
   border: 1px solid var(--ss-accent-border-soft);
-  box-shadow: 0 18px 40px rgba(2, 6, 14, 0.6);
+  box-shadow: 0 18px 40px color-mix(in srgb, var(--ss-bg-code) 60%, transparent);
   opacity: 0;
   transform: translateY(-6px);
   pointer-events: none;
@@ -815,7 +815,7 @@ button.small {
 }
 
 .user-menu-item.danger {
-  color: #ff9f9f;
+  color: var(--ss-color-danger);
 }
 
 .user-menu-divider {
@@ -867,7 +867,7 @@ button.small {
 .auth-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(3, 5, 8, 0.68);
+  background: color-mix(in srgb, var(--ss-bg-code) 68%, transparent);
   display: grid;
   place-items: center;
   z-index: 20;
@@ -884,13 +884,13 @@ button.small {
   border-radius: 20px;
   border: 1px solid var(--border);
   padding: 22px;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 30px 80px color-mix(in srgb, var(--ss-bg-code) 50%, transparent);
 }
 
 .confirm-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(3, 5, 8, 0.7);
+  background: color-mix(in srgb, var(--ss-bg-code) 70%, transparent);
   display: grid;
   place-items: center;
   z-index: 2500; /* 高于浮窗(2000)/通知面板(1500)，低于全局搜索(3000) */
@@ -903,7 +903,7 @@ button.small {
   border-radius: 18px;
   border: 1px solid var(--border);
   padding: 20px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 24px 60px color-mix(in srgb, var(--ss-bg-code) 55%, transparent);
   display: grid;
   gap: 10px;
 }
@@ -1009,18 +1009,18 @@ button.small {
 }
 
 .auth-error {
-  color: #ff9fa5;
-  background: rgba(255, 79, 97, 0.12);
-  border: 1px solid rgba(255, 79, 97, 0.3);
+  color: var(--ss-color-danger);
+  background: color-mix(in srgb, var(--ss-color-danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-color-danger) 30%, transparent);
   padding: 8px 10px;
   border-radius: 10px;
   font-size: 12px;
 }
 
 .auth-success {
-  color: #b7f5d0;
-  background: rgba(64, 200, 140, 0.12);
-  border: 1px solid rgba(64, 200, 140, 0.3);
+  color: var(--ss-color-success);
+  background: color-mix(in srgb, var(--ss-color-success) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-color-success) 30%, transparent);
   padding: 8px 10px;
   border-radius: 10px;
   font-size: 12px;
@@ -1050,7 +1050,7 @@ button.small {
   padding: 24px;
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: rgba(6, 9, 14, 0.8);
+  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
 }
 
 .account-avatar {
@@ -1084,7 +1084,7 @@ button.small {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: color-mix(in srgb, var(--ss-bg-code) 50%, transparent);
   display: grid;
   place-items: center;
 }
@@ -1161,7 +1161,7 @@ button.small {
   gap: 6px;
   align-items: stretch;
   padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.2);
+  background: color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
   border: 1px solid var(--border);
   border-radius: 8px;
   min-width: 280px;
@@ -1203,11 +1203,11 @@ button.small {
 .oj-weekly-chart {
   flex: 1;
   padding: 16px;
-  background: rgba(0, 0, 0, 0.3);
+  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
   border: 1px solid var(--ss-accent-bg-strong);
   border-radius: 12px;
   min-width: 550px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
   position: relative;
 }
 
@@ -1248,7 +1248,7 @@ button.small {
 /* 图表 Tooltip - 现代化设计 */
 .chart-tooltip {
   position: fixed;
-  background: rgba(20, 20, 30, 0.98);
+  background: color-mix(in srgb, var(--ss-bg-code) 98%, transparent);
   border: 1px solid var(--ss-accent-border);
   border-radius: 8px;
   padding: 10px 12px;
@@ -1256,7 +1256,7 @@ button.small {
   transform: translate(-50%, calc(-100% - 10px));
   z-index: 10000;
   min-width: 130px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7),
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--ss-bg-code) 70%, transparent),
               0 0 0 1px var(--ss-hover-layer) inset;
   backdrop-filter: blur(12px);
   transition: left 0.15s ease-out, top 0.15s ease-out, opacity 0.2s ease;
@@ -1285,7 +1285,7 @@ button.small {
   height: 0;
   border-left: 6px solid transparent;
   border-right: 6px solid transparent;
-  border-top: 6px solid rgba(20, 20, 30, 0.98);
+  border-top: 6px solid color-mix(in srgb, var(--ss-bg-code) 98%, transparent);
 }
 
 .chart-tooltip-date {
@@ -1320,8 +1320,8 @@ button.small {
 }
 
 .chart-tooltip-dot.accepted {
-  background: rgba(76, 209, 55, 1);
-  box-shadow: 0 0 8px rgba(76, 209, 55, 0.8);
+  background: color-mix(in srgb, var(--ss-color-success) 100%, transparent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--ss-color-success) 80%, transparent);
 }
 
 .chart-tooltip-label {
@@ -1379,7 +1379,7 @@ button.small {
   padding: 8px 16px;
   border-radius: 8px;
   border: 1px solid var(--ss-accent-border);
-  background: rgba(6, 9, 14, 0.8);
+  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
   color: var(--text);
   font-size: 14px;
   font-weight: 500;
@@ -1409,7 +1409,7 @@ button.small {
   padding: 0 8px;
   border-radius: 8px;
   border: 1px solid var(--ss-accent-border);
-  background: rgba(6, 9, 14, 0.8);
+  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
   color: var(--text);
   font-size: 14px;
   font-weight: 500;
@@ -1423,7 +1423,7 @@ button.small {
 }
 
 .pagination-number.active {
-  background: #4fc3f7;
+  background: var(--ss-color-accent-strong);
   color: var(--ss-color-bg);
   border-color: var(--ss-color-accent);
   font-weight: 600;
@@ -1455,7 +1455,7 @@ button.small {
   padding: 0 8px;
   border-radius: 8px;
   border: 1px solid var(--ss-accent-border);
-  background: rgba(6, 9, 14, 0.8);
+  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
   color: var(--text);
   font-size: 14px;
   text-align: center;
@@ -1465,7 +1465,7 @@ button.small {
 .pagination-input:focus {
   outline: none;
   border-color: var(--ss-accent-border-strong);
-  background: rgba(6, 9, 14, 0.95);
+  background: color-mix(in srgb, var(--ss-bg-code) 95%, transparent);
 }
 
 .pagination-go {
@@ -1551,44 +1551,44 @@ button.small {
 
 .oj-badge.入门 {
   color: var(--ss-color-danger);
-  background: rgba(254, 76, 97, 0.15);
-  border-color: rgba(254, 76, 97, 0.4);
+  background: color-mix(in srgb, var(--ss-color-danger) 15%, transparent);
+  border-color: color-mix(in srgb, var(--ss-color-danger) 40%, transparent);
 }
 
 .oj-badge.普及- {
   color: var(--ss-color-warning);
-  background: rgba(243, 156, 17, 0.15);
-  border-color: rgba(243, 156, 17, 0.4);
+  background: color-mix(in srgb, var(--ss-color-danger) 15%, transparent);
+  border-color: color-mix(in srgb, var(--ss-color-danger) 40%, transparent);
 }
 
 .oj-badge.普及 {
   color: var(--ss-color-warning);
-  background: rgba(255, 193, 22, 0.15);
-  border-color: rgba(255, 193, 22, 0.4);
+  background: color-mix(in srgb, var(--ss-color-warning) 15%, transparent);
+  border-color: color-mix(in srgb, var(--ss-color-warning) 40%, transparent);
 }
 
 .oj-badge.提高- {
   color: var(--ss-color-warning);
-  background: rgba(255, 193, 22, 0.15);
-  border-color: rgba(255, 193, 22, 0.4);
+  background: color-mix(in srgb, var(--ss-color-warning) 15%, transparent);
+  border-color: color-mix(in srgb, var(--ss-color-warning) 40%, transparent);
 }
 
 .oj-badge.提高 {
   color: var(--ss-color-success);
-  background: rgba(82, 196, 26, 0.15);
-  border-color: rgba(82, 196, 26, 0.4);
+  background: color-mix(in srgb, var(--ss-color-success) 15%, transparent);
+  border-color: color-mix(in srgb, var(--ss-color-success) 40%, transparent);
 }
 
 .oj-badge.省选 {
   color: var(--ss-color-accent);
-  background: rgba(52, 152, 219, 0.15);
-  border-color: rgba(52, 152, 219, 0.4);
+  background: color-mix(in srgb, var(--ss-color-accent) 15%, transparent);
+  border-color: color-mix(in srgb, var(--ss-color-accent) 40%, transparent);
 }
 
 .oj-badge.noi {
   color: var(--ss-color-text-muted);
-  background: rgba(85, 85, 85, 0.15);
-  border-color: rgba(85, 85, 85, 0.4);
+  background: color-mix(in srgb, var(--ss-color-text) 15%, transparent);
+  border-color: color-mix(in srgb, var(--ss-color-text) 40%, transparent);
 }
 
 .oj-detail {
@@ -1797,7 +1797,7 @@ button.small {
 }
 
 .oj-problem-richtext {
-  color: #e8eef7;
+  color: var(--ss-color-bg-soft);
   font-size: 14px;
   line-height: 1.85;
   word-break: break-word;
@@ -1850,7 +1850,7 @@ button.small {
   padding: 10px 14px;
   border-left: 4px solid var(--ss-accent-border-strong);
   background: var(--ss-accent-bg);
-  color: #d7e9ff;
+  color: var(--ss-color-accent);
   border-radius: 0 10px 10px 0;
 }
 
@@ -1858,7 +1858,7 @@ button.small {
   padding: 2px 6px;
   border-radius: 6px;
   background: var(--ss-hover-layer);
-  color: #ffe69b;
+  color: var(--ss-warning-text);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 0.92em;
 }
@@ -1867,7 +1867,7 @@ button.small {
   margin: 14px 0;
   padding: 14px 16px;
   border-radius: 12px;
-  background: rgba(6, 9, 14, 0.94);
+  background: color-mix(in srgb, var(--ss-bg-code) 94%, transparent);
   border: 1px solid var(--ss-color-border);
   overflow: auto;
 }
@@ -1955,7 +1955,7 @@ button.small {
   margin: 0;
   padding: 12px;
   border-radius: 12px;
-  background: rgba(6, 9, 14, 0.9);
+  background: color-mix(in srgb, var(--ss-bg-code) 90%, transparent);
   border: 1px solid var(--border);
   color: var(--ss-color-text);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -2073,7 +2073,7 @@ button.small {
   height: 220px;
   border-radius: 16px;
   border: 1px dashed var(--ss-hover-layer);
-  background: rgba(6, 9, 14, 0.6);
+  background: color-mix(in srgb, var(--ss-bg-code) 60%, transparent);
   overflow: hidden;
   display: grid;
   place-items: center;
@@ -2102,7 +2102,7 @@ button.small {
   background: var(--ss-color-bg-soft);
   border-radius: 16px;
   position: relative;
-  border: 1px solid #3b4860;
+  border: 1px solid var(--ss-color-text-subtle);
 }
 
 .rocket-body::before {
@@ -2120,7 +2120,7 @@ button.small {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #48c7ff;
+  background: var(--ss-color-accent-strong);
   position: absolute;
   top: 18px;
   left: 50%;
@@ -2133,7 +2133,7 @@ button.small {
   bottom: 10px;
   width: 10px;
   height: 16px;
-  background: #9fb6ff;
+  background: var(--ss-color-accent);
 }
 
 .rocket-fin.left {
@@ -2153,9 +2153,9 @@ button.small {
   bottom: -16px;
   width: 8px;
   height: 16px;
-  background: #ff8c2a;
+  background: var(--ss-color-warning);
   border-radius: 0 0 8px 8px;
-  box-shadow: 0 0 12px rgba(255, 140, 42, 0.8);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--ss-color-danger) 80%, transparent);
   opacity: 0;
   animation: rocket-flame 0.2s infinite;
 }
@@ -2165,7 +2165,7 @@ button.small {
   bottom: 0;
   width: 4px;
   height: 140px;
-  background: rgba(255, 140, 42, 0.25);
+  background: color-mix(in srgb, var(--ss-color-danger) 25%, transparent);
   opacity: 0;
 }
 
@@ -2210,7 +2210,7 @@ button.small {
   border-radius: 50%;
   background: var(--ss-color-warning);
   opacity: 0;
-  filter: drop-shadow(0 0 20px rgba(255, 214, 153, 0.8));
+  filter: drop-shadow(0 0 20px color-mix(in srgb, var(--ss-color-accent) 80%, transparent));
   position: absolute;
 }
 
@@ -2229,14 +2229,14 @@ button.small {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 216, 166, 0.6);
+  border: 2px solid color-mix(in srgb, var(--ss-color-accent) 60%, transparent);
   opacity: 0;
 }
 
 .firework-ring.ring-b {
   width: 20px;
   height: 20px;
-  border-color: rgba(155, 231, 255, 0.7);
+  border-color: color-mix(in srgb, var(--ss-color-accent) 70%, transparent);
 }
 
 .fireworks span {
@@ -2289,7 +2289,7 @@ button.small {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: rgba(200, 200, 200, 0.4);
+  background: color-mix(in srgb, var(--ss-color-text) 40%, transparent);
 }
 
 .crash-smoke span:nth-child(1) {
@@ -2322,7 +2322,7 @@ button.small {
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  text-shadow: 0 0 20px currentColor, 0 0 40px currentColor, 0 4px 8px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 0 20px currentColor, 0 0 40px currentColor, 0 4px 8px color-mix(in srgb, var(--ss-bg-code) 50%, transparent);
   animation: result-text-appear 0.6s ease-out forwards;
   opacity: 0;
   transform: scale(0.5);
@@ -2331,11 +2331,11 @@ button.small {
 }
 
 .judge-result-text.accepted {
-  color: #4ade80;
+  color: var(--ss-color-success);
 }
 
 .judge-result-text.wrong {
-  color: #ef4444;
+  color: var(--ss-color-danger);
 }
 
 @keyframes result-text-appear {
@@ -2375,19 +2375,19 @@ button.small {
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: rgba(6, 9, 14, 0.7);
+  background: color-mix(in srgb, var(--ss-bg-code) 70%, transparent);
   font-size: 12px;
   color: var(--muted);
 }
 
 .submit-result.ok {
-  border-color: rgba(76, 175, 80, 0.5);
-  color: #bff3c3;
+  border-color: color-mix(in srgb, var(--ss-color-success) 50%, transparent);
+  color: var(--ss-color-success);
 }
 
 .submit-result.bad {
-  border-color: rgba(239, 83, 80, 0.5);
-  color: #ffb5b3;
+  border-color: color-mix(in srgb, var(--ss-color-danger) 50%, transparent);
+  color: var(--ss-color-danger);
 }
 
 .submit-result-message {
@@ -2410,7 +2410,7 @@ button.small {
   padding: 16px;
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: rgba(6, 9, 14, 0.75);
+  background: color-mix(in srgb, var(--ss-bg-code) 75%, transparent);
   color: var(--text);
 }
 
@@ -2456,7 +2456,7 @@ button.small {
   gap: 16px;
   padding: 20px;
   border-radius: 20px;
-  border: 1px solid rgba(95, 211, 163, 0.24);
+  border: 1px solid color-mix(in srgb, var(--ss-color-success) 24%, transparent);
   background: none;
 }
 
@@ -2469,7 +2469,7 @@ button.small {
   font-size: 12px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #8ff0bc;
+  color: var(--ss-color-success);
 }
 
 .judge-celebration-copy h3 {
@@ -2495,7 +2495,7 @@ button.small {
   gap: 8px;
   padding: 14px 16px;
   border-radius: 16px;
-  border: 1px solid rgba(143, 240, 188, 0.14);
+  border: 1px solid color-mix(in srgb, var(--ss-color-success) 14%, transparent);
   background: var(--ss-hover-layer);
 }
 
@@ -2539,7 +2539,7 @@ button.small {
   align-items: center;
   padding: 14px 16px;
   border-radius: 16px;
-  border: 1px solid rgba(143, 240, 188, 0.14);
+  border: 1px solid color-mix(in srgb, var(--ss-color-success) 14%, transparent);
   background: var(--ss-hover-layer);
 }
 
@@ -2549,7 +2549,7 @@ button.small {
   display: grid;
   place-items: center;
   border-radius: 14px;
-  background: rgba(143, 240, 188, 0.12);
+  background: color-mix(in srgb, var(--ss-color-success) 12%, transparent);
   font-size: 22px;
 }
 
@@ -2695,7 +2695,7 @@ button.small {
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: rgba(6, 9, 14, 0.8);
+  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
   font-size: 12px;
   color: var(--muted);
 }
@@ -2722,7 +2722,7 @@ button.small {
 }
 
 .submit-result-toggle {
-  color: #9ad9ff;
+  color: var(--ss-color-accent-strong);
   font-weight: 600;
 }
 
@@ -2731,7 +2731,7 @@ button.small {
   padding: 12px 14px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: rgba(6, 9, 14, 0.65);
+  background: color-mix(in srgb, var(--ss-bg-code) 65%, transparent);
   display: grid;
   gap: 12px;
 }
@@ -2745,7 +2745,7 @@ button.small {
   margin: 0;
   padding: 12px;
   border-radius: 12px;
-  background: rgba(6, 9, 14, 0.9);
+  background: color-mix(in srgb, var(--ss-bg-code) 90%, transparent);
   border: 1px solid var(--border);
   color: var(--ss-color-text);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -2767,7 +2767,7 @@ button.small {
 .ide-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(3, 5, 8, 0.75);
+  background: color-mix(in srgb, var(--ss-bg-code) 75%, transparent);
   display: grid;
   place-items: center;
   z-index: 30;
@@ -2861,7 +2861,7 @@ button.small {
 }
 
 .ide-btn-primary:hover {
-  background: rgba(109, 213, 255, 0.95);
+  background: color-mix(in srgb, var(--ss-color-accent) 95%, transparent);
   /* transform removed: 克制化 */
   box-shadow: 0 4px 12px var(--ss-accent-border);
 }
@@ -3024,11 +3024,11 @@ button.small {
 }
 
 .ide-run-status.warn {
-  color: #faad14;
+  color: var(--ss-color-warning);
 }
 
 .ide-run-status.runtime {
-  color: #c7a5ff;
+  color: var(--ss-color-accent);
 }
 
 .ide-run-input,
@@ -3074,8 +3074,8 @@ button.small {
 
 .ide-error {
   padding: 10px 16px;
-  background: rgba(255, 77, 79, 0.15);
-  border: 1px solid rgba(255, 77, 79, 0.4);
+  background: color-mix(in srgb, var(--ss-color-danger) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-color-danger) 40%, transparent);
   border-radius: 6px;
   color: var(--ss-color-danger);
   font-size: 13px;
@@ -3180,7 +3180,7 @@ button.small {
   min-height: 90px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: rgba(6, 9, 14, 0.9);
+  background: color-mix(in srgb, var(--ss-bg-code) 90%, transparent);
   color: var(--ss-color-text);
   padding: 10px 12px;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -3200,7 +3200,7 @@ button.small {
 .testcase-item {
   border-radius: 14px;
   border: 1px solid var(--border);
-  background: rgba(6, 9, 14, 0.85);
+  background: color-mix(in srgb, var(--ss-bg-code) 85%, transparent);
   padding: 12px 14px;
   display: grid;
   gap: 10px;
@@ -3223,7 +3223,7 @@ button.small {
   margin: 0;
   padding: 12px;
   border-radius: 12px;
-  background: rgba(6, 9, 14, 0.9);
+  background: color-mix(in srgb, var(--ss-bg-code) 90%, transparent);
   border: 1px solid var(--border);
   color: var(--ss-color-text);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
@@ -3293,7 +3293,7 @@ button.small {
 }
 
 .status-normal {
-  color: #bcd6f5;
+  color: var(--ss-color-bg-soft);
 }
 
 .status-banned {
@@ -3318,7 +3318,7 @@ button.small {
 }
 
 button.danger {
-  border-color: rgba(255, 113, 122, 0.6);
+  border-color: color-mix(in srgb, var(--ss-color-danger) 60%, transparent);
   color: var(--ss-color-danger);
 }
 
@@ -3942,7 +3942,7 @@ button.primary:hover {
 }
 
 .home-plain-actions button:hover {
-  color: #dff4ff !important;
+  color: var(--ss-color-accent) !important;
   background: transparent !important;
   text-decoration: underline;
   transform: none !important;
@@ -4472,8 +4472,8 @@ button.primary:hover {
 
 .form-error {
   padding: 12px 16px;
-  background: rgba(244, 67, 54, 0.1);
-  border: 1px solid rgba(244, 67, 54, 0.3);
+  background: color-mix(in srgb, var(--ss-color-danger) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-color-danger) 30%, transparent);
   border-radius: 10px;
   color: var(--ss-color-danger);
   font-size: 14px;
@@ -4481,8 +4481,8 @@ button.primary:hover {
 
 .form-success {
   padding: 12px 16px;
-  background: rgba(76, 175, 80, 0.1);
-  border: 1px solid rgba(76, 175, 80, 0.3);
+  background: color-mix(in srgb, var(--ss-color-success) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-color-success) 30%, transparent);
   border-radius: 10px;
   color: var(--ss-color-success);
   font-size: 14px;
@@ -4574,9 +4574,9 @@ button.primary:hover {
 }
 
 .file-badge.out {
-  background: rgba(156, 39, 176, 0.15);
-  color: #ba68c8;
-  border: 1px solid rgba(156, 39, 176, 0.3);
+  background: color-mix(in srgb, var(--ss-color-accent) 15%, transparent);
+  color: var(--ss-color-accent);
+  border: 1px solid color-mix(in srgb, var(--ss-color-accent) 30%, transparent);
 }
 
 .file-name {
@@ -4603,8 +4603,8 @@ button.danger {
 }
 
 button.danger:hover {
-  background: rgba(244, 67, 54, 0.1);
-  border-color: rgba(244, 67, 54, 0.3);
+  background: color-mix(in srgb, var(--ss-color-danger) 10%, transparent);
+  border-color: color-mix(in srgb, var(--ss-color-danger) 30%, transparent);
 }
 
 .my-problem-card {
@@ -4681,7 +4681,7 @@ button.danger:hover {
 .profile-card {
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: rgba(6, 9, 14, 0.8);
+  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -4733,7 +4733,7 @@ button.danger:hover {
 .heatmap-container {
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: rgba(6, 9, 14, 0.8);
+  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
   padding: 24px;
 }
 
@@ -4809,7 +4809,7 @@ button.danger:hover {
 .difficulty-progress-container {
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: rgba(6, 9, 14, 0.8);
+  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
   padding: 24px;
 }
 
@@ -4952,7 +4952,7 @@ button.danger:hover {
 .achievements-container {
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: rgba(6, 9, 14, 0.8);
+  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent);
   padding: 24px;
 }
 
@@ -5086,7 +5086,7 @@ button.danger:hover {
 
 .leaderboard-table td {
   padding: 12px;
-  border-bottom: 1px solid rgba(27, 37, 51, 0.5);
+  border-bottom: 1px solid color-mix(in srgb, var(--ss-bg-code) 50%, transparent);
 }
 
 .leaderboard-row {
@@ -5117,12 +5117,12 @@ button.danger:hover {
 
 .rank-change.up {
   color: var(--ss-color-success);
-  background: rgba(76, 175, 80, 0.15);
+  background: color-mix(in srgb, var(--ss-color-success) 15%, transparent);
 }
 
 .rank-change.down {
   color: var(--ss-color-danger);
-  background: rgba(244, 67, 54, 0.15);
+  background: color-mix(in srgb, var(--ss-color-danger) 15%, transparent);
 }
 
 .rank-change.stable {
@@ -5131,8 +5131,8 @@ button.danger:hover {
 }
 
 .rank-change.new {
-  color: #ffc107;
-  background: rgba(255, 193, 7, 0.15);
+  color: var(--ss-color-warning);
+  background: color-mix(in srgb, var(--ss-color-warning) 15%, transparent);
 }
 
 /* Leaderboard period label */
@@ -5174,27 +5174,27 @@ button.danger:hover {
 
 /* Leaderboard top 3 highlight */
 .leaderboard-row.top-1 {
-  background: rgba(255, 215, 0, 0.06);
+  background: color-mix(in srgb, var(--ss-color-warning) 6%, transparent);
 }
 
 .leaderboard-row.top-1:hover {
-  background: rgba(255, 215, 0, 0.1);
+  background: color-mix(in srgb, var(--ss-color-warning) 10%, transparent);
 }
 
 .leaderboard-row.top-2 {
-  background: rgba(192, 192, 192, 0.05);
+  background: color-mix(in srgb, var(--ss-color-text) 5%, transparent);
 }
 
 .leaderboard-row.top-2:hover {
-  background: rgba(192, 192, 192, 0.08);
+  background: color-mix(in srgb, var(--ss-color-text) 8%, transparent);
 }
 
 .leaderboard-row.top-3 {
-  background: rgba(205, 127, 50, 0.05);
+  background: color-mix(in srgb, var(--ss-color-danger) 5%, transparent);
 }
 
 .leaderboard-row.top-3:hover {
-  background: rgba(205, 127, 50, 0.08);
+  background: color-mix(in srgb, var(--ss-color-danger) 8%, transparent);
 }
 
 /* Leaderboard user cell clickable */
@@ -5416,32 +5416,32 @@ button.danger:hover {
 }
 
 .problem-plan-item-meta .difficulty-tag.入门 {
-  background: rgba(124, 179, 66, 0.2);
-  color: #7cb342;
+  background: color-mix(in srgb, var(--ss-color-success) 20%, transparent);
+  color: var(--ss-color-success);
 }
 
 .problem-plan-item-meta .difficulty-tag.普及- {
-  background: rgba(102, 187, 106, 0.2);
-  color: #66bb6a;
+  background: color-mix(in srgb, var(--ss-color-success) 20%, transparent);
+  color: var(--ss-color-success);
 }
 
 .problem-plan-item-meta .difficulty-tag.普及 {
-  background: rgba(255, 167, 38, 0.2);
+  background: color-mix(in srgb, var(--ss-color-warning) 20%, transparent);
   color: var(--ss-color-warning);
 }
 
 .problem-plan-item-meta .difficulty-tag.普及\+ {
-  background: rgba(255, 152, 0, 0.2);
+  background: color-mix(in srgb, var(--ss-color-danger) 20%, transparent);
   color: var(--ss-color-warning);
 }
 
 .problem-plan-item-meta .difficulty-tag.提高 {
-  background: rgba(239, 83, 80, 0.2);
-  color: #ef5350;
+  background: color-mix(in srgb, var(--ss-color-danger) 20%, transparent);
+  color: var(--ss-color-danger);
 }
 
 .problem-plan-item-meta .difficulty-tag.提高\+ {
-  background: rgba(244, 67, 54, 0.2);
+  background: color-mix(in srgb, var(--ss-color-danger) 20%, transparent);
   color: var(--ss-color-danger);
 }
 
@@ -5462,7 +5462,7 @@ button.danger:hover {
 }
 
 .problem-plan-remove:hover {
-  background: rgba(244, 67, 54, 0.2);
+  background: color-mix(in srgb, var(--ss-color-danger) 20%, transparent);
   color: var(--ss-color-danger);
 }
 
@@ -5531,7 +5531,7 @@ button.danger:hover {
   margin: -32px;
   padding: 32px 40px;
   width: calc(100% + 64px);
-  background: rgba(5, 8, 14, 0.4);
+  background: color-mix(in srgb, var(--ss-bg-code) 40%, transparent);
   border-radius: 0;
 }
 
@@ -5559,8 +5559,8 @@ button.danger:hover {
 }
 
 .discussion-error {
-  background: rgba(255, 80, 80, 0.12);
-  border: 1px solid rgba(255, 80, 80, 0.3);
+  background: color-mix(in srgb, var(--ss-color-danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-color-danger) 30%, transparent);
   color: var(--ss-color-danger);
   padding: 10px 16px;
   border-radius: 10px;
@@ -5651,7 +5651,7 @@ button.danger:hover {
 .discussion-card:hover {
   background: var(--ss-accent-bg);
   border-color: var(--ss-accent-border);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ss-bg-code) 12%, transparent);
 }
 
 .discussion-card-main {
@@ -5835,7 +5835,7 @@ button.danger:hover {
 }
 
 .post-content pre {
-  background: rgba(0, 0, 0, 0.3);
+  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px 16px;
@@ -5880,13 +5880,13 @@ button.danger:hover {
 
 .like-btn:hover {
   color: var(--ss-color-danger);
-  border-color: rgba(255, 107, 138, 0.3);
+  border-color: color-mix(in srgb, var(--ss-color-danger) 30%, transparent);
 }
 
 .like-btn.liked {
   color: var(--ss-color-danger);
-  border-color: rgba(255, 107, 138, 0.4);
-  background: rgba(255, 107, 138, 0.08);
+  border-color: color-mix(in srgb, var(--ss-color-danger) 40%, transparent);
+  background: color-mix(in srgb, var(--ss-color-danger) 8%, transparent);
 }
 
 .like-btn svg {
@@ -5981,7 +5981,7 @@ button.danger:hover {
   align-items: center;
   justify-content: center;
   background: var(--ss-color-accent);
-  color: #04101c; /* 深字配亮蓝底（暗色主题下 accent 为亮蓝） */
+  color: var(--ss-color-bg); /* 深字配亮蓝底（暗色主题下 accent 为亮蓝） */
   font-size: 12px;
   font-weight: 700;
 }
@@ -6042,7 +6042,7 @@ button.danger:hover {
 
 .delete-btn:hover {
   color: var(--ss-color-danger);
-  background: rgba(255, 80, 80, 0.08);
+  background: color-mix(in srgb, var(--ss-color-danger) 8%, transparent);
 }
 
 .comment-replies {
@@ -6166,7 +6166,7 @@ button.danger:hover {
   margin-top: 4px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: rgba(15, 20, 30, 0.98);
+  background: color-mix(in srgb, var(--ss-bg-code) 98%, transparent);
   backdrop-filter: blur(10px);
   z-index: 100;
   max-height: 200px;
@@ -6276,7 +6276,7 @@ button.danger:hover {
 }
 
 .rich-editor-content pre {
-  background: rgba(0, 0, 0, 0.3);
+  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px 16px;
@@ -6299,7 +6299,7 @@ button.danger:hover {
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: rgba(0, 0, 0, 0.3);
+  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
@@ -6309,7 +6309,7 @@ button.danger:hover {
 
 .tag-selector-input:hover {
   border-color: var(--ss-accent-border);
-  background: rgba(0, 0, 0, 0.4);
+  background: color-mix(in srgb, var(--ss-bg-code) 40%, transparent);
 }
 
 .selected-tags {
@@ -6383,7 +6383,7 @@ button.danger:hover {
 .tag-selector-modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: color-mix(in srgb, var(--ss-bg-code) 70%, transparent);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -6402,7 +6402,7 @@ button.danger:hover {
   max-height: min(80vh, calc(100vh - 96px));
   display: flex;
   flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 60px color-mix(in srgb, var(--ss-bg-code) 50%, transparent);
 }
 
 .tag-selector-header {
@@ -6466,7 +6466,7 @@ button.danger:hover {
 .tag-selector-item {
   position: relative;
   padding: 10px 14px;
-  background: rgba(0, 0, 0, 0.3);
+  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -6593,7 +6593,7 @@ button.danger:hover {
 }
 
 .oj-recommendation-card {
-  background: rgba(0, 0, 0, 0.3);
+  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
@@ -6672,7 +6672,7 @@ button.danger:hover {
 }
 
 .oj-quick-action-card {
-  background: rgba(0, 0, 0, 0.3);
+  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 16px;
@@ -6745,14 +6745,14 @@ button.danger:hover {
   align-items: center;
   gap: 12px;
   padding: 10px;
-  background: rgba(0, 0, 0, 0.2);
+  background: color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
   border: 1px solid var(--border);
   border-radius: 8px;
   transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .oj-recent-ac-item:hover {
-  background: rgba(0, 0, 0, 0.3);
+  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
   border-color: var(--ss-accent-border);
 }
 
@@ -6867,7 +6867,7 @@ button.danger:hover {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: rgba(0, 0, 0, 0.2);
+  background: color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
   border: 1px solid var(--border);
   border-radius: 6px;
 }
@@ -6895,7 +6895,7 @@ button.danger:hover {
   align-items: center;
   justify-content: space-between;
   padding: 6px 10px;
-  background: rgba(0, 0, 0, 0.2);
+  background: color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 12px;
@@ -6922,7 +6922,7 @@ button.danger:hover {
   align-items: center;
   gap: 12px;
   padding: 12px;
-  background: rgba(0, 0, 0, 0.2);
+  background: color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
@@ -7101,7 +7101,7 @@ button.danger:hover {
   background: var(--ss-color-danger);
   border-radius: 50%;
   border: 2px solid var(--ss-bg-panel-solid);
-  box-shadow: 0 0 6px rgba(255, 71, 87, 0.5);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--ss-color-danger) 50%, transparent);
   animation: dot-pulse 2s ease-in-out infinite;
 }
 
@@ -7116,7 +7116,7 @@ button.danger:hover {
   margin: -32px;
   padding: 32px 40px;
   width: calc(100% + 64px);
-  background: rgba(5, 8, 14, 0.4);
+  background: color-mix(in srgb, var(--ss-bg-code) 40%, transparent);
 }
 
 .message-list-header {
@@ -7154,7 +7154,7 @@ button.danger:hover {
 .conversation-card:hover {
   background: var(--ss-accent-bg);
   border-color: var(--ss-accent-border);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ss-bg-code) 12%, transparent);
   /* transform removed: 克制化 */
 }
 
@@ -7216,7 +7216,7 @@ button.danger:hover {
   height: 24px;
   padding: 0 8px;
   background: var(--ss-color-danger);
-  color: #ffffff; /* 红底白字，浅/深主题下都清晰可读 */
+  color: var(--ss-color-text); /* 红底白字，浅/深主题下都清晰可读 */
   font-size: 12px;
   font-weight: 600;
   border-radius: 12px;
@@ -7233,7 +7233,7 @@ button.danger:hover {
   height: calc(100vh - var(--topbar-offset));
   margin: -32px;
   width: calc(100% + 64px);
-  background: rgba(5, 8, 14, 0.4);
+  background: color-mix(in srgb, var(--ss-bg-code) 40%, transparent);
 }
 
 .chat-header {
@@ -7395,7 +7395,7 @@ button.danger:hover {
   border-radius: 8px;
   background: var(--ss-bg-code);
   padding: 10px 12px;
-  color: #e6edf3;
+  color: var(--ss-color-text);
 }
 .message-bubble pre code {
   background: none;
@@ -7430,7 +7430,7 @@ button.danger:hover {
 }
 
 .message-text code {
-  background: rgba(0, 0, 0, 0.3);
+  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
   padding: 2px 6px;
   border-radius: 4px;
   font-family: 'Consolas', 'Monaco', monospace;
@@ -7438,7 +7438,7 @@ button.danger:hover {
 }
 
 .message-text pre {
-  background: rgba(0, 0, 0, 0.3);
+  background: color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
   padding: 12px;
   border-radius: 6px;
   overflow-x: auto;
@@ -7742,21 +7742,21 @@ button.danger:hover {
 }
 
 .starbot-badge-green {
-  background: rgba(76, 175, 80, 0.1);
+  background: color-mix(in srgb, var(--ss-color-success) 10%, transparent);
   color: var(--ss-color-success);
-  border-color: rgba(76, 175, 80, 0.3);
+  border-color: color-mix(in srgb, var(--ss-color-success) 30%, transparent);
 }
 
 .starbot-badge-blue {
-  background: rgba(100, 181, 246, 0.1);
+  background: color-mix(in srgb, var(--ss-color-accent) 10%, transparent);
   color: var(--ss-color-accent);
-  border-color: rgba(100, 181, 246, 0.3);
+  border-color: color-mix(in srgb, var(--ss-color-accent) 30%, transparent);
 }
 
 .starbot-badge-purple {
-  background: rgba(206, 147, 216, 0.1);
+  background: color-mix(in srgb, var(--ss-color-accent) 10%, transparent);
   color: var(--ss-color-accent);
-  border-color: rgba(206, 147, 216, 0.3);
+  border-color: color-mix(in srgb, var(--ss-color-accent) 30%, transparent);
 }
 
 .starbot-desc {
@@ -7806,7 +7806,7 @@ button.danger:hover {
   padding: 18px 20px;
   border-radius: 16px;
   border: 1px solid var(--ss-color-border);
-  background: rgba(7, 10, 16, 0.72);
+  background: color-mix(in srgb, var(--ss-bg-code) 72%, transparent);
   box-shadow: inset 0 1px 0 var(--ss-hover-layer);
 }
 
@@ -7876,7 +7876,7 @@ button.starbot-tutorial-stepchip:focus-visible {
   place-items: center;
   border-radius: 50%;
   background: var(--ss-accent-border-soft);
-  color: #8ce7ff;
+  color: var(--ss-color-accent-strong);
   font-family: 'Oxanium', sans-serif;
   font-size: 11px;
   font-weight: 700;
@@ -7963,7 +7963,7 @@ button.starbot-tutorial-stepchip:focus-visible {
 }
 
 .starbot-skill-card:hover {
-  border-color: rgba(206, 147, 216, 0.35);
+  border-color: color-mix(in srgb, var(--ss-color-accent) 35%, transparent);
 }
 
 .starbot-skill-icon {
@@ -7973,7 +7973,7 @@ button.starbot-tutorial-stepchip:focus-visible {
 .starbot-skill-name {
   font-size: 12px;
   color: var(--ss-color-accent);
-  background: rgba(206, 147, 216, 0.1);
+  background: color-mix(in srgb, var(--ss-color-accent) 10%, transparent);
   padding: 2px 7px;
   border-radius: 6px;
   width: fit-content;
@@ -8025,7 +8025,7 @@ button.starbot-tutorial-stepchip:focus-visible {
 
 /* Architecture */
 .starbot-arch-card {
-  background: rgba(6, 9, 14, 0.85);
+  background: color-mix(in srgb, var(--ss-bg-code) 85%, transparent);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 24px 28px;
@@ -8121,7 +8121,7 @@ button.starbot-tutorial-stepchip:focus-visible {
 }
 
 .starbot-install-card {
-  background: rgba(6, 9, 14, 0.85);
+  background: color-mix(in srgb, var(--ss-bg-code) 85%, transparent);
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
@@ -8130,7 +8130,7 @@ button.starbot-tutorial-stepchip:focus-visible {
 .starbot-page-tutorial .starbot-install-card {
   border-radius: 10px;
   border-color: var(--ss-hover-layer);
-  background: rgba(8, 12, 18, 0.82);
+  background: color-mix(in srgb, var(--ss-bg-code) 82%, transparent);
 }
 
 .starbot-install-label {
@@ -8151,7 +8151,7 @@ button.starbot-tutorial-stepchip:focus-visible {
 .starbot-code {
   font-family: 'Consolas', 'Fira Code', monospace;
   font-size: 12px;
-  color: #b2dfdb;
+  color: var(--ss-color-success);
   padding: 12px 16px;
   margin: 0;
   line-height: 1.7;
@@ -8237,10 +8237,10 @@ button.starbot-tutorial-stepchip:focus-visible {
   font-family: 'Consolas', 'Fira Code', monospace;
   font-size: 12px;
   color: var(--ss-color-success);
-  background: rgba(76, 175, 80, 0.08);
+  background: color-mix(in srgb, var(--ss-color-success) 8%, transparent);
   padding: 2px 8px;
   border-radius: 6px;
-  border: 1px solid rgba(76, 175, 80, 0.2);
+  border: 1px solid color-mix(in srgb, var(--ss-color-success) 20%, transparent);
   width: fit-content;
 }
 
@@ -8405,9 +8405,9 @@ body {
 .topbar {
   padding: 14px 24px;
   border-bottom: 1px solid var(--ss-color-border);
-  background: rgba(8, 11, 16, 0.72);
+  background: color-mix(in srgb, var(--ss-bg-code) 72%, transparent);
   backdrop-filter: blur(28px);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 10px 40px color-mix(in srgb, var(--ss-bg-code) 18%, transparent);
 }
 
 .topbar-left {
@@ -8425,7 +8425,7 @@ body {
   border: none;
   border-radius: 0;
   background: transparent;
-  color: rgba(214, 241, 255, 0.52);
+  color: color-mix(in srgb, var(--ss-color-accent) 52%, transparent);
   font-size: 10px;
   letter-spacing: 0.28em;
 }
@@ -8441,7 +8441,7 @@ body {
 }
 
 .sidebar:hover {
-  box-shadow: 18px 0 44px rgba(0, 0, 0, 0.2);
+  box-shadow: 18px 0 44px color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
 }
 
 .nav {
@@ -8469,14 +8469,14 @@ body {
   color: var(--ss-color-text);
   background: var(--ss-hover-layer);
   border-color: var(--ss-accent-bg-strong);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--ss-bg-code) 16%, transparent);
 }
 
 .status-dot {
   width: 6px;
   height: 6px;
-  background: #8ee7ff;
-  box-shadow: 0 0 8px rgba(142, 231, 255, 0.55);
+  background: var(--ss-color-accent-strong);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--ss-color-accent) 55%, transparent);
 }
 
 .sidebar-footer,
@@ -8529,7 +8529,7 @@ button.ghost {
 
 button.primary {
   background: var(--ss-color-accent);
-  color: #031018;
+  color: var(--ss-color-bg);
   box-shadow: 0 10px 24px var(--ss-accent-border-soft);
 }
 
@@ -8599,7 +8599,7 @@ select.auth-input {
   color: var(--ss-color-text);
   box-shadow:
     inset 0 1px 0 var(--ss-hover-layer),
-    0 14px 34px rgba(0, 0, 0, 0.16);
+    0 14px 34px color-mix(in srgb, var(--ss-bg-code) 16%, transparent);
   cursor: pointer;
   transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s, background-color 0.2s;
 }
@@ -8608,7 +8608,7 @@ select.auth-input {
   border-color: var(--ss-accent-border-soft);
   box-shadow:
     inset 0 1px 0 var(--ss-hover-layer),
-    0 16px 38px rgba(0, 0, 0, 0.2);
+    0 16px 38px color-mix(in srgb, var(--ss-bg-code) 20%, transparent);
 }
 
 .custom-select.open .custom-select-trigger,
@@ -8635,7 +8635,7 @@ select.auth-input {
 }
 
 .custom-select-chevron {
-  color: rgba(188, 211, 255, 0.84);
+  color: color-mix(in srgb, var(--ss-color-accent) 84%, transparent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -8660,7 +8660,7 @@ select.auth-input {
   border: 1px solid var(--ss-color-border);
   background: var(--ss-bg-panel);
   box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.34),
+    0 20px 60px color-mix(in srgb, var(--ss-bg-code) 34%, transparent),
     inset 0 1px 0 var(--ss-hover-layer);
   backdrop-filter: blur(16px);
 }
@@ -8675,7 +8675,7 @@ select.auth-input {
   border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
-  color: #edf5ff;
+  color: var(--ss-color-accent);
   text-align: left;
   cursor: pointer;
   transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
@@ -8699,7 +8699,7 @@ select.auth-input {
 
 .custom-select-option-desc {
   grid-column: 1 / 2;
-  color: rgba(203, 217, 244, 0.72);
+  color: color-mix(in srgb, var(--ss-color-accent) 72%, transparent);
   font-size: 12px;
 }
 
@@ -8825,7 +8825,7 @@ select.auth-input {
 .leaderboard-period {
   border-color: var(--ss-hover-layer);
   background: var(--ss-hover-layer);
-  color: rgba(240, 248, 255, 0.74);
+  color: color-mix(in srgb, var(--ss-color-accent) 74%, transparent);
 }
 
 .oj-hero-badge {
@@ -8855,7 +8855,7 @@ select.auth-input {
   border: 1px solid var(--ss-color-border);
   background: var(--ss-hover-layer);
   box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.22),
+    0 24px 60px color-mix(in srgb, var(--ss-bg-code) 22%, transparent),
     inset 0 1px 0 var(--ss-hover-layer);
 }
 
@@ -8935,7 +8935,7 @@ select.auth-input {
   border-radius: 22px;
   border-color: var(--ss-hover-layer);
   background: var(--ss-hover-layer);
-  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 16px 34px color-mix(in srgb, var(--ss-bg-code) 16%, transparent);
 }
 
 .discussion-card,
@@ -8949,7 +8949,7 @@ select.auth-input {
 .oj-card:hover {
   /* transform removed: 克制化 */
   border-color: var(--ss-color-text-subtle);
-  box-shadow: 0 24px 40px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 24px 40px color-mix(in srgb, var(--ss-bg-code) 22%, transparent);
 }
 
 .discussion-card-title,
@@ -9266,7 +9266,7 @@ select.auth-input {
 
 .hero-left-minimal .eyebrow {
   margin-bottom: 10px;
-  color: rgba(173, 223, 255, 0.78);
+  color: color-mix(in srgb, var(--ss-color-accent) 78%, transparent);
 }
 
 .hero-left-minimal .hero-actions {
@@ -9343,7 +9343,7 @@ body {
   border-bottom-color: var(--ss-color-text-subtle);
   backdrop-filter: blur(18px) saturate(140%);
   box-shadow:
-    0 10px 34px rgba(0, 0, 0, 0.16),
+    0 10px 34px color-mix(in srgb, var(--ss-bg-code) 16%, transparent),
     inset 0 1px 0 var(--ss-color-border);
 }
 
@@ -9396,7 +9396,7 @@ body {
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
     inset 0 -1px 0 var(--ss-hover-layer),
-    0 18px 50px rgba(0, 0, 0, 0.16);
+    0 18px 50px color-mix(in srgb, var(--ss-bg-code) 16%, transparent);
   backdrop-filter: blur(14px) saturate(145%);
   -webkit-backdrop-filter: blur(14px) saturate(145%);
 }
@@ -9409,7 +9409,7 @@ body {
   border: 1px solid var(--ss-color-border);
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
-    0 28px 80px rgba(0, 0, 0, 0.16);
+    0 28px 80px color-mix(in srgb, var(--ss-bg-code) 16%, transparent);
   backdrop-filter: blur(12px) saturate(145%);
 }
 
@@ -9434,7 +9434,7 @@ body {
   border-color: var(--ss-color-text-subtle);
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
-    0 26px 56px rgba(0, 0, 0, 0.18);
+    0 26px 56px color-mix(in srgb, var(--ss-bg-code) 18%, transparent);
 }
 
 .oj-code-label,
@@ -9445,7 +9445,7 @@ body {
 .leaderboard-period,
 .profile-rank-badge,
 .hero-orbit-status {
-  color: rgba(246, 250, 255, 0.82);
+  color: color-mix(in srgb, var(--ss-color-accent) 82%, transparent);
 }
 
 .oj-tag,
@@ -9531,7 +9531,7 @@ body {
   border-radius: 30px;
   background: var(--ss-bg-panel-solid);
   box-shadow:
-    0 28px 90px rgba(0, 0, 0, 0.48),
+    0 28px 90px color-mix(in srgb, var(--ss-bg-code) 48%, transparent),
     inset 0 1px 0 var(--ss-hover-layer);
 }
 
@@ -9605,11 +9605,11 @@ body {
 .hero-orbit-card {
   padding: 22px;
   border-radius: 24px;
-  border: 1px solid rgba(123, 211, 255, 0.2);
+  border: 1px solid color-mix(in srgb, var(--ss-color-accent) 20%, transparent);
   background: none;
   box-shadow:
     inset 0 1px 0 var(--ss-hover-layer),
-    0 18px 40px rgba(0, 0, 0, 0.3);
+    0 18px 40px color-mix(in srgb, var(--ss-bg-code) 30%, transparent);
 }
 
 .hero-orbit-header {
@@ -9631,7 +9631,7 @@ body {
   padding: 6px 10px;
   border-radius: 999px;
   background: var(--ss-accent-bg-strong);
-  color: #d6f1ff;
+  color: var(--ss-color-bg-soft);
   font-size: 11px;
   letter-spacing: 0.16em;
 }
@@ -9707,7 +9707,7 @@ body {
   border: 1px solid var(--ss-color-border) !important;
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
-    0 28px 80px rgba(0, 0, 0, 0.14) !important;
+    0 28px 80px color-mix(in srgb, var(--ss-bg-code) 14%, transparent) !important;
   backdrop-filter: blur(12px) saturate(135%) !important;
   -webkit-backdrop-filter: blur(12px) saturate(135%) !important;
 }
@@ -9777,7 +9777,7 @@ body {
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
     inset 0 -1px 0 var(--ss-hover-layer),
-    0 18px 48px rgba(0, 0, 0, 0.14) !important;
+    0 18px 48px color-mix(in srgb, var(--ss-bg-code) 14%, transparent) !important;
   backdrop-filter: blur(14px) saturate(140%) !important;
   -webkit-backdrop-filter: blur(14px) saturate(140%) !important;
 }
@@ -9798,7 +9798,7 @@ body {
   background: var(--ss-hover-layer);
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
-    0 24px 56px rgba(0, 0, 0, 0.16) !important;
+    0 24px 56px color-mix(in srgb, var(--ss-bg-code) 16%, transparent) !important;
 }
 
 .oj-page,
@@ -9843,7 +9843,7 @@ body {
 .profile-card,
 .heatmap-container,
 .leaderboard-table {
-  color: rgba(248, 251, 255, 0.92);
+  color: color-mix(in srgb, var(--ss-color-accent) 92%, transparent);
 }
 
 .hero-summary-label,
@@ -9852,7 +9852,7 @@ body {
 .oj-hero-kicker,
 .hero-orbit-kicker,
 .eyebrow {
-  color: rgba(206, 230, 255, 0.72) !important;
+  color: color-mix(in srgb, var(--ss-color-accent) 72%, transparent) !important;
 }
 
 .oj-hero-badge,
@@ -9913,7 +9913,7 @@ body {
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
     inset 0 -1px 0 var(--ss-hover-layer),
-    0 22px 54px rgba(0, 0, 0, 0.18) !important;
+    0 22px 54px color-mix(in srgb, var(--ss-bg-code) 18%, transparent) !important;
   backdrop-filter: blur(16px) saturate(145%) !important;
   -webkit-backdrop-filter: blur(16px) saturate(145%) !important;
 }
@@ -9923,7 +9923,7 @@ body {
 .problem-option,
 .tag-selector-item {
   border-radius: 12px;
-  color: rgba(246, 250, 255, 0.9) !important;
+  color: color-mix(in srgb, var(--ss-color-accent) 90%, transparent) !important;
 }
 
 button.lang-switch-item:hover,
@@ -10054,7 +10054,7 @@ body {
   box-shadow:
     inset 0 1px 0 var(--ss-color-border-strong),
     inset 0 -1px 0 var(--ss-hover-layer),
-    0 18px 48px rgba(0, 0, 0, 0.12) !important;
+    0 18px 48px color-mix(in srgb, var(--ss-bg-code) 12%, transparent) !important;
   backdrop-filter: blur(10px) saturate(125%) !important;
   -webkit-backdrop-filter: blur(10px) saturate(125%) !important;
 }
@@ -10094,7 +10094,7 @@ body {
   font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #f6c87a;
+  color: var(--ss-warning-text);
 }
 
 .card-grid {
@@ -10113,7 +10113,7 @@ body {
   /* transform removed: 克制化 */
   border-color: var(--ss-accent-border);
   box-shadow:
-    0 18px 36px rgba(0, 0, 0, 0.28),
+    0 18px 36px color-mix(in srgb, var(--ss-bg-code) 28%, transparent),
     inset 0 1px 0 var(--ss-hover-layer);
 }
 
@@ -10123,7 +10123,7 @@ body {
   border-radius: 28px;
   background: var(--ss-bg-panel-solid);
   box-shadow:
-    0 24px 70px rgba(0, 0, 0, 0.4),
+    0 24px 70px color-mix(in srgb, var(--ss-bg-code) 40%, transparent),
     inset 0 1px 0 var(--ss-hover-layer);
 }
 
@@ -10182,7 +10182,7 @@ body {
   border-radius: 999px;
   background: var(--ss-hover-layer);
   border: 1px solid var(--ss-accent-border-soft);
-  color: rgba(240, 248, 255, 0.88);
+  color: color-mix(in srgb, var(--ss-color-accent) 88%, transparent);
 }
 
 .oj-summary-grid {
@@ -10196,7 +10196,7 @@ body {
   border-radius: 22px;
   border: 1px solid var(--ss-color-border);
   background: var(--ss-hover-layer);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 16px 36px color-mix(in srgb, var(--ss-bg-code) 22%, transparent);
 }
 
 .oj-summary-card strong {
@@ -10266,7 +10266,7 @@ body {
   border-radius: 22px;
   background: var(--ss-hover-layer);
   border-color: var(--ss-accent-border-soft);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 16px 36px color-mix(in srgb, var(--ss-bg-code) 22%, transparent);
 }
 
 .oj-weekly-chart-title {
@@ -10289,7 +10289,7 @@ body {
 
 .oj-recommendation-card:hover {
   /* transform removed: 克制化 */
-  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
+  box-shadow: 0 16px 32px color-mix(in srgb, var(--ss-bg-code) 24%, transparent);
   border-color: var(--ss-accent-border);
   background: var(--ss-hover-layer);
 }
@@ -10320,7 +10320,7 @@ body {
 .oj-recent-ac-item:hover,
 .problem-plan-item:hover {
   /* transform removed: 克制化 */
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--ss-bg-code) 18%, transparent);
 }
 
 @media (max-width: 1280px) {
@@ -10406,22 +10406,22 @@ body {
 /* StarStack 2026 command UI refresh */
 :root {
   --bg: var(--ss-color-bg);
-  --bg-elevated: #0b1019;
-  --panel: rgba(12, 17, 27, 0.82);
+  --bg-elevated: var(--ss-color-bg);
+  --panel: color-mix(in srgb, var(--ss-bg-code) 82%, transparent);
   --panel-strong: var(--ss-bg-panel-solid);
-  --border: rgba(162, 184, 213, 0.16);
-  --border-strong: rgba(199, 215, 238, 0.26);
-  --text: #f4f8ff;
-  --muted: #95a6bc;
-  --accent: #7dd3fc;
-  --accent-2: #f7c46c;
-  --accent-3: #a78bfa;
-  --success: #7ee2a8;
-  --danger: #fb7185;
+  --border: color-mix(in srgb, var(--ss-color-accent) 16%, transparent);
+  --border-strong: color-mix(in srgb, var(--ss-color-accent) 26%, transparent);
+  --text: var(--ss-color-bg-soft);
+  --muted: var(--ss-color-text-muted);
+  --accent: var(--ss-color-accent-strong);
+  --accent-2: var(--ss-warning-text);
+  --accent-3: var(--ss-color-accent);
+  --success: var(--ss-color-success);
+  --danger: var(--ss-color-danger);
   --radius-md: 16px;
   --radius-lg: 22px;
-  --shadow-soft: 0 18px 48px rgba(0, 0, 0, 0.28);
-  --shadow-strong: 0 30px 80px rgba(0, 0, 0, 0.38);
+  --shadow-soft: 0 18px 48px color-mix(in srgb, var(--ss-bg-code) 28%, transparent);
+  --shadow-strong: 0 30px 80px color-mix(in srgb, var(--ss-bg-code) 38%, transparent);
 }
 
 body {
@@ -10467,9 +10467,9 @@ select:focus-visible,
 .topbar {
   min-height: 68px;
   padding: 12px 24px !important;
-  background: rgba(6, 9, 15, 0.82) !important;
+  background: color-mix(in srgb, var(--ss-bg-code) 82%, transparent) !important;
   border-bottom: 1px solid var(--border) !important;
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.2) !important;
+  box-shadow: 0 12px 34px color-mix(in srgb, var(--ss-bg-code) 20%, transparent) !important;
   backdrop-filter: blur(18px) saturate(135%) !important;
   -webkit-backdrop-filter: blur(18px) saturate(135%) !important;
 }
@@ -10505,9 +10505,9 @@ select:focus-visible,
 
 .sidebar {
   padding: 14px 10px !important;
-  background: rgba(6, 9, 15, 0.78) !important;
+  background: color-mix(in srgb, var(--ss-bg-code) 78%, transparent) !important;
   border-right: 1px solid var(--border) !important;
-  box-shadow: 12px 0 32px rgba(0, 0, 0, 0.12);
+  box-shadow: 12px 0 32px color-mix(in srgb, var(--ss-bg-code) 12%, transparent);
   backdrop-filter: blur(18px) saturate(135%) !important;
   -webkit-backdrop-filter: blur(18px) saturate(135%) !important;
 }
@@ -10604,7 +10604,7 @@ button.ghost,
 .filter-tab,
 .topbar-message-btn,
 .ide-btn-secondary {
-  color: rgba(244, 248, 255, 0.9) !important;
+  color: color-mix(in srgb, var(--ss-color-accent) 90%, transparent) !important;
   background: var(--ss-hover-layer) !important;
   border: 1px solid var(--border) !important;
   box-shadow: none !important;
@@ -10644,7 +10644,7 @@ input[type="password"] {
   min-height: 42px;
   border-radius: 10px !important;
   color: var(--text) !important;
-  background: rgba(2, 6, 12, 0.5) !important;
+  background: color-mix(in srgb, var(--ss-bg-code) 50%, transparent) !important;
   border: 1px solid var(--border) !important;
   box-shadow: inset 0 1px 0 var(--ss-hover-layer);
 }
@@ -10703,7 +10703,7 @@ input[type="password"]:focus {
   border: 1px solid var(--border);
   border-radius: 18px;
   overflow: hidden;
-  background: rgba(2, 6, 12, 0.34);
+  background: color-mix(in srgb, var(--ss-bg-code) 34%, transparent);
 }
 
 .hero-summary-row {
@@ -10790,7 +10790,7 @@ input[type="password"]:focus {
   border: 1px solid var(--ss-color-border) !important;
   border-radius: 999px !important;
   background: var(--ss-hover-layer) !important;
-  color: rgba(244, 248, 255, 0.84) !important;
+  color: color-mix(in srgb, var(--ss-color-accent) 84%, transparent) !important;
 }
 
 .oj-hero-stack {
@@ -10897,8 +10897,8 @@ input[type="password"]:focus {
 .admin-table {
   border-radius: 16px !important;
   border: 1px solid var(--border) !important;
-  background: rgba(10, 15, 24, 0.78) !important;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18) !important;
+  background: color-mix(in srgb, var(--ss-bg-code) 78%, transparent) !important;
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--ss-bg-code) 18%, transparent) !important;
 }
 
 .oj-card,
@@ -10912,7 +10912,7 @@ input[type="password"]:focus {
 .discussion-card:hover,
 .conversation-card:hover {
   border-color: var(--ss-accent-border-soft) !important;
-  background: rgba(14, 21, 34, 0.9) !important;
+  background: color-mix(in srgb, var(--ss-bg-code) 90%, transparent) !important;
   /* transform removed: 克制化 */
 }
 
@@ -10926,7 +10926,7 @@ input[type="password"]:focus {
 .oj-card-meta,
 .discussion-card-meta,
 .conversation-preview {
-  color: rgba(199, 211, 226, 0.68) !important;
+  color: color-mix(in srgb, var(--ss-color-accent) 68%, transparent) !important;
 }
 
 .oj-code-label {
@@ -10950,7 +10950,7 @@ input[type="password"]:focus {
 
 .oj-tag,
 .oj-tag-small {
-  color: rgba(199, 211, 226, 0.72) !important;
+  color: color-mix(in srgb, var(--ss-color-accent) 72%, transparent) !important;
   background: transparent !important;
 }
 
@@ -10972,7 +10972,7 @@ input[type="password"]:focus {
 .leaderboard-table th,
 .admin-table th {
   background: var(--ss-hover-layer);
-  color: rgba(199, 211, 226, 0.72) !important;
+  color: color-mix(in srgb, var(--ss-color-accent) 72%, transparent) !important;
   letter-spacing: 0.06em !important;
 }
 
@@ -10986,15 +10986,15 @@ input[type="password"]:focus {
 }
 
 .leaderboard-row.top-1 {
-  background: rgba(247, 196, 108, 0.08) !important;
+  background: color-mix(in srgb, var(--ss-color-warning) 8%, transparent) !important;
 }
 
 .leaderboard-row.top-2 {
-  background: rgba(199, 211, 226, 0.07) !important;
+  background: color-mix(in srgb, var(--ss-color-accent) 7%, transparent) !important;
 }
 
 .leaderboard-row.top-3 {
-  background: rgba(167, 139, 250, 0.08) !important;
+  background: color-mix(in srgb, var(--ss-color-accent) 8%, transparent) !important;
 }
 
 .rank-medal {
@@ -11004,7 +11004,7 @@ input[type="password"]:focus {
 .discussion-card-stats .stat-item,
 .discussion-card-problem {
   border-radius: 999px;
-  color: rgba(213, 225, 239, 0.76) !important;
+  color: color-mix(in srgb, var(--ss-color-accent) 76%, transparent) !important;
 }
 
 .discussion-problem-banner {
@@ -11032,7 +11032,7 @@ input[type="password"]:focus {
 .submission-code {
   border-radius: var(--radius-lg) !important;
   border: 1px solid var(--border) !important;
-  background: rgba(10, 15, 24, 0.8) !important;
+  background: color-mix(in srgb, var(--ss-bg-code) 80%, transparent) !important;
   box-shadow: var(--shadow-soft) !important;
 }
 
@@ -11062,7 +11062,7 @@ input[type="password"]:focus {
 .ide-run-output pre {
   border-radius: 12px !important;
   border: 1px solid var(--ss-color-border) !important;
-  background: rgba(2, 6, 12, 0.72) !important;
+  background: color-mix(in srgb, var(--ss-bg-code) 72%, transparent) !important;
 }
 
 .ide-panel.side {
@@ -11297,7 +11297,7 @@ input[type="password"]:focus {
   background: var(--ss-hover-layer);
   color: var(--text);
   text-align: left;
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 14px 36px color-mix(in srgb, var(--ss-bg-code) 22%, transparent);
   overflow: hidden;
   position: relative;
 }
@@ -11334,7 +11334,7 @@ input[type="password"]:focus {
 }
 
 .home-card-kicker {
-  color: rgba(190, 224, 255, 0.72);
+  color: color-mix(in srgb, var(--ss-color-accent) 72%, transparent);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -11349,7 +11349,7 @@ input[type="password"]:focus {
 
 .home-command-card p {
   margin: 0;
-  color: rgba(213, 225, 239, 0.7);
+  color: color-mix(in srgb, var(--ss-color-accent) 70%, transparent);
   font-size: 13px;
   line-height: 1.7;
 }
@@ -11710,7 +11710,7 @@ input[type="password"] {
 }
 
 button.primary {
-  background: #f5f7fb !important;
+  background: var(--ss-color-bg-soft) !important;
   color: var(--ss-color-bg) !important;
 }
 
@@ -11960,7 +11960,7 @@ button.ghost:hover,
 }
 
 .page-kicker {
-  color: rgba(190, 210, 230, 0.7);
+  color: color-mix(in srgb, var(--ss-color-accent) 70%, transparent);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -12220,14 +12220,14 @@ button.ghost:hover,
 /* Final cohesive UI reset: soft surfaces, no fragmented lines */
 :root {
   --final-bg: var(--ss-color-bg);
-  --final-surface: rgba(15, 20, 30, 0.68);
-  --final-surface-strong: rgba(18, 24, 36, 0.84);
+  --final-surface: color-mix(in srgb, var(--ss-bg-code) 68%, transparent);
+  --final-surface-strong: color-mix(in srgb, var(--ss-bg-code) 84%, transparent);
   --final-surface-soft: var(--ss-color-border);
   --final-hover: var(--ss-hover-layer);
   --final-border: var(--ss-color-border);
   --final-border-strong: var(--ss-color-border);
-  --final-text: #f4f7fb;
-  --final-muted: rgba(218, 228, 241, 0.66);
+  --final-text: var(--ss-color-bg-soft);
+  --final-muted: color-mix(in srgb, var(--ss-color-accent) 66%, transparent);
   --final-radius: 18px;
   --final-radius-lg: 24px;
 }
@@ -12547,7 +12547,7 @@ button.ghost,
   padding: 14px;
   border-radius: var(--final-radius-lg);
   background: var(--ss-bg-panel-opaque);
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.38);
+  box-shadow: 0 28px 80px color-mix(in srgb, var(--ss-bg-code) 38%, transparent);
   backdrop-filter: blur(16px) saturate(125%);
   -webkit-backdrop-filter: blur(16px) saturate(125%);
 }
@@ -12613,7 +12613,7 @@ button.ghost,
 .ide-editor .monaco-editor .inputarea,
 .ide-editor .monaco-editor .lines-content,
 .ide-editor .monaco-editor .view-overlays {
-  background: #0b1018 !important;
+  background: var(--ss-color-bg) !important;
 }
 
 .ide-editor .monaco-editor .view-overlays .current-line {
@@ -12627,8 +12627,8 @@ button.ghost,
 
 .mobile-tabbar {
   border: 0 !important;
-  background: rgba(8, 11, 18, 0.88) !important;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+  background: color-mix(in srgb, var(--ss-bg-code) 88%, transparent) !important;
+  box-shadow: 0 16px 40px color-mix(in srgb, var(--ss-bg-code) 28%, transparent);
 }
 
 @media (max-width: 900px) {
@@ -12781,7 +12781,7 @@ body,
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
   background: var(--ss-bg-panel-solid);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 20px 60px color-mix(in srgb, var(--ss-bg-code) 40%, transparent);
   padding: 12px 14px;
   z-index: 1500;
   display: flex;
@@ -12906,9 +12906,9 @@ body,
 .oj-error {
   margin: 10px 0;
   padding: 9px 12px;
-  border: 1px solid rgba(248, 113, 113, 0.35);
+  border: 1px solid color-mix(in srgb, var(--ss-color-danger) 35%, transparent);
   border-radius: var(--ss-radius-md);
-  background: rgba(248, 113, 113, 0.08);
+  background: color-mix(in srgb, var(--ss-color-danger) 8%, transparent);
   color: var(--ss-color-danger);
   font-size: 13px;
 }
@@ -12919,14 +12919,14 @@ body,
   /* 按钮通用 hover（--hover-calm 默认是深色主题白色值，浅色下必须加深，否则 hover 白边白底） */
   --hover-calm: var(--ss-color-border);
   --hover-calm-border: var(--ss-color-border-strong);
-  --final-surface: #ffffff;
-  --final-surface-strong: #ffffff;
+  --final-surface: var(--ss-color-text);
+  --final-surface-strong: var(--ss-color-text);
   --final-surface-soft: var(--ss-color-border);
   --final-hover: var(--ss-hover-layer); /* 浅色下反馈加深，与令牌一致 */
   --final-border: var(--ss-color-border);
   --final-border-strong: var(--ss-color-border-strong);
-  --final-text: #1f2328;
-  --final-muted: #59636e;
+  --final-text: var(--ss-color-text);
+  --final-muted: var(--ss-color-text-muted);
   --final-radius: 18px;
   --final-radius-lg: 24px;
 }
@@ -12937,7 +12937,7 @@ body,
 
 :root[data-theme='light'] .topbar,
 :root[data-theme='light'] .sidebar {
-  background: #ffffff !important;
+  background: var(--ss-color-text) !important;
 }
 
 /* 玻璃/半透明面板 → 统一纯白表面（高级纯色，去玻璃效果） */
@@ -12955,7 +12955,7 @@ body,
 :root[data-theme='light'] .chat-page,
 :root[data-theme='light'] .admin-page,
 :root[data-theme='light'] .user-menu-panel {
-  background: #ffffff !important;
+  background: var(--ss-color-text) !important;
   border-color: var(--ss-color-border) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -12965,12 +12965,12 @@ body,
 :root[data-theme='light'] button.primary {
   background: var(--ss-color-accent) !important;
   border-color: var(--ss-color-accent) !important;
-  color: #ffffff !important;
+  color: var(--ss-color-text) !important;
 }
 
 :root[data-theme='light'] button.primary:hover {
   background: var(--ss-color-accent-strong) !important;
-  color: #ffffff !important;
+  color: var(--ss-color-text) !important;
 }
 
 /* 近白文字残留 → 令牌正文色 */
@@ -13035,7 +13035,7 @@ body,
 
 /* 代码 IDE 抽屉：浅色下改纯白面板（编辑器本身保持深色） */
 :root[data-theme='light'] .oj-detail-ide {
-  background: #ffffff !important;
+  background: var(--ss-color-text) !important;
   box-shadow: 0 28px 80px var(--ss-color-border);
 }
 
@@ -13124,7 +13124,7 @@ body,
 
 :root[data-theme='light'] .ide-run-status.runtime,
 :root[data-theme='light'] .file-badge.out {
-  color: #7c3aed !important;
+  color: var(--ss-color-accent) !important;
 }
 
 :root[data-theme='light'] .home-plain-actions button:hover {
@@ -13139,7 +13139,7 @@ body,
 
 /* 亮色下 accent 蓝底头像占位 → 白字（深字配深蓝底会看不清） */
 :root[data-theme='light'] .discussion-avatar.fallback {
-  color: #ffffff !important;
+  color: var(--ss-color-text) !important;
 }
 
 /* 暗色下删除/举报/错误类 hover 红统一为更亮的红（从灰变暗红=变暗违规，改亮红） */
@@ -13198,22 +13198,22 @@ body,
 
 /* ---------- 浅色：难度徽标恢复鲜艳彩色（luogu 语义：入门红/普及橙黄/提高绿/省选蓝） ---------- */
 :root[data-theme='light'] .oj-badge.入门 {
-  color: #dc2626 !important;
+  color: var(--ss-color-danger) !important;
 }
 
 :root[data-theme='light'] .oj-badge.普及- {
-  color: #b45309 !important;
+  color: var(--ss-color-warning) !important;
 }
 
 :root[data-theme='light'] .oj-badge.普及,
 :root[data-theme='light'] .oj-badge.提高- {
-  color: #d97706 !important;
+  color: var(--ss-color-warning) !important;
 }
 
 :root[data-theme='light'] .oj-badge.提高 {
-  color: #15803d !important;
+  color: var(--ss-color-success) !important;
 }
 
 :root[data-theme='light'] .oj-badge.省选 {
-  color: #0969da !important;
+  color: var(--ss-color-accent) !important;
 }
