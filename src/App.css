@@ -12919,8 +12919,8 @@ body,
   /* 按钮通用 hover（--hover-calm 默认是深色主题白色值，浅色下必须加深，否则 hover 白边白底） */
   --hover-calm: var(--ss-color-border);
   --hover-calm-border: var(--ss-color-border-strong);
-  --final-surface: var(--ss-color-text);
-  --final-surface-strong: var(--ss-color-text);
+  --final-surface: var(--ss-bg-panel);
+  --final-surface-strong: var(--ss-bg-panel-solid);
   --final-surface-soft: var(--ss-color-border);
   --final-hover: var(--ss-hover-layer); /* 浅色下反馈加深，与令牌一致 */
   --final-border: var(--ss-color-border);
@@ -12937,7 +12937,7 @@ body,
 
 :root[data-theme='light'] .topbar,
 :root[data-theme='light'] .sidebar {
-  background: var(--ss-color-text) !important;
+  background: var(--ss-bg-panel-solid) !important;
 }
 
 /* 玻璃/半透明面板 → 统一纯白表面（高级纯色，去玻璃效果） */
@@ -12955,7 +12955,7 @@ body,
 :root[data-theme='light'] .chat-page,
 :root[data-theme='light'] .admin-page,
 :root[data-theme='light'] .user-menu-panel {
-  background: var(--ss-color-text) !important;
+  background: var(--ss-bg-panel) !important;
   border-color: var(--ss-color-border) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -13035,7 +13035,7 @@ body,
 
 /* 代码 IDE 抽屉：浅色下改纯白面板（编辑器本身保持深色） */
 :root[data-theme='light'] .oj-detail-ide {
-  background: var(--ss-color-text) !important;
+  background: var(--ss-bg-panel) !important;
   box-shadow: 0 28px 80px var(--ss-color-border);
 }
 
