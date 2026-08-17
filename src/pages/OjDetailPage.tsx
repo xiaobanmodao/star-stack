@@ -5,7 +5,7 @@ import { useAppContext } from '../context/AppContext'
 import { fetchJson, openInNewTab, preloadOjIdeAssets } from '../utils'
 import { renderLatex } from '../latex'
 import { LANGUAGE_OPTIONS, getLanguageConfig } from '../constants'
-import type { DiscussionListResponse, DiscussionPost, OjProblemDetail, ProblemResponse, OjSubmission, SubmissionResponse, SolutionsResponse } from '../types'
+import type { DiscussionListResponse, DiscussionPost, OjProblemDetail, ProblemResponse, OjSubmission, SubmissionResponse } from '../types'
 import './OjDetailPage.css'
 
 const LazyOjIdePanel = lazy(() => import('../components/OjIdePanel'))
@@ -59,8 +59,6 @@ export default function OjDetailPage() {
   const [relatedPosts, setRelatedPosts] = useState<DiscussionPost[]>([])
   const [discussionTotal, setDiscussionTotal] = useState(0)
   const [discussionLoading, setDiscussionLoading] = useState(false)
-  const [solutions, setSolutions] = useState<SolutionsResponse['solutions']>([])
-  const [solutionsLoading, setSolutionsLoading] = useState(true)
   const latestIdeSubmissionCacheRef = useRef<{ problemId: number; submission: OjSubmission | null } | null>(null)
 
   const preloadOjIde = useCallback(() => {
@@ -167,24 +165,6 @@ export default function OjDetailPage() {
       cancelled = true
     }
   }, [problem?.id])
-
-  useEffect(() => {
-    if (!problem) return
-    let cancelled = false
-    ;(async () => {
-      const { response, data } = await fetchJson<SolutionsResponse>(`/api/oj/problems/${problem.id}/solutions`)
-      if (cancelled) return
-      if (response.ok && data) {
-        setSolutions(data.solutions || [])
-      } else {
-        setSolutions([])
-      }
-      setSolutionsLoading(false)
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [problem])
 
   const handleSubmitJudge = useCallback((payload: {
     problemId: number
@@ -369,34 +349,10 @@ export default function OjDetailPage() {
             <div className="oj-sidebar-section oj-sidebar-solutions-section">
               <div className="oj-sidebar-discussion-header">
                 <div className="oj-sidebar-label">题解</div>
-                <div className="oj-sidebar-discussion-count">{solutions.length} 篇</div>
               </div>
-              {solutionsLoading ? (
-                <div className="discussion-loading">
-                  {Array.from({ length: 2 }, (_, index) => <div key={index} className="skeleton skeleton-card" />)}
-                </div>
-              ) : solutions.length === 0 ? (
-                <div className="oj-sidebar-discussion-empty">
-                  <div className="oj-discussion-empty-title">还没有题解</div>
-                  <div className="oj-discussion-empty-copy">通过本题后可发布题解。</div>
-                </div>
-              ) : (
-                <div className="oj-sidebar-discussion-list">
-                  {solutions.slice(0, 3).map((solution) => (
-                    <button
-                      key={solution.id}
-                      type="button"
-                      className="oj-sidebar-discussion-item"
-                      onClick={() => openInNewTab(`/chat/p/${solution.id}`)}
-                    >
-                      <span className="oj-sidebar-discussion-title">{solution.title}</span>
-                      <span className="oj-sidebar-discussion-meta">
-                        {solution.commentCount} 评论 · {solution.likeCount} 赞
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
+              <div className="oj-sidebar-discussion-empty">
+                <div className="oj-discussion-empty-copy">查看大家的解题思路，或分享你的做法。</div>
+              </div>
               <div className="oj-sidebar-discussion-actions">
                 <button
                   className="oj-sidebar-button"
