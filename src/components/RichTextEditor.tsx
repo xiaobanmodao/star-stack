@@ -1,10 +1,13 @@
-import { useRef, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { renderRichText } from '../utils/richText'
+import './RichTextEditor.css'
 
 type SizeClass = 'text-sm' | 'text-lg' | 'text-xl'
 
 export default function RichTextEditor({ value, onChange, placeholder }: { value: string; onChange: (html: string) => void; placeholder?: string }) {
   const editorRef = useRef<HTMLDivElement>(null)
   const isInternalChange = useRef(false)
+  const [preview, setPreview] = useState(false)
 
   useEffect(() => {
     if (editorRef.current && !isInternalChange.current) {
@@ -41,7 +44,6 @@ export default function RichTextEditor({ value, onChange, placeholder }: { value
     if (range.collapsed) {
       tag.textContent = placeholderText ?? ''
       range.insertNode(tag)
-      // 光标移到标签之后
       range.setStartAfter(tag)
       range.collapse(true)
       selection.removeAllRanges()
@@ -71,7 +73,7 @@ export default function RichTextEditor({ value, onChange, placeholder }: { value
     const close = displayMode ? '\\]' : '\\)'
     wrapSelection(() => {
       const span = document.createElement('span')
-      span.textContent = `${open}${displayMode ? '' : ''}${close}`
+      span.textContent = `${open}公式${close}`
       return span
     }, `${open}公式${close}`)
   }
@@ -94,6 +96,13 @@ export default function RichTextEditor({ value, onChange, placeholder }: { value
       <div className="rich-editor-toolbar">
         <button type="button" title="粗体" onMouseDown={e => { e.preventDefault(); execCmd('bold') }}><strong>B</strong></button>
         <button type="button" title="斜体" onMouseDown={e => { e.preventDefault(); execCmd('italic') }}><em>I</em></button>
+        <button type="button" title="下划线" onMouseDown={e => { e.preventDefault(); execCmd('underline') }}><u>U</u></button>
+        <button type="button" title="删除线" onMouseDown={e => { e.preventDefault(); execCmd('strikeThrough') }}><s>S</s></button>
+        <span className="rich-editor-sep" aria-hidden="true" />
+        <button type="button" title="标题 2" onMouseDown={e => { e.preventDefault(); execCmd('formatBlock', 'h2') }}>H2</button>
+        <button type="button" title="标题 3" onMouseDown={e => { e.preventDefault(); execCmd('formatBlock', 'h3') }}>H3</button>
+        <button type="button" title="引用" onMouseDown={e => { e.preventDefault(); execCmd('formatBlock', 'blockquote') }}>❝</button>
+        <span className="rich-editor-sep" aria-hidden="true" />
         <button type="button" title="行内代码" onMouseDown={e => { e.preventDefault(); execCmd('insertHTML', '<code>code</code>') }}>&lt;/&gt;</button>
         <button type="button" title="代码块（可带语言）" onMouseDown={e => { e.preventDefault(); insertCodeBlock() }}>{'{ }'}</button>
         <button type="button" title="链接" onMouseDown={e => { e.preventDefault(); insertLink() }}>🔗</button>
@@ -105,15 +114,33 @@ export default function RichTextEditor({ value, onChange, placeholder }: { value
         <button type="button" title="特大字" onMouseDown={e => { e.preventDefault(); wrapWithSpan('text-xl') }}><span className="rich-font-xl">A</span></button>
         <button type="button" title="行内公式 $x^2$" onMouseDown={e => { e.preventDefault(); wrapWithLatex(false) }}>ƒ(x)</button>
         <button type="button" title="块级公式 \[...\]" onMouseDown={e => { e.preventDefault(); wrapWithLatex(true) }}>∫∑</button>
+        <span className="rich-editor-sep" aria-hidden="true" />
+        <button type="button" title="撤销" onMouseDown={e => { e.preventDefault(); execCmd('undo') }}>↩</button>
+        <button type="button" title="重做" onMouseDown={e => { e.preventDefault(); execCmd('redo') }}>↪</button>
+        <button type="button" title="清除格式" onMouseDown={e => { e.preventDefault(); execCmd('removeFormat') }}>⌫</button>
+        <button
+          type="button"
+          className={preview ? 'rich-editor-preview-btn active' : 'rich-editor-preview-btn'}
+          onClick={() => setPreview((prev) => !prev)}
+        >
+          {preview ? '编辑' : '预览'}
+        </button>
       </div>
-      <div
-        ref={editorRef}
-        className="rich-editor-content"
-        contentEditable
-        onInput={handleInput}
-        data-placeholder={placeholder || '输入内容...'}
-        suppressContentEditableWarning
-      />
+      {preview ? (
+        <div
+          className="rich-editor-preview"
+          dangerouslySetInnerHTML={{ __html: renderRichText(value) }}
+        />
+      ) : (
+        <div
+          ref={editorRef}
+          className="rich-editor-content"
+          contentEditable
+          suppressContentEditableWarning
+          onInput={handleInput}
+          data-placeholder={placeholder}
+        />
+      )}
     </div>
   )
 }

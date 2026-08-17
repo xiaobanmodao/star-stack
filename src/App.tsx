@@ -24,6 +24,7 @@ const AdminPage = lazy(() => import('./pages/AdminPage'))
 const OjHomePage = lazy(() => import('./pages/OjHomePage'))
 const OjProblemListPage = lazy(() => import('./pages/OjProblemListPage'))
 const OjDetailPage = lazy(() => import('./pages/OjDetailPage'))
+const OjSolutionsPage = lazy(() => import('./pages/OjSolutionsPage'))
 const OjJudgePage = lazy(() => import('./pages/OjJudgePage'))
 const OjProblemRecordsPage = lazy(() => import('./pages/OjProblemRecordsPage'))
 const OjSubmissionsPage = lazy(() => import('./pages/OjSubmissionsPage'))
@@ -766,6 +767,7 @@ function App() {
                         <Route path="judge/:id" element={<OjJudgePage />} />
                         <Route path="records/:id" element={<OjProblemRecordsPage />} />
                         <Route path="submissions" element={<OjSubmissionsPage />} />
+                        <Route path="solutions/:id" element={<OjSolutionsPage />} />
                         <Route path="*" element={<OjDetailPage />} />
                       </Route>
                     </>
