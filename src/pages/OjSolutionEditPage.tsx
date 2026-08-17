@@ -109,10 +109,10 @@ export default function OjSolutionEditPage() {
           />
         </label>
 
-        <label className="oj-solution-edit-field">
+        <div className="oj-solution-edit-field">
           <span>题解内容</span>
           <RichTextEditor value={content} onChange={setContent} placeholder="分享你的思路、代码与踩坑点..." />
-        </label>
+        </div>
 
         {error && <div className="auth-error">{error}</div>}
 

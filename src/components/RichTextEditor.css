@@ -29,7 +29,7 @@
 }
 
 .rich-editor-toolbar button:hover {
-  border-color: var(--ss-accent-border-soft);
+  border-color: transparent;
   background: var(--ss-hover-layer);
   color: var(--ss-color-text);
 }
