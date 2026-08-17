@@ -10411,7 +10411,7 @@ body {
   --panel-strong: var(--ss-bg-panel-solid);
   --border: var(--ss-accent-16);
   --border-strong: var(--ss-accent-26);
-  --text: var(--ss-color-bg-soft);
+  --text: var(--ss-color-text);
   --muted: var(--ss-color-text-muted);
   --accent: var(--ss-color-accent-strong);
   --accent-2: var(--ss-warning-text);
@@ -12226,7 +12226,7 @@ button.ghost:hover,
   --final-hover: var(--ss-hover-layer);
   --final-border: var(--ss-color-border);
   --final-border-strong: var(--ss-color-border);
-  --final-text: var(--ss-color-bg-soft);
+  --final-text: var(--ss-color-text);
   --final-muted: var(--ss-accent-66);
   --final-radius: 18px;
   --final-radius-lg: 24px;
