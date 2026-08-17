@@ -30,7 +30,7 @@
 
 .ui-button.primary {
   background: var(--ss-color-accent-strong);
-  color: #05070b;
+  color: var(--ss-color-bg);
 }
 
 .ui-button.secondary {
@@ -43,7 +43,7 @@
 }
 
 .ui-button.danger {
-  border-color: rgba(255, 107, 122, 0.3);
+  border-color: var(--ss-danger-border);
   color: var(--ss-color-danger);
 }
 
@@ -150,22 +150,22 @@
 }
 
 .ui-badge.success {
-  border-color: rgba(94, 230, 168, 0.3);
+  border-color: var(--ss-success-border);
   color: var(--ss-color-success);
 }
 
 .ui-badge.warning {
-  border-color: rgba(255, 209, 102, 0.32);
+  border-color: var(--ss-warning-border);
   color: var(--ss-color-warning);
 }
 
 .ui-badge.danger {
-  border-color: rgba(255, 107, 122, 0.3);
+  border-color: var(--ss-danger-border);
   color: var(--ss-color-danger);
 }
 
 .ui-badge.info {
-  border-color: rgba(139, 211, 255, 0.3);
+  border-color: var(--ss-accent-border);
   color: var(--ss-color-info);
 }
 
@@ -229,5 +229,5 @@
 }
 
 :root[data-theme='light'] .ui-button.primary {
-  color: #ffffff;
+  color: var(--ss-color-bg);
 }

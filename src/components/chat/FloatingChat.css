@@ -12,7 +12,7 @@
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
   background: var(--ss-bg-panel-solid);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--ss-shadow-pop);
   overflow: hidden;
 }
 
@@ -76,7 +76,7 @@
 }
 
 .chat-float-actions button:hover {
-  background: rgba(226, 232, 240, 0.12);
+  background: var(--ss-color-border);
   color: var(--ss-color-text);
 }
 
@@ -119,17 +119,17 @@
   gap: 8px;
   max-width: 230px;
   padding: 9px 16px;
-  border: 1px solid rgba(125, 211, 252, 0.3);
+  border: 1px solid var(--ss-accent-border);
   border-radius: 999px;
   background: var(--ss-bg-panel-solid);
   color: var(--ss-color-text);
   font-size: 13px;
   cursor: pointer;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--ss-shadow-float);
 }
 
 .chat-float-bubble:hover {
-  border-color: rgba(125, 211, 252, 0.6);
+  border-color: var(--ss-accent-border-strong);
 }
 
 .chat-float-bubble-name {
@@ -147,7 +147,7 @@
   padding: 0 5px;
   border-radius: 999px;
   background: var(--ss-color-accent);
-  color: #04101c;
+  color: var(--ss-color-bg);
   font-size: 11px;
   font-weight: 800;
   display: grid;
@@ -173,10 +173,10 @@
 }
 
 .chat-float-leave {
-  border: 1px solid rgba(248, 113, 113, 0.35);
+  border: 1px solid var(--ss-danger-border);
   border-radius: var(--ss-radius-md);
   background: transparent;
-  color: #f87171;
+  color: var(--ss-color-danger);
   font-size: 12px;
   padding: 4px 12px;
   cursor: pointer;
@@ -184,6 +184,6 @@
 }
 
 .chat-float-leave:hover {
-  background: rgba(248, 113, 113, 0.12);
-  border-color: rgba(248, 113, 113, 0.6);
+  background: var(--ss-danger-bg);
+  border-color: var(--ss-danger-border-strong);
 }

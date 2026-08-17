@@ -15,7 +15,7 @@
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
   background: var(--ss-bg-panel-solid);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--ss-shadow-pop);
   overflow: hidden;
   z-index: 1500;
 }
@@ -66,7 +66,7 @@
 }
 
 .notif-item.unread {
-  background: rgba(125, 211, 252, 0.06);
+  background: var(--ss-accent-bg);
 }
 
 .notif-avatar {
@@ -74,7 +74,7 @@
   height: 34px;
   border-radius: 50%;
   overflow: hidden;
-  background: rgba(226, 232, 240, 0.1);
+  background: var(--ss-color-border);
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -158,8 +158,8 @@
 
 .notif-push-toggle.on {
   color: var(--ss-color-success);
-  border-color: rgba(94, 230, 168, 0.4);
-  background: rgba(94, 230, 168, 0.08);
+  border-color: var(--ss-success-border-strong);
+  background: var(--ss-success-bg);
 }
 
 .notif-push-toggle:disabled {

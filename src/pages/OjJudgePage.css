@@ -56,7 +56,7 @@
   right: 14px;
   bottom: 14px;
   padding: 5px 9px;
-  border: 1px solid rgba(226, 232, 240, 0.16);
+  border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-sm);
   background: var(--ss-bg-input);
   color: var(--ss-color-text);
@@ -160,10 +160,10 @@
 
 .judge-status-message {
   padding: 10px 12px;
-  border: 1px solid rgba(251, 113, 133, 0.22);
+  border: 1px solid var(--ss-danger-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(251, 113, 133, 0.08);
-  color: rgba(254, 205, 211, 0.9);
+  background: var(--ss-danger-bg);
+  color: var(--ss-color-danger);
   font-family: var(--ss-font-mono);
   font-size: 12px;
   line-height: 1.65;
@@ -171,9 +171,9 @@
 }
 
 .judge-page-accepted .judge-status-message {
-  border-color: rgba(74, 222, 128, 0.24);
-  background: rgba(34, 197, 94, 0.08);
-  color: rgba(187, 247, 208, 0.92);
+  border-color: var(--ss-success-border);
+  background: var(--ss-success-bg);
+  color: var(--ss-color-success);
 }
 
 .judge-debug-panel {
@@ -181,8 +181,8 @@
   grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
   gap: 14px;
   padding: 16px !important;
-  border-color: rgba(251, 113, 133, 0.22);
-  background: rgba(15, 23, 42, 0.72);
+  border-color: var(--ss-danger-border);
+  background: var(--ss-star-node-bg);
 }
 
 .judge-debug-main {
@@ -197,9 +197,9 @@
 
 .judge-advice-item {
   padding: 10px 12px;
-  border-left: 2px solid rgba(125, 211, 252, 0.64);
+  border-left: 2px solid var(--ss-color-accent);
   border-radius: 0 var(--ss-radius-sm) var(--ss-radius-sm) 0;
-  background: rgba(125, 211, 252, 0.055);
+  background: var(--ss-accent-bg);
   color: var(--ss-color-text-muted);
   font-size: 13px;
   line-height: 1.65;
@@ -210,13 +210,13 @@
   display: grid;
   gap: 8px;
   padding: 14px;
-  border: 1px solid rgba(251, 113, 133, 0.28);
+  border: 1px solid var(--ss-danger-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(127, 29, 29, 0.18);
+  background: var(--ss-danger-bg);
 }
 
 .judge-first-fail strong {
-  color: #fecdd3;
+  color: var(--ss-color-danger);
   font-size: 15px;
 }
 
@@ -273,13 +273,13 @@
 }
 
 .judge-results-panel .submit-result.ok {
-  border-color: rgba(74, 222, 128, 0.28);
-  background: rgba(34, 197, 94, 0.055);
+  border-color: var(--ss-success-border);
+  background: var(--ss-success-bg);
 }
 
 .judge-results-panel .submit-result.bad {
-  border-color: rgba(251, 113, 133, 0.32);
-  background: rgba(244, 63, 94, 0.06);
+  border-color: var(--ss-danger-border);
+  background: var(--ss-danger-bg);
 }
 
 .submit-result-index {
@@ -395,24 +395,24 @@
 /* ---------- 浅色主题：评测页加深可读 ---------- */
 :root[data-theme='light'] .judge-status-message {
   color: var(--ss-color-danger);
-  border-color: rgba(207, 34, 46, 0.28);
-  background: rgba(207, 34, 46, 0.06);
+  border-color: var(--ss-danger-border);
+  background: var(--ss-danger-bg);
 }
 
 :root[data-theme='light'] .judge-page-accepted .judge-status-message {
   color: var(--ss-color-success);
-  border-color: rgba(26, 127, 55, 0.28);
-  background: rgba(26, 127, 55, 0.06);
+  border-color: var(--ss-success-border);
+  background: var(--ss-success-bg);
 }
 
 :root[data-theme='light'] .judge-debug-panel {
   background: var(--ss-bg-input);
-  border-color: rgba(207, 34, 46, 0.22);
+  border-color: var(--ss-danger-border);
 }
 
 :root[data-theme='light'] .judge-first-fail {
-  background: rgba(207, 34, 46, 0.07);
-  border-color: rgba(207, 34, 46, 0.26);
+  background: var(--ss-danger-bg);
+  border-color: var(--ss-danger-border);
 }
 
 :root[data-theme='light'] .judge-first-fail strong {

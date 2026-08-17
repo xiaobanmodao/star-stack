@@ -140,7 +140,7 @@
   position: relative;
   min-height: 280px;
   overflow: hidden;
-  border: 1px solid rgba(226, 232, 240, 0.12);
+  border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
   background: none;
 }
@@ -161,9 +161,9 @@
   width: 44px;
   height: 44px;
   place-items: center;
-  border: 1px solid rgba(125, 211, 252, 0.34);
+  border: 1px solid var(--ss-accent-border);
   border-radius: 50%;
-  background: rgba(15, 23, 42, 0.92);
+  background: var(--ss-star-node-bg);
   color: var(--ss-color-text);
   font-weight: 800;
 }
@@ -228,7 +228,7 @@
 }
 
 .home-entry-card:hover {
-  border-color: rgba(125, 211, 252, 0.28);
+  border-color: var(--ss-accent-border-soft);
   background: var(--ss-hover-layer);
   transform: none;
 }
@@ -384,7 +384,7 @@
 .oj-workbench-difficulty-list button:hover,
 .oj-workbench-tags button:hover,
 .oj-workbench-list button:hover {
-  border-color: rgba(125, 211, 252, 0.28);
+  border-color: var(--ss-accent-border-soft);
   background: var(--ss-hover-layer);
   transform: none;
 }

@@ -105,7 +105,7 @@
 
 .problem-editor-v2 .auth-input:focus,
 .admin-console-v2 .auth-input:focus {
-  border-color: rgba(125, 211, 252, 0.36);
+  border-color: var(--ss-accent-border);
   box-shadow: var(--ss-focus-ring);
 }
 
@@ -221,7 +221,7 @@
 }
 
 .problem-editor-checks span.done {
-  border-color: rgba(94, 230, 168, 0.24);
+  border-color: var(--ss-success-border);
   color: var(--ss-color-text);
 }
 
@@ -297,7 +297,7 @@
 }
 
 .my-problem-card-v2:hover {
-  border-color: rgba(125, 211, 252, 0.26);
+  border-color: var(--ss-accent-border-soft);
   background-color: var(--ss-hover-layer);
   transform: none;
 }
@@ -464,8 +464,8 @@
 }
 
 .admin-tabs button.active {
-  border-color: rgba(125, 211, 252, 0.45);
-  background: rgba(125, 211, 252, 0.12);
+  border-color: var(--ss-accent-border);
+  background: var(--ss-accent-bg-strong);
   color: var(--ss-color-text);
 }
 
@@ -496,24 +496,24 @@
 .admin-report-type {
   padding: 2px 9px;
   border-radius: 999px;
-  border: 1px solid rgba(248, 113, 113, 0.4);
-  color: #f87171;
+  border: 1px solid var(--ss-danger-border);
+  color: var(--ss-color-danger);
   font-size: 11px;
   font-weight: 700;
 }
 
 .admin-report-type.comment {
-  border-color: rgba(251, 191, 36, 0.4);
-  color: #fcd34d;
+  border-color: var(--ss-warning-border);
+  color: var(--ss-warning-text);
 }
 
 .admin-report-type.message {
-  border-color: rgba(139, 211, 255, 0.4);
+  border-color: var(--ss-accent-border);
   color: var(--ss-color-accent);
 }
 
 .admin-report-type.user {
-  border-color: rgba(94, 230, 168, 0.4);
+  border-color: var(--ss-success-border-strong);
   color: var(--ss-color-success);
 }
 

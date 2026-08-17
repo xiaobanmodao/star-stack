@@ -20,7 +20,7 @@
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-lg);
   background: var(--ss-bg-panel-solid);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--ss-shadow-pop);
   overflow: hidden;
 }
 
@@ -102,7 +102,7 @@
 }
 
 .search-item:hover {
-  background: rgba(125, 211, 252, 0.08);
+  background: var(--ss-accent-bg);
 }
 
 .search-item-title {
@@ -130,7 +130,7 @@
   height: 26px;
   border-radius: 50%;
   overflow: hidden;
-  background: rgba(226, 232, 240, 0.1);
+  background: var(--ss-color-border);
   display: grid;
   place-items: center;
   flex-shrink: 0;

@@ -34,9 +34,9 @@
 .discussion-problem-banner {
   margin-bottom: 0 !important;
   padding: 14px 16px !important;
-  border-color: rgba(125, 211, 252, 0.22) !important;
+  border-color: var(--ss-accent-border-soft) !important;
   border-radius: var(--ss-radius-lg) !important;
-  background: rgba(125, 211, 252, 0.06) !important;
+  background: var(--ss-accent-bg) !important;
 }
 
 .discussion-toolbar-v2 {
@@ -68,7 +68,7 @@
 
 .discussion-toolbar-v2 .sort-btn.active {
   color: var(--ss-color-text);
-  background: rgba(125, 211, 252, 0.12) !important;
+  background: var(--ss-accent-bg-strong) !important;
 }
 
 .discussion-hall-grid,
@@ -104,7 +104,7 @@
 
 .discussion-card-v2:hover {
   background: var(--ss-hover-layer) !important;
-  border-color: rgba(125, 211, 252, 0.24) !important;
+  border-color: var(--ss-accent-border-soft) !important;
   transform: none !important;
 }
 
@@ -159,9 +159,9 @@
   max-width: 260px;
   overflow: hidden;
   padding: 4px 8px;
-  border: 1px solid rgba(125, 211, 252, 0.18);
+  border: 1px solid var(--ss-accent-border-soft);
   border-radius: var(--ss-radius-sm);
-  background: rgba(125, 211, 252, 0.06);
+  background: var(--ss-accent-bg);
   color: var(--ss-color-accent);
   font-size: 12px;
   text-overflow: ellipsis;
@@ -300,7 +300,7 @@
 .discussion-detail-v2 .post-content pre,
 .discussion-detail-v2 .comment-body pre {
   background: var(--ss-bg-code);
-  border: 1px solid rgba(226, 232, 240, 0.14);
+  border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
   padding: 12px 14px;
   overflow-x: auto;
@@ -318,8 +318,8 @@
 
 .discussion-detail-v2 .post-content code,
 .discussion-detail-v2 .comment-body code {
-  background: rgba(125, 211, 252, 0.12);
-  border: 1px solid rgba(125, 211, 252, 0.16);
+  background: var(--ss-accent-bg-strong);
+  border: 1px solid var(--ss-accent-bg-strong);
   padding: 1px 5px;
   border-radius: 5px;
   font-size: 13px;
@@ -368,7 +368,7 @@
 }
 
 .discussion-detail-v2 .discussion-comment.nested {
-  border-left-color: rgba(125, 211, 252, 0.2);
+  border-left-color: var(--ss-accent-border-soft);
 }
 
 .discussion-detail-v2 .comment-input-area {
@@ -423,9 +423,9 @@
 
 .discussion-create-v2 .problem-dropdown {
   z-index: 10070;
-  border-color: rgba(125, 211, 252, 0.24);
+  border-color: var(--ss-accent-border-soft);
   background: var(--ss-bg-panel-solid);
-  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.32);
+  box-shadow: var(--ss-shadow-pop);
   backdrop-filter: none;
 }
 
@@ -458,7 +458,7 @@
 }
 
 .discussion-module-chips button {
-  border: 1px solid rgba(226, 232, 240, 0.14);
+  border: 1px solid var(--ss-color-border);
   border-radius: 999px;
   background: transparent;
   color: var(--ss-color-text-muted);
@@ -472,8 +472,8 @@
 }
 
 .discussion-module-chips button.active {
-  border-color: rgba(125, 211, 252, 0.45);
-  background: rgba(125, 211, 252, 0.12);
+  border-color: var(--ss-accent-border);
+  background: var(--ss-accent-bg-strong);
   color: var(--ss-color-text);
 }
 
@@ -567,7 +567,7 @@
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
-  border: 1px solid rgba(226, 232, 240, 0.16);
+  border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
   background: transparent;
   color: var(--ss-color-text-muted);
@@ -585,17 +585,17 @@
 
 .discussion-detail-v2 .bookmark-btn:hover {
   color: var(--ss-color-text);
-  border-color: rgba(251, 191, 36, 0.4);
+  border-color: var(--ss-warning-border);
 }
 
 .discussion-detail-v2 .bookmark-btn.active {
-  color: #fcd34d;
-  border-color: rgba(251, 191, 36, 0.5);
-  background: rgba(251, 191, 36, 0.08);
+  color: var(--ss-warning-text);
+  border-color: var(--ss-warning-border-strong);
+  background: var(--ss-warning-bg);
 }
 
 .discussion-detail-v2 .bookmark-btn.active svg {
-  fill: #fcd34d;
+  fill: var(--ss-warning-text);
 }
 
 /* 举报按钮（帖子操作区 + 评论区） */
@@ -604,8 +604,8 @@
 }
 
 .discussion-detail-v2 .report-btn:hover {
-  color: #f87171;
-  border-color: rgba(248, 113, 113, 0.4);
+  color: var(--ss-color-danger);
+  border-color: var(--ss-danger-border);
 }
 
 .discussion-detail-v2 .comment-header .report-btn {
@@ -617,5 +617,5 @@
 }
 
 .discussion-detail-v2 .comment-header .report-btn:hover {
-  color: #f87171;
+  color: var(--ss-color-danger);
 }

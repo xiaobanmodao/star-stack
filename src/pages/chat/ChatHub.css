@@ -50,15 +50,15 @@
 }
 
 .chat-nav-item.active {
-  background: rgba(125, 211, 252, 0.1);
-  border-color: rgba(125, 211, 252, 0.22);
+  background: var(--ss-accent-bg);
+  border-color: var(--ss-accent-border-soft);
   color: var(--ss-color-text);
 }
 
 .chat-nav-sep {
   width: 1px;
   height: 18px;
-  background: rgba(226, 232, 240, 0.12);
+  background: var(--ss-color-border);
   margin: 0 4px;
   flex-shrink: 0;
 }
@@ -69,7 +69,7 @@
   padding: 0 5px;
   border-radius: 999px;
   background: var(--ss-color-accent);
-  color: #04101c;
+  color: var(--ss-color-bg);
   font-size: 10px;
   font-weight: 800;
   display: inline-grid;
@@ -155,8 +155,8 @@
 }
 
 .chat-rail-item.active {
-  background: rgba(125, 211, 252, 0.1);
-  border-color: rgba(125, 211, 252, 0.22);
+  background: var(--ss-accent-bg);
+  border-color: var(--ss-accent-border-soft);
   color: var(--ss-color-text);
 }
 
@@ -193,7 +193,7 @@
   padding: 0 5px;
   border-radius: 999px;
   background: var(--ss-color-accent);
-  color: #04101c;
+  color: var(--ss-color-bg);
   font-size: 11px;
   font-weight: 800;
   display: grid;
@@ -205,7 +205,7 @@
   height: 24px;
   border-radius: 50%;
   overflow: hidden;
-  background: rgba(226, 232, 240, 0.1);
+  background: var(--ss-color-border);
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -281,8 +281,8 @@
   width: 34px;
   height: 34px;
   border-radius: var(--ss-radius-md);
-  background: rgba(125, 211, 252, 0.1);
-  border: 1px solid rgba(125, 211, 252, 0.22);
+  background: var(--ss-accent-bg);
+  border: 1px solid var(--ss-accent-border-soft);
   display: grid;
   place-items: center;
   font-size: 16px;
@@ -359,7 +359,7 @@
 }
 
 .chat-load-more:hover {
-  border-color: rgba(125, 211, 252, 0.3);
+  border-color: var(--ss-accent-border);
   color: var(--ss-color-text);
 }
 
@@ -379,7 +379,7 @@
   height: 32px;
   border-radius: 50%;
   overflow: hidden;
-  background: rgba(226, 232, 240, 0.1);
+  background: var(--ss-color-border);
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -452,8 +452,8 @@
   padding: 1px 5px;
   border-radius: 5px;
   background: var(--ss-hover-layer);
-  border: 1px solid rgba(226, 232, 240, 0.12);
-  color: #a5d8ff;
+  border: 1px solid var(--ss-color-border);
+  color: var(--ss-inline-code-text);
   font-family: var(--ss-font-mono);
   font-size: 12.5px;
 }
@@ -461,7 +461,7 @@
 /* 代码块 */
 
 .chat-codeblock {
-  border: 1px solid rgba(226, 232, 240, 0.14);
+  border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
   overflow: hidden;
   background: var(--ss-bg-code);
@@ -529,7 +529,7 @@
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  border: 1px solid rgba(226, 232, 240, 0.14);
+  border: 1px solid var(--ss-color-border);
   border-radius: 999px;
   background: var(--ss-hover-layer);
   cursor: pointer;
@@ -537,8 +537,8 @@
 }
 
 .chat-reaction-chip.mine {
-  border-color: rgba(125, 211, 252, 0.45);
-  background: rgba(125, 211, 252, 0.1);
+  border-color: var(--ss-accent-border);
+  background: var(--ss-accent-bg);
 }
 
 .chat-reaction-chip em {
@@ -549,7 +549,7 @@
 }
 
 .chat-reaction-add {
-  border: 1px dashed rgba(226, 232, 240, 0.2);
+  border: 1px dashed var(--ss-color-border-strong);
   border-radius: 999px;
   background: transparent;
   color: var(--ss-color-text-subtle);
@@ -563,7 +563,7 @@
 
 .chat-reaction-add:hover {
   color: var(--ss-color-text);
-  border-color: rgba(125, 211, 252, 0.4);
+  border-color: var(--ss-accent-border);
 }
 
 .chat-emoji-bar {
@@ -585,7 +585,7 @@
 }
 
 .chat-emoji-bar button:hover {
-  background: rgba(226, 232, 240, 0.1);
+  background: var(--ss-color-border);
 }
 
 .chat-emoji-bar.composer {
@@ -607,7 +607,7 @@
   text-align: center;
   color: var(--ss-color-text-subtle);
   font-size: 13px;
-  border: 1px dashed rgba(226, 232, 240, 0.16);
+  border: 1px dashed var(--ss-color-border);
   border-radius: var(--ss-radius-md);
 }
 
@@ -619,7 +619,7 @@
 }
 
 .chat-tool-btn {
-  border: 1px solid rgba(226, 232, 240, 0.14);
+  border: 1px solid var(--ss-color-border);
   border-radius: 6px;
   background: transparent;
   color: var(--ss-color-text-muted);
@@ -631,7 +631,7 @@
 .chat-tool-btn:hover,
 .chat-tool-btn.active {
   color: var(--ss-color-text);
-  border-color: rgba(125, 211, 252, 0.35);
+  border-color: var(--ss-accent-border);
 }
 
 .chat-composer-input-row {
@@ -655,14 +655,14 @@
 }
 
 .chat-composer-input:focus {
-  border-color: rgba(125, 211, 252, 0.4);
+  border-color: var(--ss-accent-border);
 }
 
 .chat-send-btn {
   border: none;
   border-radius: var(--ss-radius-md);
   background: var(--ss-color-accent);
-  color: #04101c;
+  color: var(--ss-color-bg);
   font-size: 13px;
   font-weight: 800;
   padding: 9px 18px;
@@ -688,7 +688,7 @@
   border-radius: var(--ss-radius-lg);
   background: var(--ss-bg-panel-solid);
   padding: 12px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--ss-shadow-pop);
 }
 
 .chat-members-head {
@@ -717,7 +717,7 @@
 }
 
 .chat-invite-error {
-  color: #f87171;
+  color: var(--ss-color-danger);
   font-size: 12px;
   margin-bottom: 6px;
 }
@@ -747,13 +747,13 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: rgba(226, 232, 240, 0.2);
+  background: var(--ss-color-border-strong);
   flex-shrink: 0;
 }
 
 .chat-presence-dot.online {
-  background: #34d399;
-  box-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
+  background: var(--ss-color-success);
+  box-shadow: 0 0 8px var(--ss-color-success);
 }
 
 .chat-member-avatar {
@@ -761,7 +761,7 @@
   height: 26px;
   border-radius: 50%;
   overflow: hidden;
-  background: rgba(226, 232, 240, 0.1);
+  background: var(--ss-color-border);
   display: grid;
   place-items: center;
   font-size: 12px;
@@ -800,7 +800,7 @@
 .chat-member-remove {
   border: none;
   background: transparent;
-  color: #f87171;
+  color: var(--ss-color-danger);
   font-size: 11px;
   cursor: pointer;
   padding: 2px 5px;
@@ -808,7 +808,7 @@
 }
 
 .chat-member-remove:hover {
-  background: rgba(248, 113, 113, 0.12);
+  background: var(--ss-danger-bg);
 }
 
 /* 房间锁定视图 */
@@ -873,7 +873,7 @@
 
 .plaza-module-chips button,
 .chat-module-chips button {
-  border: 1px solid rgba(226, 232, 240, 0.14);
+  border: 1px solid var(--ss-color-border);
   border-radius: 999px;
   background: transparent;
   color: var(--ss-color-text-muted);
@@ -889,8 +889,8 @@
 
 .plaza-module-chips button.active,
 .chat-module-chips button.active {
-  border-color: rgba(125, 211, 252, 0.45);
-  background: rgba(125, 211, 252, 0.12);
+  border-color: var(--ss-accent-border);
+  background: var(--ss-accent-bg-strong);
   color: var(--ss-color-text);
 }
 
@@ -936,7 +936,7 @@
 }
 
 .plaza-post:hover {
-  border-color: rgba(125, 211, 252, 0.28);
+  border-color: var(--ss-accent-border-soft);
   background: var(--ss-hover-layer);
 }
 
@@ -950,7 +950,7 @@
 .plaza-module-badge {
   padding: 1px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(125, 211, 252, 0.25);
+  border: 1px solid var(--ss-accent-border-soft);
   color: var(--ss-color-text-subtle);
   font-size: 11px;
 }
@@ -1036,7 +1036,7 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: rgba(226, 232, 240, 0.12);
+  background: var(--ss-color-border);
   display: grid;
   place-items: center;
   font-size: 10px;
@@ -1089,7 +1089,7 @@
 
 .chat-modal-field input:focus,
 .chat-modal-field textarea:focus {
-  border-color: rgba(125, 211, 252, 0.4);
+  border-color: var(--ss-accent-border);
 }
 
 .chat-room-type-tabs {
@@ -1112,8 +1112,8 @@
 }
 
 .chat-room-type-tabs button.active {
-  border-color: rgba(125, 211, 252, 0.45);
-  background: rgba(125, 211, 252, 0.1);
+  border-color: var(--ss-accent-border);
+  background: var(--ss-accent-bg);
   color: var(--ss-color-text);
 }
 
@@ -1149,7 +1149,7 @@
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #34d399;
+  background: var(--ss-color-success);
   border: 2px solid var(--ss-bg-panel-solid);
 }
 
@@ -1181,8 +1181,8 @@
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  border: 1px solid rgba(125, 211, 252, 0.3);
-  background: rgba(125, 211, 252, 0.08);
+  border: 1px solid var(--ss-accent-border);
+  background: var(--ss-accent-bg);
   overflow: hidden;
   cursor: pointer;
   padding: 0;
@@ -1194,8 +1194,8 @@
 }
 
 .chat-invite-friend:hover {
-  border-color: rgba(125, 211, 252, 0.6);
-  background: rgba(125, 211, 252, 0.16);
+  border-color: var(--ss-accent-border-strong);
+  background: var(--ss-accent-bg-strong);
 }
 
 .chat-invite-friend img {
@@ -1233,7 +1233,7 @@
 }
 
 .friends-tabs button {
-  border: 1px solid rgba(226, 232, 240, 0.14);
+  border: 1px solid var(--ss-color-border);
   border-radius: 999px;
   background: transparent;
   color: var(--ss-color-text-muted);
@@ -1243,8 +1243,8 @@
 }
 
 .friends-tabs button.active {
-  border-color: rgba(125, 211, 252, 0.45);
-  background: rgba(125, 211, 252, 0.12);
+  border-color: var(--ss-accent-border);
+  background: var(--ss-accent-bg-strong);
   color: var(--ss-color-text);
 }
 
@@ -1260,7 +1260,7 @@
 }
 
 .friends-search input:focus {
-  border-color: rgba(125, 211, 252, 0.4);
+  border-color: var(--ss-accent-border);
 }
 
 .friends-list {
@@ -1310,7 +1310,7 @@
   height: 38px;
   border-radius: 50%;
   overflow: hidden;
-  background: rgba(226, 232, 240, 0.1);
+  background: var(--ss-color-border);
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -1349,7 +1349,7 @@
   color: var(--ss-color-success) !important;
   font-size: 10px !important;
   font-style: normal;
-  border: 1px solid rgba(52, 211, 153, 0.35);
+  border: 1px solid var(--ss-success-border);
   border-radius: 999px;
   padding: 0 7px;
 }
@@ -1361,7 +1361,7 @@
 }
 
 .danger-text {
-  color: #f87171 !important;
+  color: var(--ss-color-danger) !important;
 }
 
 /* ---------- 聊天室列表折叠 ---------- */
@@ -1435,7 +1435,7 @@
 }
 
 .room-square-card:hover {
-  border-color: rgba(125, 211, 252, 0.35);
+  border-color: var(--ss-accent-border);
   background: none;
   transform: translateY(-2px);
 }
@@ -1446,13 +1446,13 @@
   left: 8px;
   padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(125, 211, 252, 0.3);
+  border: 1px solid var(--ss-accent-border);
   color: var(--ss-color-text-subtle);
   font-size: 10px;
 }
 
 .room-square-badge.invite {
-  border-color: rgba(251, 191, 36, 0.35);
+  border-color: var(--ss-warning-border);
 }
 
 .room-square-unread {
@@ -1464,7 +1464,7 @@
   padding: 0 6px;
   border-radius: 999px;
   background: var(--ss-color-accent);
-  color: #04101c;
+  color: var(--ss-color-bg);
   font-size: 11px;
   font-weight: 800;
   display: grid;
@@ -1548,7 +1548,7 @@
 }
 
 .chat-message-avatar:hover {
-  outline: 2px solid rgba(125, 211, 252, 0.45);
+  outline: 2px solid var(--ss-accent-border);
   outline-offset: 2px;
 }
 
@@ -1573,10 +1573,10 @@
 /* 广场题目筛选 chip */
 
 .plaza-problem-filter {
-  border: 1px solid rgba(251, 191, 36, 0.4) !important;
+  border: 1px solid var(--ss-warning-border) !important;
   border-radius: 999px;
-  background: rgba(251, 191, 36, 0.1);
-  color: #fcd34d !important;
+  background: var(--ss-warning-bg);
+  color: var(--ss-warning-text) !important;
   font-size: 12px;
   padding: 4px 12px;
   cursor: pointer;
@@ -1594,9 +1594,9 @@
   justify-content: space-between;
   gap: 8px;
   padding: 8px 12px;
-  border: 1px solid rgba(125, 211, 252, 0.3);
+  border: 1px solid var(--ss-accent-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(125, 211, 252, 0.08);
+  background: var(--ss-accent-bg);
   color: var(--ss-color-text);
   font-size: 13px;
 }
@@ -1611,14 +1611,14 @@
 }
 
 .chat-bound-problem button:hover {
-  color: #f87171;
+  color: var(--ss-color-danger);
 }
 
 /* ---------- @提及 ---------- */
 
 .chat-mention {
   color: var(--ss-color-accent);
-  background: rgba(125, 211, 252, 0.12);
+  background: var(--ss-accent-bg-strong);
   border-radius: 4px;
   padding: 0 3px;
 }
@@ -1644,7 +1644,7 @@
   border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
   background: var(--ss-bg-panel-solid);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--ss-shadow-float);
   z-index: 20;
   padding: 4px;
 }
@@ -1671,7 +1671,7 @@
 
 .chat-mention-item.active,
 .chat-mention-item:hover {
-  background: rgba(125, 211, 252, 0.1);
+  background: var(--ss-accent-bg);
 }
 
 .chat-mention-avatar {
@@ -1679,7 +1679,7 @@
   height: 26px;
   border-radius: 50%;
   overflow: hidden;
-  background: rgba(226, 232, 240, 0.1);
+  background: var(--ss-color-border);
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -1759,7 +1759,7 @@
 
 .chat-thread-toggle {
   align-self: flex-start;
-  border: 1px solid rgba(226, 232, 240, 0.14);
+  border: 1px solid var(--ss-color-border);
   border-radius: 999px;
   background: var(--ss-hover-layer);
   color: var(--ss-color-text-muted);
@@ -1778,7 +1778,7 @@
 
 .chat-thread-toggle:hover {
   color: var(--ss-color-text);
-  border-color: rgba(125, 211, 252, 0.35);
+  border-color: var(--ss-accent-border);
 }
 
 .chat-thread-toggle-arrow {
@@ -1788,7 +1788,7 @@
 .chat-thread-panel {
   margin-top: 8px;
   padding: 10px 12px;
-  border: 1px solid rgba(226, 232, 240, 0.1);
+  border: 1px solid var(--ss-color-border);
   border-radius: var(--ss-radius-md);
   background: var(--ss-bg-input);
   display: flex;
@@ -1826,7 +1826,7 @@
   height: 24px;
   border-radius: 50%;
   overflow: hidden;
-  background: rgba(226, 232, 240, 0.1);
+  background: var(--ss-color-border);
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -1900,7 +1900,7 @@
 }
 
 .chat-thread-composer input:focus {
-  border-color: rgba(125, 211, 252, 0.4);
+  border-color: var(--ss-accent-border);
 }
 
 .chat-send-btn.small {
@@ -1910,14 +1910,14 @@
 
 /* 关注动态 chip */
 .plaza-feed-chip {
-  border-color: rgba(251, 191, 36, 0.3) !important;
-  color: #fcd34d !important;
+  border-color: var(--ss-warning-border) !important;
+  color: var(--ss-warning-text) !important;
 }
 
 .plaza-feed-chip.active {
-  border-color: rgba(251, 191, 36, 0.55) !important;
-  background: rgba(251, 191, 36, 0.14) !important;
-  color: #fde68a !important;
+  border-color: var(--ss-warning-border-strong) !important;
+  background: var(--ss-warning-bg-strong) !important;
+  color: var(--ss-warning-text-strong) !important;
 }
 
 /* 邀请链接 */
@@ -1930,7 +1930,7 @@
 .chat-invite-link-row input {
   flex: 1;
   min-width: 0;
-  border: 1px solid rgba(125, 211, 252, 0.25);
+  border: 1px solid var(--ss-accent-border-soft);
   border-radius: var(--ss-radius-md);
   background: var(--ss-bg-input);
   color: var(--ss-color-text-muted);
@@ -1961,15 +1961,15 @@
 .activity-my-rank {
   margin: 12px 16px 0;
   padding: 10px 14px;
-  border: 1px solid rgba(251, 191, 36, 0.35);
+  border: 1px solid var(--ss-warning-border);
   border-radius: var(--ss-radius-md);
-  background: rgba(251, 191, 36, 0.08);
+  background: var(--ss-warning-bg);
   color: var(--ss-color-text-muted);
   font-size: 13px;
 }
 
 .activity-my-rank strong {
-  color: #fcd34d;
+  color: var(--ss-warning-text);
 }
 
 .activity-body {
@@ -1999,12 +1999,12 @@
 }
 
 .activity-row:hover {
-  border-color: rgba(125, 211, 252, 0.3);
+  border-color: var(--ss-accent-border);
 }
 
 .activity-row.me {
-  border-color: rgba(125, 211, 252, 0.4);
-  background: rgba(125, 211, 252, 0.08);
+  border-color: var(--ss-accent-border);
+  background: var(--ss-accent-bg);
 }
 
 .activity-rank {
@@ -2025,7 +2025,7 @@
   height: 30px;
   border-radius: 50%;
   overflow: hidden;
-  background: rgba(226, 232, 240, 0.1);
+  background: var(--ss-color-border);
   display: grid;
   place-items: center;
   flex-shrink: 0;
@@ -2168,5 +2168,5 @@
 :root[data-theme='light'] .chat-nav-unread,
 :root[data-theme='light'] .notif-dot,
 :root[data-theme='light'] .topbar-message-dot {
-  color: #ffffff;
+  color: var(--ss-color-bg);
 }

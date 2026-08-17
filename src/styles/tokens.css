@@ -64,7 +64,9 @@
   /* 语义化透明色（边框/浅底） */
   --ss-accent-border-soft: rgba(125, 211, 252, 0.25);
   --ss-accent-border: rgba(125, 211, 252, 0.35);
+  --ss-accent-border-strong: rgba(125, 211, 252, 0.6);
   --ss-accent-bg: rgba(125, 211, 252, 0.08);
+  --ss-accent-bg-strong: rgba(125, 211, 252, 0.16);
   --ss-success-border: rgba(94, 230, 168, 0.24);
   --ss-success-bg: rgba(94, 230, 168, 0.1);
   --ss-danger-border: rgba(248, 113, 113, 0.35);
@@ -80,6 +82,15 @@
   --ss-success-bg-strong: rgba(6, 78, 59, 0.5);
   --ss-warning-border-strong: rgba(250, 204, 21, 0.42);
   --ss-warning-bg-strong: rgba(113, 63, 18, 0.42);
+  --ss-warning-border: rgba(251, 191, 36, 0.35);
+  --ss-warning-border-strong: rgba(251, 191, 36, 0.55);
+  --ss-warning-bg: rgba(251, 191, 36, 0.1);
+  --ss-warning-bg-strong: rgba(251, 191, 36, 0.14);
+  --ss-warning-text: #fcd34d;
+  --ss-warning-text-strong: #fde68a;
+  --ss-inline-code-text: #a5d8ff;
+  --ss-shadow-pop: 0 16px 40px rgba(0, 0, 0, 0.45);
+  --ss-shadow-float: 0 12px 32px rgba(0, 0, 0, 0.45);
 
   --ss-motion-fast: 100ms ease;
   --ss-motion-normal: 150ms ease;
@@ -133,7 +144,9 @@
   /* 语义化透明色（浅色） */
   --ss-accent-border-soft: rgba(9, 105, 218, 0.22);
   --ss-accent-border: rgba(9, 105, 218, 0.35);
+  --ss-accent-border-strong: rgba(9, 105, 218, 0.5);
   --ss-accent-bg: rgba(9, 105, 218, 0.06);
+  --ss-accent-bg-strong: rgba(9, 105, 218, 0.12);
   --ss-success-border: rgba(21, 128, 61, 0.25);
   --ss-success-bg: rgba(21, 128, 61, 0.08);
   --ss-danger-border: rgba(220, 38, 38, 0.3);
@@ -149,6 +162,15 @@
   --ss-success-bg-strong: rgba(26, 127, 55, 0.08);
   --ss-warning-border-strong: rgba(154, 103, 0, 0.45);
   --ss-warning-bg-strong: rgba(154, 103, 0, 0.08);
+  --ss-warning-border: rgba(180, 83, 9, 0.35);
+  --ss-warning-border-strong: rgba(180, 83, 9, 0.5);
+  --ss-warning-bg: rgba(180, 83, 9, 0.08);
+  --ss-warning-bg-strong: rgba(180, 83, 9, 0.12);
+  --ss-warning-text: #b45309;
+  --ss-warning-text-strong: #b45309;
+  --ss-inline-code-text: #0969da;
+  --ss-shadow-pop: 0 16px 40px rgba(31, 35, 40, 0.12);
+  --ss-shadow-float: 0 12px 32px rgba(31, 35, 40, 0.12);
 
   /* 表面背景（浅色） */
   --ss-bg-panel: #ffffff;
