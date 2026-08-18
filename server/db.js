@@ -154,6 +154,37 @@ const BUILTIN_PROBLEMS = [
   },
 ]
 
+// 兼容早期版本数据库：CREATE TABLE IF NOT EXISTS 不会为已存在的旧表补字段。
+// 这些字段均带有安全默认值，只补结构，不删除或覆盖已有用户数据。
+const LEGACY_COLUMN_PATCHES = [
+  { table: 'users', column: 'is_banned', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'users', column: 'avatar', definition: 'TEXT' },
+  { table: 'users', column: 'rating', definition: 'REAL NOT NULL DEFAULT 0' },
+  { table: 'users', column: 'onboarded_at', definition: 'TEXT' },
+  { table: 'users', column: 'bio', definition: "TEXT DEFAULT ''" },
+  { table: 'problems', column: 'slug', definition: 'TEXT' },
+  { table: 'problems', column: 'tags', definition: "TEXT NOT NULL DEFAULT ''" },
+  { table: 'problems', column: 'input_desc', definition: "TEXT NOT NULL DEFAULT ''" },
+  { table: 'problems', column: 'output_desc', definition: "TEXT NOT NULL DEFAULT ''" },
+  { table: 'problems', column: 'data_range', definition: "TEXT NOT NULL DEFAULT ''" },
+  { table: 'problems', column: 'samples', definition: "TEXT NOT NULL DEFAULT '[]'" },
+  { table: 'problems', column: 'creator_id', definition: 'TEXT' },
+  { table: 'problems', column: 'status', definition: "TEXT NOT NULL DEFAULT 'published'" },
+  { table: 'submissions', column: 'message', definition: 'TEXT' },
+  { table: 'submissions', column: 'results_json', definition: 'TEXT' },
+  { table: 'submissions', column: 'score', definition: 'INTEGER DEFAULT 0' },
+  { table: 'testcases', column: 'is_sample', definition: 'INTEGER NOT NULL DEFAULT 0' },
+]
+
+const ensureLegacyColumns = async (db) => {
+  for (const patch of LEGACY_COLUMN_PATCHES) {
+    const columns = await db.all(`PRAGMA table_info(${patch.table})`)
+    if (columns.length === 0 || columns.some((column) => column.name === patch.column)) continue
+    await db.exec(`ALTER TABLE ${patch.table} ADD COLUMN ${patch.column} ${patch.definition}`)
+    console.log(`[db] added legacy column ${patch.table}.${patch.column}`)
+  }
+}
+
 const ensureBuiltinProblems = async (db) => {
   const now = new Date().toISOString()
 
@@ -288,6 +319,8 @@ export const initDb = async () => {
     CREATE INDEX IF NOT EXISTS idx_submissions_problem ON submissions (problem_id);
     CREATE INDEX IF NOT EXISTS idx_testcases_problem ON testcases (problem_id);
   `)
+
+  await ensureLegacyColumns(db)
 
   const columns = await db.all(`PRAGMA table_info(users)`)
   const columnNames = columns.map((col) => col.name)
@@ -872,4 +905,9 @@ export const initDb = async () => {
 export const getDb = async () => {
   const db = await dbPromise
   return db
+}
+
+export const closeDb = async () => {
+  const db = await dbPromise
+  if (db.open) await db.close()
 }

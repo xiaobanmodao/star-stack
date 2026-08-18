@@ -2,7 +2,7 @@
 
 ## ✅ 问题已解决
 
-数据库文件已从 Git 中移除，现在可以安全地在服务器上使用 `git pull` 而不会覆盖用户数据。
+数据库文件已从 Git 中移除，现在可以安全地在服务器上拉取代码而不会覆盖用户数据。旧数据库升级时还必须运行完整迁移脚本，补齐新版本新增的表、字段和索引。
 
 ---
 
@@ -29,20 +29,31 @@ server/data/db.json           # JSON 数据库
 # 1. 进入项目目录
 cd /home/user/star-stack
 
-# 2. 备份数据库（推荐，以防万一）
+# 2. 停止后端，确保 SQLite 的 WAL 数据已经落盘
+pm2 stop star-stack-api
+
+# 3. 备份数据库（强烈建议保留）
 cp server/data/starstack.sqlite server/data/starstack.sqlite.backup.$(date +%Y%m%d_%H%M%S)
 
-# 3. 拉取最新代码
-git pull
+# 4. 拉取最新代码
+git pull --ff-only origin main
 
-# 4. 安装依赖（如果 package.json 有更新）
+# 5. 安装依赖（如果 package.json 有更新）
 npm install
 cd server && npm install && cd ..
 
-# 5. 重启服务
-pm2 restart starstack-backend
-# 或者
-pm2 restart all
+# 6. 补齐旧数据库的新表、新字段和索引（幂等，不删除用户数据）
+node server/migrate.js
+
+# 7. 构建前端
+npm run build
+
+# 8. 如果 Nginx 使用独立静态目录，同步最新构建产物
+sudo rsync -a --delete dist/ /var/www/starstack-dist/
+
+# 9. 重启后端并重载 Nginx
+pm2 restart star-stack-api
+sudo nginx -t && sudo nginx -s reload
 ```
 
 ### 首次部署到新服务器
@@ -60,7 +71,8 @@ cd server && npm install && cd ..
 mkdir -p server/data
 
 # 4. 初始化数据库
-# 数据库会在首次运行时自动创建
+# 数据库会在首次运行时自动创建；已有数据库升级请运行：
+node server/migrate.js
 
 # 5. 启动服务
 pm2 start ecosystem.config.js
