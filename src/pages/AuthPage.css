@@ -1,0 +1,113 @@
+.auth-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--ss-bg-code-68);
+  display: grid;
+  place-items: center;
+  z-index: 20;
+  backdrop-filter: blur(6px);
+}
+.auth-page {
+  width: min(460px, 92vw);
+}
+
+.auth-panel {
+  width: min(440px, 92vw);
+  background: var(--ss-bg-panel-solid);
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  padding: 22px;
+  box-shadow: 0 30px 80px var(--ss-bg-code-50);
+}
+
+.auth-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.auth-title {
+  font-weight: 700;
+  font-size: 20px;
+}
+
+.auth-subtitle {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.auth-tabs button {
+  flex: 1;
+  padding: 10px 0;
+  border-radius: 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.auth-tabs button.active {
+  color: var(--text);
+  border-color: var(--ss-accent-border);
+  background: var(--ss-accent-bg-strong);
+}
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.auth-input {
+  background: var(--ss-bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.auth-input:focus {
+  outline: none;
+  border-color: var(--ss-accent-border-strong);
+  box-shadow: 0 0 0 2px var(--ss-accent-bg-strong);
+}
+
+.auth-error {
+  color: var(--ss-color-danger);
+  background: var(--ss-danger-12);
+  border: 1px solid var(--ss-danger-30);
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.auth-success {
+  color: var(--ss-color-success);
+  background: var(--ss-success-12);
+  border: 1px solid var(--ss-success-30);
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.auth-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useLocation, useNavigate, useParams, Navigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
+import './DiscussionPages.css'
 import RichTextEditor from '../components/RichTextEditor'
 import { fetchJson } from '../utils'
 import type { ApiResponse, DiscussionDetailResponse, OjProblemSummary, ProblemsResponse } from '../types'

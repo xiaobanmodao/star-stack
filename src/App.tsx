@@ -1,6 +1,9 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import './App.css'
+import './styles/theme-light.css'
+import './styles/topbar.css'
+import './styles/shared.css'
 import { AppContext } from './context/AppContext'
 import { OJ_ENABLED, TOKEN_KEY } from './constants'
 import FloatingChat from './components/chat/FloatingChat'
@@ -8,9 +11,12 @@ import NotificationBell from './components/NotificationBell'
 import OnboardingModal from './components/OnboardingModal'
 import SearchOverlay from './components/SearchOverlay'
 import ThemeToggle from './components/ThemeToggle'
+import UserMenu from './components/UserMenu'
+import AuthPage from './pages/AuthPage'
+import { useStarfield } from './hooks/useStarfield'
 import { fetchJson, isPollingPageVisible } from './utils'
 import type {
-  UserRecord, ProblemPlan, AuthMode, AuthPageProps,
+  UserRecord, ProblemPlan, AuthMode,
   UserResponse, AuthResponse, UnreadCountResponse, ApiResponse,
 } from './types'
 
@@ -50,179 +56,7 @@ const LegacyDiscussionRedirect = ({ to }: { to: string }) => {
   return <Navigate to={`/chat/${to.replace(':id', id || '')}`} replace />
 }
 
-const AuthPage = ({
-  mode,
-  onModeChange,
-  onBack,
-  onSubmit,
-  formId,
-  formName,
-  formPassword,
-  formConfirm,
-  onFormIdChange,
-  onFormNameChange,
-  onFormPasswordChange,
-  onFormConfirmChange,
-  error,
-  success,
-}: AuthPageProps) => (
-  <section className="auth-page">
-    <div className="auth-panel">
-      <div className="auth-header">
-        <div>
-          <div className="auth-title">星栈账号</div>
-          <div className="auth-subtitle">登录后解锁完整功能</div>
-        </div>
-        <button className="ghost small" type="button" onClick={onBack}>
-          返回
-        </button>
-      </div>
-      <div className="auth-tabs">
-        <button className={mode === 'login' ? 'active' : ''} type="button" onClick={() => onModeChange('login')}>
-          登录
-        </button>
-        <button
-          className={mode === 'register' ? 'active' : ''}
-          type="button"
-          onClick={() => onModeChange('register')}
-        >
-          注册
-        </button>
-      </div>
-      <form className="auth-form" onSubmit={onSubmit}>
-        <label>
-          ID
-          <input
-            className="auth-input"
-            type="text"
-            value={formId}
-            onChange={(event) => onFormIdChange(event.target.value)}
-          />
-        </label>
-        {mode === 'register' && (
-          <label>
-            名称
-            <input
-              className="auth-input"
-              type="text"
-              value={formName}
-              onChange={(event) => onFormNameChange(event.target.value)}
-            />
-          </label>
-        )}
-        <label>
-          密码
-          <input
-            className="auth-input"
-            type="password"
-            value={formPassword}
-            onChange={(event) => onFormPasswordChange(event.target.value)}
-          />
-        </label>
-        {mode === 'register' && (
-          <label>
-            确认密码
-            <input
-              className="auth-input"
-              type="password"
-              value={formConfirm}
-              onChange={(event) => onFormConfirmChange(event.target.value)}
-            />
-          </label>
-        )}
-        {error && <div className="auth-error">{error}</div>}
-        {success && <div className="auth-success">{success}</div>}
-        <div className="auth-actions">
-          <button className="primary" type="submit">
-            {mode === 'login' ? '登录' : '注册'}
-          </button>
-        </div>
-      </form>
-    </div>
-  </section>
-)
-
-const UserMenu = ({ currentUser, initial, navigate, location, openLogoutConfirm }: {
-  currentUser: UserRecord
-  initial: string
-  navigate: ReturnType<typeof useNavigate>
-  location: ReturnType<typeof useLocation>
-  openLogoutConfirm: () => void
-}) => {
-  const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const closeTimerRef = useRef<number | null>(null)
-
-  const handleMouseEnter = () => {
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current)
-      closeTimerRef.current = null
-    }
-    setUserMenuOpen(true)
-  }
-
-  const handleMouseLeave = () => {
-    closeTimerRef.current = window.setTimeout(() => {
-      setUserMenuOpen(false)
-    }, 300)
-  }
-
-  const handleAvatarClick = () => {
-    if (location.pathname !== '/account') {
-      navigate('/account')
-    }
-  }
-
-  return (
-    <div
-      className="user-menu"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-    >
-      <div className="user-avatar-btn" onClick={handleAvatarClick} style={{ cursor: 'pointer' }}>
-        {currentUser.avatar ? (
-          <img src={currentUser.avatar} alt="头像" />
-        ) : (
-          <span>{initial}</span>
-        )}
-      </div>
-      <div className={`user-menu-panel ${userMenuOpen ? 'open' : ''}`} role="menu" aria-label="用户菜单">
-        <div className="user-menu-level">
-          <span aria-hidden="true">{currentUser.icon || '✦'}</span>
-          <span>Lv.{currentUser.level ?? 1}</span>
-          <strong>{currentUser.title || '星尘'}</strong>
-        </div>
-        <div className="user-menu-divider" aria-hidden="true" />
-        <button className="user-menu-item" type="button" onClick={() => {
-          if (location.pathname !== '/account') navigate('/account');
-          setUserMenuOpen(false);
-        }}>
-          个人中心
-        </button>
-        <button className="user-menu-item" type="button" onClick={() => {
-          if (location.pathname !== '/my-problems') navigate('/my-problems');
-          setUserMenuOpen(false);
-        }}>
-          我的题目
-        </button>
-        {OJ_ENABLED && (
-          <button className="user-menu-item" type="button" onClick={() => {
-            if (location.pathname !== '/oj/submissions') navigate('/oj/submissions');
-            setUserMenuOpen(false);
-          }}>
-            我的提交
-          </button>
-        )}
-        <div className="user-menu-divider" aria-hidden="true" />
-        <button className="user-menu-item danger" type="button" onClick={() => { openLogoutConfirm(); setUserMenuOpen(false); }}>
-          退出账号
-        </button>
-      </div>
-    </div>
-  )
-}
-
 function App() {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const appRef = useRef<HTMLDivElement | null>(null)
   const topbarRef = useRef<HTMLElement | null>(null)
   const navigate = useNavigate()
@@ -544,62 +378,7 @@ function App() {
     navigate(authFrom || '/')
   }, [authFrom, navigate])
 
-  // Starfield：极淡静态星点（高级纯色版，无动画/星云/流星）
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    let stars: { x: number; y: number; r: number; alpha: number; color: string }[] = []
-    let width = 0
-    let height = 0
-
-    const createStars = () => {
-      const dpr = Math.max(window.devicePixelRatio || 1, 1)
-      width = window.innerWidth
-      height = window.innerHeight
-      canvas.style.width = `${width}px`
-      canvas.style.height = `${height}px`
-      canvas.width = Math.floor(width * dpr)
-      canvas.height = Math.floor(height * dpr)
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-
-      const count = lowPerformanceMode ? 90 : Math.max(160, Math.floor((width * height) / 9000))
-      const palette = ['255, 255, 255', '196, 220, 255', '255, 236, 210']
-      stars = Array.from({ length: count }, () => {
-        const bright = Math.random() > 0.92
-        const color = palette[Math.floor(Math.random() * palette.length)]
-        return {
-          x: Math.random() * width,
-          y: Math.random() * height,
-          r: bright ? Math.random() * 1.4 + 0.6 : Math.random() * 0.9 + 0.25,
-          alpha: bright ? Math.random() * 0.5 + 0.3 : Math.random() * 0.3 + 0.1,
-          color,
-        }
-      })
-    }
-
-    const draw = () => {
-      ctx.clearRect(0, 0, width, height)
-      for (const star of stars) {
-        ctx.beginPath()
-        ctx.fillStyle = `rgba(${star.color}, ${star.alpha})`
-        ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2)
-        ctx.fill()
-      }
-    }
-
-    createStars()
-    draw()
-
-    const handleResize = () => {
-      createStars()
-      draw()
-    }
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [lowPerformanceMode])
+  const canvasRef = useStarfield(lowPerformanceMode)
 
   const appClassName = [
     'app',
@@ -710,7 +489,7 @@ function App() {
                     </svg>
                     {unreadMessageCount > 0 && <span className="topbar-message-dot" />}
                   </button>
-                  <UserMenu currentUser={currentUser} initial={initial} navigate={navigate} location={location} openLogoutConfirm={openLogoutConfirm} />
+                  <UserMenu currentUser={currentUser} initial={initial} openLogoutConfirm={openLogoutConfirm} />
                 </>
               ) : (
                 <button className="primary" onClick={() => openAuth('login')}>登录</button>

@@ -5,8 +5,61 @@
   margin-left: 59px;
   min-width: 0;
 }
-
 .oj-sidebar-main .oj-detail {
   width: 100%;
   max-width: 1080px;
+}
+
+@media (max-width: 900px) {
+  /* 移动端侧栏常驻横向，hover 不改变宽度（否则整体布局跳动） */
+  .sidebar:hover {
+    width: 100%;
+    padding: 16px 14px;
+    box-shadow: none;
+  }
+
+  .nav-label,
+  .sidebar-footer-text {
+    opacity: 1;
+    max-width: 100%;
+    transform: none;
+  }
+
+  .sidebar .nav-link {
+    justify-content: flex-start;
+  }
+
+  .nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .topbar {
+    position: fixed;
+    padding: 16px 20px;
+  }
+
+  .judge-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .main {
+    padding: 24px 20px 32px;
+  }
+
+  .oj-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-problem-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ide-panel {
+    height: 88vh;
+  }
+
+  .ide-main {
+    grid-template-columns: 1fr;
+  }
 }

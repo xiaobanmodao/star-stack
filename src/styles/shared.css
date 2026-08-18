@@ -1,0 +1,118 @@
+/* ===== Skeleton Screens ===== */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--ss-accent-bg);
+  border-radius: 6px;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: none;
+  animation: shimmer 1.5s infinite;
+  will-change: transform;
+}
+.skeleton-line { height: 16px; margin-bottom: 12px; }
+.skeleton-title { height: 24px; width: 60%; margin-bottom: 16px; }
+.skeleton-card { height: 80px; margin-bottom: 12px; border-radius: 10px; }
+.skeleton-row { height: 44px; margin-bottom: 8px; border-radius: 8px; }
+.skeleton-avatar { width: 48px; height: 48px; border-radius: 50%; }
+@keyframes shimmer { 0% { transform: translateX(-100%) } 100% { transform: translateX(100%) } }
+
+/* ===== SSE Progress ===== */
+.sse-progress {
+  padding: 16px;
+  background: var(--ss-bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  animation: sse-fade-in 0.25s ease;
+}
+@keyframes sse-fade-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.sse-progress-bar {
+  height: 6px;
+  background: var(--ss-accent-bg-strong);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.sse-progress-fill {
+  height: 100%;
+  background: var(--ss-color-accent);
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+.sse-progress-text {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.sse-testcase-grid {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.sse-tc-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  display: inline-block;
+}
+.sse-tc-dot.ac { background: var(--ss-color-success); }
+.sse-tc-dot.tle { background: var(--ss-color-warning); }
+.sse-tc-dot.err { background: var(--ss-color-danger); }
+.sse-tc-dot.pending { background: var(--ss-accent-bg-strong); }
+
+/* ===== Pass Rate Bar ===== */
+.oj-pass-rate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.oj-pass-rate-bar {
+  width: 60px;
+  height: 4px;
+  background: var(--ss-accent-bg-strong);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.oj-pass-rate-fill {
+  height: 100%;
+  background: var(--ss-color-success);
+  border-radius: 2px;
+}
+/* ===== Rating Chart ===== */
+.rating-chart {
+  margin-top: 20px;
+  padding: 16px;
+  background: var(--ss-bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.rating-chart-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+.rating-chart svg {
+  width: 100%;
+  display: block;
+}
+.rating-chart-tooltip {
+  position: absolute;
+  background: var(--ss-bg-panel-solid);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 10;
+}

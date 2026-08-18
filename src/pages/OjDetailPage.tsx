@@ -6,6 +6,7 @@ import { fetchJson, openInNewTab, preloadOjIdeAssets } from '../utils'
 import { renderLatex } from '../latex'
 import { LANGUAGE_OPTIONS, getLanguageConfig } from '../constants'
 import type { DiscussionListResponse, DiscussionPost, OjProblemDetail, ProblemResponse, OjSubmission, SubmissionResponse } from '../types'
+import './OjJudgePage.css'
 import './OjDetailPage.css'
 
 const LazyOjIdePanel = lazy(() => import('../components/OjIdePanel'))

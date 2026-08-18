@@ -3,7 +3,6 @@
   width: min(100%, 1180px);
   margin: 0 auto;
 }
-
 .user-profile-actions {
   display: flex;
   gap: 8px;
@@ -201,4 +200,369 @@
 .user-achievements,
 .user-recent-posts {
   margin-top: 12px;
+}
+
+/* Profile Page Styles */
+.profile-container {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 24px;
+  padding: 24px;
+  animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.skeleton-loading {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.profile-left {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.profile-right {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.profile-card {
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--ss-bg-code-80);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.profile-avatar-large {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: var(--ss-accent-border-soft);
+  display: grid;
+  place-items: center;
+  font-size: 48px;
+  font-weight: 700;
+  color: var(--ss-color-text);
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.profile-avatar-large:hover {
+  /* transform removed: 克制化 */
+  box-shadow: 0 0 0 2px var(--ss-accent-border);
+}
+
+.profile-avatar-large.uploading {
+  opacity: 0.6;
+}
+
+.profile-rank-badge {
+  background: var(--ss-hover-layer);
+  border: 1px solid var(--ss-accent-border);
+  border-radius: 12px;
+  padding: 8px 16px;
+  font-size: 14px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+/* Heatmap Styles */
+.heatmap-container {
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--ss-bg-code-80);
+  padding: 24px;
+}
+
+.heatmap-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(53, 12px);
+  grid-auto-rows: 12px;
+  gap: 3px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.heatmap-cell {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--ss-accent-bg-strong);
+  cursor: pointer;
+  position: relative;
+}
+
+.heatmap-cell:hover {
+  box-shadow: 0 0 6px var(--ss-accent-border);
+}
+
+.heatmap-cell[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ss-bg-panel-solid);
+  color: var(--text);
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 10;
+  border: 1px solid var(--border);
+  transition: opacity 0.15s;
+}
+
+.heatmap-cell:hover[data-tip]::after {
+  opacity: 1;
+}
+
+.heatmap-cell[data-level="1"] {
+  background: var(--ss-accent-border);
+}
+
+.heatmap-cell[data-level="2"] {
+  background: var(--ss-accent-border);
+}
+
+.heatmap-cell[data-level="3"] {
+  background: var(--ss-accent-border-strong);
+}
+
+.heatmap-cell[data-level="4"] {
+  background: var(--ss-color-accent);
+}
+
+/* Difficulty Progress Styles */
+.difficulty-progress-container {
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--ss-bg-code-80);
+  padding: 24px;
+}
+
+.difficulty-item {
+  margin-bottom: 20px;
+}
+
+.difficulty-item:last-child {
+  margin-bottom: 0;
+}
+
+.difficulty-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.difficulty-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.difficulty-label.entry {
+  color: var(--ss-color-danger);
+}
+
+.difficulty-label.popular-minus {
+  color: var(--ss-color-warning);
+}
+
+.difficulty-label.popular {
+  color: var(--ss-color-warning);
+}
+
+.difficulty-label.popular-plus {
+  color: var(--ss-color-warning);
+}
+
+.difficulty-label.improve {
+  color: var(--ss-color-success);
+}
+
+.difficulty-label.improve-plus {
+  color: var(--ss-color-success);
+}
+
+.difficulty-label.provincial {
+  color: var(--ss-color-accent);
+}
+
+.difficulty-label.noi {
+  color: var(--ss-color-text-muted);
+}
+
+.difficulty-label.default {
+  color: var(--accent);
+}
+
+.difficulty-label.easy {
+  color: var(--ss-color-success);
+}
+
+.difficulty-label.medium {
+  color: var(--ss-color-warning);
+}
+
+.difficulty-label.hard {
+  color: var(--ss-color-danger);
+}
+
+.difficulty-stats {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.progress-bar {
+  height: 8px;
+  background: var(--ss-hover-layer);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progress-fill.entry {
+  background: var(--ss-color-danger);
+}
+
+.progress-fill.popular-minus {
+  background: var(--ss-color-warning);
+}
+
+.progress-fill.popular {
+  background: var(--ss-color-warning);
+}
+
+.progress-fill.popular-plus {
+  background: var(--ss-color-warning);
+}
+
+.progress-fill.improve {
+  background: var(--ss-color-success);
+}
+
+.progress-fill.improve-plus {
+  background: var(--ss-color-success);
+}
+
+.progress-fill.provincial {
+  background: var(--ss-color-accent);
+}
+
+.progress-fill.noi {
+  background: var(--ss-color-text-muted);
+}
+
+.progress-fill.default {
+  background: var(--ss-hover-layer);
+}
+
+.progress-fill.easy {
+  background: var(--ss-color-success);
+}
+
+.progress-fill.medium {
+  background: var(--ss-color-warning);
+}
+
+.progress-fill.hard {
+  background: var(--ss-color-danger);
+}
+
+/* Achievements Styles */
+.achievements-container {
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--ss-bg-code-80);
+  padding: 24px;
+}
+
+.achievements-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 16px;
+}
+
+.achievement-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--ss-bg-panel-solid);
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+
+.achievement-badge:hover {
+  /* transform removed: 克制化 */
+  box-shadow: 0 4px 12px var(--ss-accent-border-soft);
+}
+
+.achievement-badge.locked {
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
+.achievement-icon {
+  font-size: 32px;
+}
+
+.achievement-name {
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text);
+}
+
+.achievement-date {
+  font-size: 10px;
+  color: var(--muted);
 }

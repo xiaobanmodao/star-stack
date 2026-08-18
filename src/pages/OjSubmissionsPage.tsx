@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import CustomSelect from '../components/CustomSelect'
 import { fetchJson, formatTime } from '../utils'
 import type { OjSubmission, SubmissionsResponse } from '../types'
 import './OpsPages.css'
@@ -13,6 +14,29 @@ const getSubmissionTone = (status: string): 'success' | 'warning' | 'danger' | '
   return 'info'
 }
 
+const SUBMISSION_STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: 'Accepted', label: 'Accepted' },
+  { value: 'Wrong Answer', label: 'Wrong Answer' },
+  { value: 'Compile Error', label: 'Compile Error' },
+  { value: 'Time Limit Exceeded', label: 'Time Limit Exceeded' },
+  { value: 'Runtime Error', label: 'Runtime Error' },
+]
+
+const LANGUAGE_OPTIONS = [
+  { value: '', label: '全部语言' },
+  { value: 'C++', label: 'C++17' },
+  { value: 'Python', label: 'Python 3' },
+  { value: 'Java', label: 'Java 17' },
+]
+
+const getPassedCases = (submission: OjSubmission) => {
+  const results = submission.results || []
+  if (results.length === 0) return '-'
+  const passed = results.filter((item) => item.status === 'Accepted').length
+  return `${passed}/${results.length}`
+}
+
 export default function OjSubmissionsPage() {
   const navigate = useNavigate()
   const [submissions, setSubmissions] = useState<OjSubmission[]>([])
@@ -20,6 +44,9 @@ export default function OjSubmissionsPage() {
   const [error, setError] = useState('')
   const [submissionsPage, setSubmissionsPage] = useState(1)
   const [submissionsPageInput, setSubmissionsPageInput] = useState('1')
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [languageFilter, setLanguageFilter] = useState('')
   const submissionsPerPage = 20
 
   const loadSubmissions = useCallback(async () => {
@@ -32,6 +59,8 @@ export default function OjSubmissionsPage() {
       return
     }
     setSubmissions(data?.submissions || [])
+    setSubmissionsPage(1)
+    setSubmissionsPageInput('1')
     setLoading(false)
   }, [])
 
@@ -46,10 +75,27 @@ export default function OjSubmissionsPage() {
     navigate(`/oj/judge/${submissionId}`)
   }
 
-  const submissionsTotalPages = Math.ceil(submissions.length / submissionsPerPage)
+  const resetSubmissionPagination = () => {
+    setSubmissionsPage(1)
+    setSubmissionsPageInput('1')
+  }
+
+  const filteredSubmissions = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return submissions.filter((record) => {
+      const matchesSearch = !query || [record.problemTitle, `P${record.problemId}`, String(record.problemId)]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query))
+      const matchesStatus = !statusFilter || record.status === statusFilter
+      const matchesLanguage = !languageFilter || record.language === languageFilter
+      return matchesSearch && matchesStatus && matchesLanguage
+    })
+  }, [languageFilter, search, statusFilter, submissions])
+
+  const submissionsTotalPages = Math.ceil(filteredSubmissions.length / submissionsPerPage)
   const submissionsStartIndex = (submissionsPage - 1) * submissionsPerPage
   const submissionsEndIndex = submissionsStartIndex + submissionsPerPage
-  const currentSubmissions = submissions.slice(submissionsStartIndex, submissionsEndIndex)
+  const currentSubmissions = filteredSubmissions.slice(submissionsStartIndex, submissionsEndIndex)
 
   const handleSubmissionsPageChange = (page: number) => {
     if (page >= 1 && page <= submissionsTotalPages) {
@@ -92,9 +138,9 @@ export default function OjSubmissionsPage() {
     return pages
   }
 
-  const acceptedCount = submissions.filter((record) => record.status === 'Accepted' || record.status === 'AC').length
-  const bestScore = submissions.reduce((best, record) => Math.max(best, record.score ?? 0), 0)
-  const latestSubmission = submissions[0]
+  const acceptedCount = filteredSubmissions.filter((record) => record.status === 'Accepted' || record.status === 'AC').length
+  const bestScore = filteredSubmissions.reduce((best, record) => Math.max(best, record.score ?? 0), 0)
+  const latestSubmission = filteredSubmissions[0]
 
   return (
     <section className="ops-page-v2 submissions-v2">
@@ -111,8 +157,8 @@ export default function OjSubmissionsPage() {
 
       <div className="ops-summary-grid">
         <Panel>
-          <span>提交总数</span>
-          <strong>{submissions.length}</strong>
+          <span>当前结果</span>
+          <strong>{filteredSubmissions.length}</strong>
         </Panel>
         <Panel>
           <span>Accepted</span>
@@ -136,15 +182,60 @@ export default function OjSubmissionsPage() {
             <Badge tone="info">Submissions</Badge>
             <h2>提交记录</h2>
           </div>
-          <span>点击任意记录查看判题详情</span>
+          <span>点击任意记录查看判题详情 · 当前 {filteredSubmissions.length} 条</span>
+        </div>
+
+        <div className="submission-filter-panel">
+          <input
+            className="auth-input"
+            placeholder="搜索题目名称或题号"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value)
+              resetSubmissionPagination()
+            }}
+          />
+          <CustomSelect
+            className="submission-filter-select"
+            value={statusFilter}
+            onChange={(value) => {
+              setStatusFilter(value)
+              resetSubmissionPagination()
+            }}
+            options={SUBMISSION_STATUS_OPTIONS}
+          />
+          <CustomSelect
+            className="submission-filter-select"
+            value={languageFilter}
+            onChange={(value) => {
+              setLanguageFilter(value)
+              resetSubmissionPagination()
+            }}
+            options={LANGUAGE_OPTIONS}
+          />
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setSearch('')
+              setStatusFilter('')
+              setLanguageFilter('')
+              resetSubmissionPagination()
+            }}
+            disabled={!search && !statusFilter && !languageFilter}
+          >
+            清空筛选
+          </Button>
         </div>
 
         {loading ? (
           <div className="ops-skeleton-list">
             {Array.from({ length: 8 }, (_, index) => <div key={index} className="skeleton skeleton-row" />)}
           </div>
-        ) : submissions.length === 0 ? (
-          <EmptyState title="暂无提交记录" description="完成一次提交后，这里会出现可复盘的判题记录。" />
+        ) : filteredSubmissions.length === 0 ? (
+          <EmptyState
+            title="暂无提交记录"
+            description={submissions.length === 0 ? '完成一次提交后，这里会出现可复盘的判题记录。' : '当前筛选条件没有匹配的提交记录。'}
+          />
         ) : (
           <div className="submission-list-v2">
             <div className="submission-row-v2 head">
@@ -152,6 +243,7 @@ export default function OjSubmissionsPage() {
               <span>题目</span>
               <span>语言</span>
               <span>状态</span>
+              <span>测试点</span>
               <span>分数</span>
               <span>耗时</span>
             </div>
@@ -166,6 +258,7 @@ export default function OjSubmissionsPage() {
                 <strong>{record.problemTitle || `P${record.problemId}`}</strong>
                 <span>{record.language}</span>
                 <Badge tone={getSubmissionTone(record.status)}>{record.status}</Badge>
+                <span>{getPassedCases(record)}</span>
                 <span className={record.score === 100 ? 'score-perfect' : 'score-partial'}>{record.score ?? 0} 分</span>
                 <span>{record.timeMs ? `${record.timeMs}ms` : '-'}</span>
               </button>

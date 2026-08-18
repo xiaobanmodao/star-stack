@@ -290,32 +290,47 @@ const OjIdePanel = ({
     if (!currentUser) { openAuth('login'); return }
     if (!currentCode.trim()) { setSubmitError('请填写代码'); return }
     setSubmitError('')
+    codeRef.current = currentCode
+    flushDraft()
     onSubmitJudge({ problemId: problem.id, problemTitle: problem.title, language, code: currentCode })
-  }, [currentUser, language, onSubmitJudge, openAuth, problem.id, problem.title])
+  }, [currentUser, flushDraft, language, onSubmitJudge, openAuth, problem.id, problem.title])
 
   const handleRunCustom = useCallback(async (input: string, expected = '') => {
     const currentCode = editorRef.current?.getValue() ?? codeRef.current
     if (!currentUser) { openAuth('login'); return }
+    setSubmitError('')
+    if (!currentCode.trim()) {
+      setRunStatus('无法运行')
+      setRunMessage('请先填写代码')
+      setRunOutput('')
+      setRunTime(null)
+      return
+    }
     setRunBusy(true)
     setRunStatus('运行中')
     setRunMessage('')
     setRunTime(null)
     setRunOutput('')
-    const { response, data } = await fetchJson<{ status?: string; message?: string; output?: string; timeMs?: number }>('/api/oj/run-custom', {
-      method: 'POST',
-      body: JSON.stringify({ problemId: problem.id, language, code: currentCode, input, expected }),
-    })
-    if (!response.ok) {
+    try {
+      const { response, data } = await fetchJson<{ status?: string; message?: string; output?: string; timeMs?: number }>('/api/oj/run-custom', {
+        method: 'POST',
+        body: JSON.stringify({ problemId: problem.id, language, code: currentCode, input, expected }),
+      })
+      if (!response.ok) {
+        setRunStatus('失败')
+        setRunMessage(data?.message || '运行失败')
+        return
+      }
+      setRunStatus(data?.status || '完成')
+      setRunMessage(data?.message || '')
+      setRunOutput(data?.output || '')
+      setRunTime(data?.timeMs ?? null)
+    } catch {
       setRunStatus('失败')
-      setRunMessage((data as { message?: string } | null)?.message || '运行失败')
+      setRunMessage('运行请求失败，请稍后重试')
+    } finally {
       setRunBusy(false)
-      return
     }
-    setRunStatus(data?.status || '完成')
-    setRunMessage(data?.message || '')
-    setRunOutput(data?.output || '')
-    setRunTime(data?.timeMs ?? null)
-    setRunBusy(false)
   }, [currentUser, fetchJson, language, openAuth, problem.id])
 
   const runSample = useCallback(async (index: number) => {
@@ -376,6 +391,7 @@ const OjIdePanel = ({
                 editor.onDidChangeModelContent(() => {
                   userEditedRef.current = true
                   codeRef.current = editor.getValue()
+                  setSubmitError('')
                   scheduleDraftSync()
                 })
                 editor.addAction({ id: 'starstack-submit', label: 'Submit', keybindings: [2048 | 3], run: () => { handleSubmit() } })
@@ -433,6 +449,7 @@ const OjIdePanel = ({
                 className="ide-btn ide-btn-secondary"
                 onClick={() => handleRunCustom(runInput, runExpected)}
                 disabled={runBusy}
+                aria-busy={runBusy}
               >
                 {runBusy ? '运行中...' : '运行'}
               </button>
@@ -453,14 +470,18 @@ const OjIdePanel = ({
               </div>
 
               <div className="ide-run-pane">
-                <div className="ide-run-pane-title">
-                  <span>输出</span>
-                  {runExpected && (runStatus || runMessage) && (
-                    <span className={`ide-run-status ${runStatus === 'Accepted' ? 'ok' : runStatus === 'Wrong Answer' ? 'bad' : runStatus === 'Compile Error' ? 'warn' : runStatus === 'Runtime Error' ? 'runtime' : ''}`}>
-                      {[runStatus, runMessage].filter(Boolean).join(' ')}
-                    </span>
-                  )}
-                </div>
+              <div className="ide-run-pane-title">
+                <span>输出</span>
+                {(runStatus || runMessage) && (
+                  <span
+                    className={`ide-run-status ${runStatus === 'Accepted' ? 'ok' : runStatus === 'Wrong Answer' ? 'bad' : runStatus === 'Compile Error' ? 'warn' : runStatus === 'Runtime Error' ? 'runtime' : ''}`}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {[runStatus, runMessage].filter(Boolean).join(' · ')}
+                  </span>
+                )}
+              </div>
                 <pre className="ide-run-output">{runOutput || '暂无输出'}</pre>
               </div>
             </div>

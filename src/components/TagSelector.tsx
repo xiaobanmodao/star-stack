@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { PRESET_TAGS } from '../constants'
+import './TagSelector.css'
 
 type TagSelectorProps = {
   selectedTags: string[]

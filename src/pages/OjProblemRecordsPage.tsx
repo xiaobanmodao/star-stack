@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import CustomSelect from '../components/CustomSelect'
 import { fetchJson, formatTime } from '../utils'
 import type { OjSubmission, SubmissionsResponse } from '../types'
 import './OpsPages.css'
@@ -13,6 +14,29 @@ const getSubmissionTone = (status: string): 'success' | 'warning' | 'danger' | '
   return 'info'
 }
 
+const SUBMISSION_STATUS_OPTIONS = [
+  { value: '', label: '全部状态' },
+  { value: 'Accepted', label: 'Accepted' },
+  { value: 'Wrong Answer', label: 'Wrong Answer' },
+  { value: 'Compile Error', label: 'Compile Error' },
+  { value: 'Time Limit Exceeded', label: 'Time Limit Exceeded' },
+  { value: 'Runtime Error', label: 'Runtime Error' },
+]
+
+const LANGUAGE_OPTIONS = [
+  { value: '', label: '全部语言' },
+  { value: 'C++', label: 'C++17' },
+  { value: 'Python', label: 'Python 3' },
+  { value: 'Java', label: 'Java 17' },
+]
+
+const getPassedCases = (submission: OjSubmission) => {
+  const results = submission.results || []
+  if (results.length === 0) return '-'
+  const passed = results.filter((item) => item.status === 'Accepted').length
+  return `${passed}/${results.length}`
+}
+
 export default function OjProblemRecordsPage() {
   const navigate = useNavigate()
   const { id } = useParams()
@@ -22,6 +46,8 @@ export default function OjProblemRecordsPage() {
   const [error, setError] = useState('')
   const [recordsPage, setRecordsPage] = useState(1)
   const [recordsPageInput, setRecordsPageInput] = useState('1')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [languageFilter, setLanguageFilter] = useState('')
   const recordsPerPage = 20
 
   const loadRecords = useCallback(async () => {
@@ -39,6 +65,8 @@ export default function OjProblemRecordsPage() {
       return
     }
     setRecords(data?.submissions || [])
+    setRecordsPage(1)
+    setRecordsPageInput('1')
     setLoading(false)
   }, [id, userFilter])
 
@@ -53,10 +81,20 @@ export default function OjProblemRecordsPage() {
     navigate(`/oj/judge/${recordId}`)
   }
 
-  const recordsTotalPages = Math.ceil(records.length / recordsPerPage)
+  const resetRecordsPagination = () => {
+    setRecordsPage(1)
+    setRecordsPageInput('1')
+  }
+
+  const filteredRecords = useMemo(
+    () => records.filter((record) => (!statusFilter || record.status === statusFilter) && (!languageFilter || record.language === languageFilter)),
+    [languageFilter, records, statusFilter],
+  )
+
+  const recordsTotalPages = Math.ceil(filteredRecords.length / recordsPerPage)
   const recordsStartIndex = (recordsPage - 1) * recordsPerPage
   const recordsEndIndex = recordsStartIndex + recordsPerPage
-  const currentRecords = records.slice(recordsStartIndex, recordsEndIndex)
+  const currentRecords = filteredRecords.slice(recordsStartIndex, recordsEndIndex)
 
   const handleRecordsPageChange = (page: number) => {
     if (page >= 1 && page <= recordsTotalPages) {
@@ -99,9 +137,9 @@ export default function OjProblemRecordsPage() {
     return pages
   }
 
-  const acceptedCount = records.filter((record) => record.status === 'Accepted' || record.status === 'AC').length
-  const bestScore = records.reduce((best, record) => Math.max(best, record.score ?? 0), 0)
-  const participantCount = new Set(records.map((record) => record.userId).filter(Boolean)).size
+  const acceptedCount = filteredRecords.filter((record) => record.status === 'Accepted' || record.status === 'AC').length
+  const bestScore = filteredRecords.reduce((best, record) => Math.max(best, record.score ?? 0), 0)
+  const participantCount = new Set(filteredRecords.map((record) => record.userId).filter(Boolean)).size
 
   return (
     <section className="ops-page-v2 submissions-v2">
@@ -118,8 +156,8 @@ export default function OjProblemRecordsPage() {
 
       <div className="ops-summary-grid">
         <Panel>
-          <span>提交总数</span>
-          <strong>{records.length}</strong>
+          <span>当前结果</span>
+          <strong>{filteredRecords.length}</strong>
         </Panel>
         <Panel>
           <span>Accepted</span>
@@ -145,11 +183,31 @@ export default function OjProblemRecordsPage() {
             onChange={(event) => setUserFilter(event.target.value)}
           />
         </label>
+        <CustomSelect
+          className="submission-filter-select"
+          value={statusFilter}
+          onChange={(value) => {
+            setStatusFilter(value)
+            resetRecordsPagination()
+          }}
+          options={SUBMISSION_STATUS_OPTIONS}
+        />
+        <CustomSelect
+          className="submission-filter-select"
+          value={languageFilter}
+          onChange={(value) => {
+            setLanguageFilter(value)
+            resetRecordsPagination()
+          }}
+          options={LANGUAGE_OPTIONS}
+        />
         <Button variant="secondary" onClick={loadRecords}>
           搜索
         </Button>
         <Button variant="ghost" onClick={() => {
           setUserFilter('')
+          setStatusFilter('')
+          setLanguageFilter('')
           setRecordsPage(1)
           setRecordsPageInput('1')
         }}>
@@ -165,15 +223,18 @@ export default function OjProblemRecordsPage() {
             <Badge tone="info">Records</Badge>
             <h2>题目提交</h2>
           </div>
-          <span>点击任意记录查看判题详情</span>
+          <span>点击任意记录查看判题详情 · 当前 {filteredRecords.length} 条</span>
         </div>
 
         {loading ? (
           <div className="ops-skeleton-list">
             {Array.from({ length: 8 }, (_, index) => <div key={index} className="skeleton skeleton-row" />)}
           </div>
-        ) : records.length === 0 ? (
-          <EmptyState title="暂无提交记录" description="这个题目还没有产生提交，或当前用户过滤没有匹配结果。" />
+        ) : filteredRecords.length === 0 ? (
+          <EmptyState
+            title="暂无提交记录"
+            description={records.length === 0 ? '这个题目还没有产生提交。' : '当前筛选条件没有匹配结果。'}
+          />
         ) : (
           <div className="submission-list-v2">
             <div className="submission-row-v2 problem-record head">
@@ -181,6 +242,7 @@ export default function OjProblemRecordsPage() {
               <span>用户</span>
               <span>语言</span>
               <span>状态</span>
+              <span>测试点</span>
               <span>分数</span>
               <span>耗时</span>
             </div>
@@ -198,6 +260,7 @@ export default function OjProblemRecordsPage() {
                 </strong>
                 <span>{record.language}</span>
                 <Badge tone={getSubmissionTone(record.status)}>{record.status}</Badge>
+                <span>{getPassedCases(record)}</span>
                 <span className={record.score === 100 ? 'score-perfect' : 'score-partial'}>{record.score ?? 0}</span>
                 <span>{record.timeMs ? `${record.timeMs}ms` : '-'}</span>
               </button>

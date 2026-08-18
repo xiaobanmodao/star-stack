@@ -19,43 +19,6 @@
   line-height: 1.55;
 }
 
-.problem-library-summary {
-  display: flex;
-  align-items: stretch;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px !important;
-}
-
-.problem-library-summary .oj-library-stats {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-}
-
-.problem-library-summary .oj-library-stats div {
-  gap: 4px;
-  padding: 10px 14px;
-  background: var(--ss-hover-layer);
-}
-
-.problem-library-summary .oj-library-stats strong {
-  font-size: 20px;
-}
-
-.problem-library-range {
-  display: flex;
-  min-width: 180px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 16px;
-  border-left: 1px solid var(--ss-color-border);
-  color: var(--ss-color-text-muted);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
 .problem-library-toolbar {
   position: relative;
   z-index: 90;
@@ -270,21 +233,8 @@
 }
 
 @media (max-width: 1100px) {
-  .problem-library-summary,
   .problem-library-toolbar {
     grid-template-columns: 1fr;
-  }
-
-  .problem-library-summary {
-    display: grid;
-  }
-
-  .problem-library-range {
-    min-width: 0;
-    justify-content: flex-start;
-    padding: 10px 4px 0;
-    border-top: 1px solid var(--ss-color-border);
-    border-left: 0;
   }
 
   .problem-library-table .oj-library-head {
@@ -316,7 +266,6 @@
 }
 
 @media (max-width: 720px) {
-  .problem-library-summary .oj-library-stats,
   .problem-library-toolbar,
   .problem-library-tagbar {
     grid-template-columns: 1fr;
@@ -436,4 +385,371 @@
   .daily-quest-meta {
     justify-items: start;
   }
+}
+
+/* Problem Plan Styles */
+.oj-bottom-section {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.problem-plan-panel {
+  width: 320px;
+  min-width: 320px;
+  background: var(--ss-bg-panel-opaque);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  align-self: flex-start;
+  position: sticky;
+  top: 80px;
+}
+
+.problem-plan-header {
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--accent);
+  border-bottom: 1px solid var(--border);
+  background: var(--ss-hover-layer);
+}
+
+.problem-plan-toggle {
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+
+.problem-plan-toggle:hover {
+  background: var(--ss-accent-bg-strong);
+}
+
+.problem-plan-content {
+  max-height: 600px;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.problem-plan-content.collapsed {
+  display: none;
+}
+
+.problem-plan-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.problem-plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.problem-plan-item {
+  padding: 12px;
+  background: var(--ss-color-surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+
+.problem-plan-item:hover {
+  background: var(--ss-hover-layer);
+  border-color: var(--ss-accent-border);
+}
+
+.problem-plan-item.completed {
+  opacity: 0.6;
+}
+
+.problem-plan-item.completed .problem-plan-item-title {
+  text-decoration: line-through;
+}
+
+.problem-plan-item-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.problem-plan-item-header input[type="checkbox"] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.problem-plan-item-title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.problem-plan-item-title:hover {
+  color: var(--accent);
+}
+
+.problem-plan-item-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.problem-plan-item-meta .difficulty-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.problem-plan-item-meta .difficulty-tag.入门 {
+  background: var(--ss-success-20);
+  color: var(--ss-color-success);
+}
+
+.problem-plan-item-meta .difficulty-tag.普及- {
+  background: var(--ss-success-20);
+  color: var(--ss-color-success);
+}
+
+.problem-plan-item-meta .difficulty-tag.普及 {
+  background: var(--ss-warning-20);
+  color: var(--ss-color-warning);
+}
+
+.problem-plan-item-meta .difficulty-tag.普及\+ {
+  background: var(--ss-danger-20);
+  color: var(--ss-color-warning);
+}
+
+.problem-plan-item-meta .difficulty-tag.提高 {
+  background: var(--ss-danger-20);
+  color: var(--ss-color-danger);
+}
+
+.problem-plan-item-meta .difficulty-tag.提高\+ {
+  background: var(--ss-danger-20);
+  color: var(--ss-color-danger);
+}
+
+.problem-plan-remove {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+
+.problem-plan-remove:hover {
+  background: var(--ss-danger-20);
+  color: var(--ss-color-danger);
+}
+
+/* Add to Plan Button */
+.oj-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.oj-card-content {
+  flex: 1;
+  cursor: pointer;
+}
+
+.add-to-plan-btn {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border-radius: 50%;
+  background: var(--ss-accent-bg-strong);
+  border: 1px solid var(--ss-accent-border);
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+  padding: 0;
+}
+
+.add-to-plan-btn:hover {
+  background: var(--ss-accent-border-soft);
+  border-color: var(--ss-accent-border);
+  /* transform removed: 克制化 */
+}
+
+@media (max-width: 1200px) {
+  .oj-bottom-section {
+    flex-direction: column;
+  }
+
+  .problem-plan-panel {
+    width: 100%;
+    position: static;
+  }
+}
+
+@media (max-width: 768px) {
+  .problem-plan-panel {
+    width: 100%;
+  }
+}
+
+/* =============================================
+   Discussion Hall Styles
+   ============================================= */
+
+.discussion-list-page,
+.discussion-detail-page,
+.discussion-create-page {
+  min-height: calc(100vh - var(--topbar-offset) - 64px);
+  margin: -32px;
+  padding: 32px 40px;
+  width: calc(100% + 64px);
+  background: var(--ss-bg-code-40);
+  border-radius: 0;
+}
+
+.discussion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.discussion-header h2 {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.discussion-loading,
+.discussion-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 48px 0;
+  font-size: 15px;
+}
+
+.discussion-error {
+  background: var(--ss-danger-12);
+  border: 1px solid var(--ss-danger-30);
+  color: var(--ss-color-danger);
+  padding: 10px 16px;
+  border-radius: 10px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+.oj-card-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.oj-code-label {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  padding: 4px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--ss-accent-border);
+  background: var(--ss-accent-bg-strong);
+  color: var(--ss-color-text);
+}
+
+.oj-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.oj-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.oj-tag {
+  padding: 4px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--ss-accent-border-soft);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.oj-badge {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--ss-accent-bg-strong);
+  border: 1px solid var(--ss-accent-border);
+}
+
+.oj-badge.入门 {
+  color: var(--ss-color-danger);
+  background: var(--ss-danger-15);
+  border-color: var(--ss-danger-40);
+}
+
+.oj-badge.普及- {
+  color: var(--ss-color-warning);
+  background: var(--ss-danger-15);
+  border-color: var(--ss-danger-40);
+}
+
+.oj-badge.普及 {
+  color: var(--ss-color-warning);
+  background: var(--ss-warning-15);
+  border-color: var(--ss-warning-40);
+}
+
+.oj-badge.提高- {
+  color: var(--ss-color-warning);
+  background: var(--ss-warning-15);
+  border-color: var(--ss-warning-40);
+}
+
+.oj-badge.提高 {
+  color: var(--ss-color-success);
+  background: var(--ss-success-15);
+  border-color: var(--ss-success-40);
+}
+
+.oj-badge.省选 {
+  color: var(--ss-color-accent);
+  background: var(--ss-accent-15);
+  border-color: var(--ss-accent-40);
+}
+
+.oj-badge.noi {
+  color: var(--ss-color-text-muted);
+  background: var(--ss-text-15);
+  border-color: var(--ss-text-40);
 }

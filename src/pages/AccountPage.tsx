@@ -18,6 +18,7 @@ import { OJ_ENABLED } from '../constants'
 import type { FollowRelations, UserProfileResponse } from '../types'
 import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
 import './AccountPage.css'
+import './UserProfile.css'
 
 const getDifficultySolved = (value: DifficultyStats) => value.solved ?? 0
 const getDifficultyTried = (value: DifficultyStats) => value.tried ?? value.solved ?? 0

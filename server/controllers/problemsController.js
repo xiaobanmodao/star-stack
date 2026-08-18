@@ -341,13 +341,17 @@ export const getProblemForEdit = async (req, res) => {
   )
   const samples = testcases.filter(tc => tc.is_sample === 1).map(tc => ({ input: tc.input, output: tc.output }))
   const testData = testcases.filter(tc => tc.is_sample === 0)
+  const testFiles = testData.flatMap((testcase, index) => [
+    { name: `${index + 1}.in`, type: 'in', content: testcase.input },
+    { name: `${index + 1}.out`, type: 'out', content: testcase.output },
+  ])
 
   return res.json({
     problem: {
       id: problem.id, slug: problem.slug, title: problem.title, difficulty: problem.difficulty,
       tags: problem.tags ? problem.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
       statement: problem.statement, inputDesc: problem.input_desc, outputDesc: problem.output_desc,
-      dataRange: problem.data_range, samples, testDataCount: testData.length,
+      dataRange: problem.data_range, samples, testFiles, testDataCount: testData.length,
       status: problem.status, createdAt: problem.created_at,
     },
   })

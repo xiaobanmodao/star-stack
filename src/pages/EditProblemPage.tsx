@@ -52,6 +52,7 @@ export default function EditProblemPage() {
         outputDesc?: string
         dataRange?: string
         samples: { input: string; output: string }[]
+        testFiles?: { name: string; type: 'in' | 'out'; content: string }[]
       }
       message?: string
     }>(`/api/problems/${id}/edit`)
@@ -74,6 +75,7 @@ export default function EditProblemPage() {
     setOutputDesc(problem.outputDesc || '')
     setDataRange(problem.dataRange || '')
     setSamples(problem.samples.length > 0 ? problem.samples : [{ input: '', output: '' }])
+    setTestFiles(problem.testFiles || [])
     setLoading(false)
   }
 

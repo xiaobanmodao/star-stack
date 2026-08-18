@@ -89,12 +89,6 @@ export default function OjProblemListPage() {
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
   const currentProblems = problemList.slice(startIndex, endIndex)
-  const acceptedProblems = problemList.filter((problem) => (problem.acCount ?? 0) > 0).length
-  const averagePassRate = problemList.length
-    ? Math.round(problemList.reduce((sum, problem) => sum + (problem.passRate ?? 0), 0) / problemList.length)
-    : 0
-  const visibleStart = problemList.length === 0 ? 0 : startIndex + 1
-  const visibleEnd = Math.min(endIndex, problemList.length)
 
   const clearFilters = () => {
     setSearch('')
@@ -218,26 +212,6 @@ export default function OjProblemListPage() {
         </div>
       </Panel>
 
-      <Panel className="problem-library-summary">
-        <div className="oj-library-stats" aria-label="当前筛选结果概览">
-          <div>
-            <strong>{problemList.length}</strong>
-            <span>结果</span>
-          </div>
-          <div>
-            <strong>{acceptedProblems}</strong>
-            <span>已有通过</span>
-          </div>
-          <div>
-            <strong>{averagePassRate}%</strong>
-            <span>平均通过率</span>
-          </div>
-        </div>
-        <div className="problem-library-range">
-          {problemLoading ? '正在加载题库' : `显示 ${visibleStart}-${visibleEnd} / ${problemList.length}`}
-        </div>
-      </Panel>
-
       <Panel className="problem-library-toolbar">
         <input
           className="auth-input"
@@ -252,7 +226,7 @@ export default function OjProblemListPage() {
           }}
         />
         <CustomSelect
-          className="auth-input-like oj-filter-select"
+          className="oj-filter-select"
           value={difficulty}
           onChange={setDifficulty}
           options={[

@@ -185,11 +185,16 @@ export default function OjJudgePage() {
   }, [])
 
   const submitJudge = useCallback(async () => {
-    if (submitRef.current) return
-    submitRef.current = true
+    const hasSubmitPayload = Boolean(locationState.problemId || locationState.language || locationState.code)
+    if (!hasSubmitPayload) return
     if (!locationState.problemId || !locationState.language || !locationState.code) {
+      setError('提交数据不完整，请返回题目页重新提交')
+      setStage('fail')
+      setShowResults(true)
       return
     }
+    if (submitRef.current) return
+    submitRef.current = true
     setStage('running')
     setError('')
     setShowResults(false)
@@ -281,6 +286,17 @@ export default function OjJudgePage() {
       setShowResults(true)
     }
   }, [locationState.code, locationState.language, locationState.problemId, navigate])
+
+  const retrySubmission = useCallback(() => {
+    submitRef.current = false
+    setSubmission(null)
+    setError('')
+    setStage('idle')
+    setShowResults(false)
+    setStreamResults([])
+    setTotalCases(0)
+    void submitJudge()
+  }, [submitJudge])
 
   // 卸载时中止评测流连接
   useEffect(() => {
@@ -374,6 +390,7 @@ export default function OjJudgePage() {
   const problemId = submission?.problemId || locationState.problemId
   const problemTitle = submission?.problemTitle || locationState.problemTitle || (problemId ? `P${problemId}` : '提交结果')
   const statusMeta = getJudgeStatusMeta(submission?.status, stage)
+  const canRetrySubmission = !submissionId && stage === 'fail' && Boolean(locationState.problemId && locationState.language && locationState.code)
   const passedCases = results.filter((item) => item.status === 'Accepted').length
   const firstFailedCase = results.find((item) => item.status !== 'Accepted')
   const resultCaseCount = results.length || totalCases
@@ -408,9 +425,14 @@ export default function OjJudgePage() {
         description="提交后的状态、测试点和调试线索集中在这里，方便你快速决定下一步。"
         actions={(
           <>
+            {canRetrySubmission && (
+              <Button variant="primary" onClick={retrySubmission}>
+                重新提交
+              </Button>
+            )}
             {problemId && (
-              <Button variant="primary" onClick={() => navigate(`/oj/p${problemId}`)}>
-                返回题目
+              <Button variant={canRetrySubmission ? 'ghost' : 'primary'} onClick={() => navigate(`/oj/p${problemId}`)}>
+                {stage === 'fail' ? '返回修改' : '返回题目'}
               </Button>
             )}
             <Button variant="ghost" onClick={() => navigate('/oj/submissions')}>

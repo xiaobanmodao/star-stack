@@ -4,6 +4,7 @@ import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
 import type { Conversation, ConversationsResponse } from '../types'
 import { fetchJson, htmlToPlainText, isPollingPageVisible } from '../utils'
 import './OpsPages.css'
+import './ChatPage.css'
 
 export default function MessageListPage({ basePath = '/messages' }: { basePath?: string }) {
   const navigate = useNavigate()

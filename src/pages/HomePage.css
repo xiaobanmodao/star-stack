@@ -245,3 +245,254 @@ button.portal-card:active {
     grid-template-columns: 1fr;
   }
 }
+
+.main {
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  position: relative;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 28px;
+  padding: 32px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: 0 20px 60px var(--ss-bg-code-40);
+}
+
+.hero-left h1 {
+  font-size: 36px;
+  margin: 12px 0;
+}
+
+.hero-left p {
+  color: var(--muted);
+  margin-bottom: 18px;
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.hero-actions {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.hero-right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.stat-card {
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--ss-bg-panel-solid);
+  padding: 16px 18px;
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.stat-desc {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.section {
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  padding: 28px;
+}
+
+.home-enter .hero,
+.home-enter .section {
+  animation: rise 0.7s ease both;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.section-header h2 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.tag {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--ss-accent-border);
+  padding: 6px 10px;
+  border-radius: 12px;
+}
+
+.section-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 22px;
+}
+
+.info-panel {
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--ss-bg-panel-solid);
+  padding: 20px;
+}
+
+.info-panel h3 {
+  margin-top: 0;
+}
+
+.info-panel p {
+  color: var(--muted);
+}
+
+.feature-list {
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+}
+
+.module-card {
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  padding: 16px;
+  background: var(--ss-bg-panel);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.module-card:hover {
+  /* transform removed: 克制化 */
+  border-color: var(--ss-accent-border);
+}
+
+.module-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.timeline {
+  display: grid;
+  gap: 14px;
+}
+
+.timeline-item {
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  padding: 16px 18px;
+  background: var(--ss-bg-panel);
+}
+
+.timeline-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.home-enter > section:nth-of-type(1) {
+  animation-delay: 0.04s;
+}
+
+.home-enter > section:nth-of-type(2) {
+  animation-delay: 0.12s;
+}
+
+.home-enter > section:nth-of-type(3) {
+  animation-delay: 0.2s;
+}
+
+.home-enter > section:nth-of-type(4) {
+  animation-delay: 0.28s;
+}
+
+button.primary,
+button.ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  min-height: 40px;
+  padding: 12px 20px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  font-size: 14px;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-align: center;
+}
+
+button.ghost.submit-btn {
+  padding: 12px 28px;
+}
+
+button {
+  transition: transform 0.2s ease, filter 0.2s ease, box-shadow 0.2s ease;
+}
+
+button:hover {
+  /* transform removed: 克制化 */
+  filter: brightness(0.92);
+}
+
+button.primary {
+  background: var(--accent);
+  border: none;
+  color: var(--ss-color-bg);
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--ss-accent-border);
+}
+
+button.small {
+  padding: 6px 12px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  min-height: 30px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--ss-accent-border);
+  background: var(--ss-bg-panel);
+}
