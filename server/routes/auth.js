@@ -1,7 +1,9 @@
 import { Router } from 'express'
 import {
   sendRegisterEmailCode,
+  sendEmailChangeCode,
   register,
+  updateEmail,
   login,
   getMe,
   logout,
@@ -14,6 +16,8 @@ const router = Router()
 
 router.post('/register', register)
 router.post('/register/email-code', sendRegisterEmailCode)
+router.post('/me/email-code', sendEmailChangeCode)
+router.patch('/me/email', updateEmail)
 router.post('/login', login)
 router.get('/me', getMe)
 router.post('/logout', logout)

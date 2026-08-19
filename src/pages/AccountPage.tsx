@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarCheck, Flame, Trophy } from 'lucide-react'
+import { CalendarCheck, Flame, Pencil, Trophy } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import type {
   Achievement,
@@ -12,6 +12,7 @@ import type {
   ProfileStats,
   ProfileStatsResponse,
   UserResponse,
+  ApiResponse,
 } from '../types'
 import { fetchJson } from '../utils'
 import { OJ_ENABLED } from '../constants'
@@ -57,8 +58,15 @@ export default function AccountPage() {
   const [checkin, setCheckin] = useState<CheckinResponse | null>(null)
   const [checkingIn, setCheckingIn] = useState(false)
   const [checkinError, setCheckinError] = useState('')
-  const [exporting, setExporting] = useState(false)
-  const [exportError, setExportError] = useState('')
+  const [profileEditOpen, setProfileEditOpen] = useState(false)
+  const [editName, setEditName] = useState('')
+  const [editEmail, setEditEmail] = useState('')
+  const [editEmailCode, setEditEmailCode] = useState('')
+  const [savingName, setSavingName] = useState(false)
+  const [emailSending, setEmailSending] = useState(false)
+  const [emailCooldown, setEmailCooldown] = useState(0)
+  const [editError, setEditError] = useState('')
+  const [editSuccess, setEditSuccess] = useState('')
   const loadedUserIdRef = useRef<string | null>(null)
   const initial = currentUser?.name?.trim()?.[0] || currentUser?.id?.[0] || '★'
 
@@ -106,6 +114,7 @@ export default function AccountPage() {
 
       if (data?.user) {
         setCurrentUser(data.user)
+        setEditSuccess('头像已更新。')
       }
     }
 
@@ -132,31 +141,112 @@ export default function AccountPage() {
     setCheckin(data)
   }
 
-  const handleExportData = async () => {
-    if (!currentUser || exporting) return
-    setExporting(true)
-    setExportError('')
-    try {
-      const { response, data } = await fetchJson<Record<string, unknown>>('/api/me/export')
-      if (!response.ok || !data) {
-        setExportError('导出失败，请稍后重试。')
-        return
-      }
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `starstack-${currentUser.id}-${new Date().toISOString().slice(0, 10)}.json`
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(url)
-    } catch {
-      setExportError('导出失败，请稍后重试。')
-    } finally {
-      setExporting(false)
-    }
+  const openProfileEditor = () => {
+    if (!currentUser) return
+    setEditName(currentUser.name)
+    setEditEmail(currentUser.email || '')
+    setEditEmailCode('')
+    setEditError('')
+    setEditSuccess('')
+    setProfileEditOpen(true)
   }
+
+  const closeProfileEditor = () => {
+    if (savingName || emailSending || uploading) return
+    setProfileEditOpen(false)
+    setEditError('')
+    setEditSuccess('')
+  }
+
+  const handleSaveName = async () => {
+    const name = editName.trim()
+    if (!name) {
+      setEditError('昵称不能为空。')
+      return
+    }
+    if (name === currentUser?.name) {
+      setEditSuccess('昵称没有变化。')
+      return
+    }
+    setSavingName(true)
+    setEditError('')
+    setEditSuccess('')
+    const { response, data } = await fetchJson<UserResponse>('/api/me/name', {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    })
+    setSavingName(false)
+    if (!response.ok || !data?.user) {
+      setEditError(data?.message || '昵称保存失败，请重试。')
+      return
+    }
+    setCurrentUser(data.user)
+    setEditName(data.user.name)
+    setEditSuccess('昵称已更新。')
+  }
+
+  const handleSendEmailChangeCode = async () => {
+    if (emailSending || emailCooldown > 0) return
+    const email = editEmail.trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEditError('请输入有效的邮箱地址。')
+      return
+    }
+    if (email.toLowerCase() === (currentUser?.email || '').trim().toLowerCase()) {
+      setEditError('新邮箱不能与当前邮箱相同。')
+      return
+    }
+    setEmailSending(true)
+    setEditError('')
+    setEditSuccess('')
+    const { response, data } = await fetchJson<ApiResponse<{ retryAfter?: number }>>('/api/me/email-code', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    })
+    setEmailSending(false)
+    if (!response.ok) {
+      setEditError(data?.message || '验证码发送失败，请重试。')
+      if (response.status === 429 && data?.retryAfter) setEmailCooldown(data.retryAfter)
+      return
+    }
+    setEmailCooldown(60)
+    setEditSuccess('验证码已发送到新邮箱。')
+  }
+
+  const handleSaveEmail = async () => {
+    const email = editEmail.trim()
+    const emailCode = editEmailCode.trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEditError('请输入有效的邮箱地址。')
+      return
+    }
+    if (!/^\d{6}$/.test(emailCode)) {
+      setEditError('请输入 6 位邮箱验证码。')
+      return
+    }
+    setEditError('')
+    setEditSuccess('')
+    const { response, data } = await fetchJson<UserResponse>('/api/me/email', {
+      method: 'PATCH',
+      body: JSON.stringify({ email, emailCode }),
+    })
+    if (!response.ok || !data?.user) {
+      setEditError(data?.message || '邮箱换绑失败，请重试。')
+      return
+    }
+    setCurrentUser(data.user)
+    setEditEmail(data.user.email || '')
+    setEditEmailCode('')
+    setEditSuccess('邮箱已重新绑定。')
+  }
+
+  useEffect(() => {
+    if (emailCooldown <= 0) return
+    const timer = window.setInterval(() => {
+      setEmailCooldown((value) => Math.max(0, value - 1))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [emailCooldown])
 
   useEffect(() => {
     if (!currentUser?.id) return
@@ -311,14 +401,6 @@ export default function AccountPage() {
           <div className="profile-avatar-shell">
             <div
               className={`profile-avatar-large ${uploading ? 'uploading' : ''}`}
-              onClick={handleAvatarClick}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') handleAvatarClick()
-              }}
-              style={{ cursor: 'pointer' }}
-              title="点击更换头像"
             >
               {currentUser.avatar ? (
                 <img src={currentUser.avatar} alt="头像" loading="lazy" />
@@ -328,7 +410,18 @@ export default function AccountPage() {
             </div>
           </div>
           <div className="profile-user-copy">
-            <div className="account-name" data-user-name>{currentUser.name}</div>
+            <div className="profile-name-row">
+              <button
+                className="profile-edit-trigger"
+                type="button"
+                onClick={openProfileEditor}
+                aria-label="编辑个人资料"
+                title="编辑个人资料"
+              >
+                <Pencil size={13} strokeWidth={2.2} aria-hidden="true" />
+              </button>
+              <div className="account-name" data-user-name>{currentUser.name}</div>
+            </div>
             <div className="account-id" data-user-id>@{currentUser.id}</div>
             <div className="account-email" data-user-email>{currentUser.email || '邮箱未绑定'}</div>
             {currentUser.level && (
@@ -337,6 +430,79 @@ export default function AccountPage() {
               </Badge>
             )}
           </div>
+          {profileEditOpen && (
+            <div className="profile-edit-panel">
+              <div className="profile-edit-head">
+                <strong>编辑个人资料</strong>
+                <button className="profile-edit-close" type="button" onClick={closeProfileEditor} aria-label="关闭编辑">
+                  ×
+                </button>
+              </div>
+              <div className="profile-edit-avatar-row">
+                <div>
+                  <div className="profile-edit-label-title">头像</div>
+                  <div className="profile-edit-hint">支持 PNG、JPG、WebP、GIF，最大 2MB</div>
+                </div>
+                <Button variant="ghost" size="sm" onClick={handleAvatarClick} loading={uploading}>
+                  更换头像
+                </Button>
+              </div>
+              <div className="profile-edit-field">
+                <label htmlFor="profile-edit-name">昵称</label>
+                <div className="profile-edit-inline-row">
+                  <input
+                    id="profile-edit-name"
+                    className="auth-input"
+                    value={editName}
+                    onChange={(event) => setEditName(event.target.value)}
+                    maxLength={40}
+                  />
+                  <Button variant="ghost" size="sm" onClick={handleSaveName} loading={savingName}>
+                    保存
+                  </Button>
+                </div>
+              </div>
+              <div className="profile-edit-field">
+                <label htmlFor="profile-edit-email">换绑邮箱</label>
+                <div className="profile-edit-hint">当前绑定：{currentUser.email || '未绑定'}</div>
+                <input
+                  id="profile-edit-email"
+                  className="auth-input"
+                  type="email"
+                  value={editEmail}
+                  onChange={(event) => setEditEmail(event.target.value)}
+                  placeholder="输入新的邮箱地址"
+                  autoComplete="email"
+                />
+                <div className="profile-edit-inline-row">
+                  <input
+                    className="auth-input"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={editEmailCode}
+                    onChange={(event) => setEditEmailCode(event.target.value.replace(/\D/g, ''))}
+                    placeholder="6 位验证码"
+                    autoComplete="one-time-code"
+                  />
+                  <button
+                    className="ghost profile-edit-code-button"
+                    type="button"
+                    onClick={handleSendEmailChangeCode}
+                    disabled={emailSending || emailCooldown > 0}
+                  >
+                    {emailSending ? '发送中…' : emailCooldown > 0 ? `${emailCooldown}s 后重发` : '发送验证码'}
+                  </button>
+                </div>
+                <Button variant="primary" size="sm" onClick={handleSaveEmail}>
+                  确认换绑
+                </Button>
+              </div>
+              {editError && <div className="auth-error profile-edit-message">{editError}</div>}
+              {editSuccess && <div className="auth-success profile-edit-message">{editSuccess}</div>}
+              {uploadError && <div className="auth-error profile-edit-message">{uploadError}</div>}
+              {uploading && <div className="profile-upload-hint">正在上传头像...</div>}
+            </div>
+          )}
           {OJ_ENABLED && stats.rank && stats.rank > 0 && (
             <Badge tone="info" className="profile-rank-badge">全站排名 #{stats.rank}</Badge>
           )}
@@ -366,15 +532,6 @@ export default function AccountPage() {
               <span>好友</span>
             </button>
           </div>
-          <Button variant="ghost" size="sm" onClick={handleAvatarClick} loading={uploading}>
-            更换头像
-          </Button>
-          <Button variant="ghost" size="sm" onClick={handleExportData} loading={exporting}>
-            导出我的数据
-          </Button>
-          {exportError && <div className="auth-error profile-upload-error">{exportError}</div>}
-          {uploadError && <div className="auth-error profile-upload-error">{uploadError}</div>}
-          {uploading && <div className="profile-upload-hint">正在上传头像...</div>}
           <input
             ref={fileInputRef}
             type="file"

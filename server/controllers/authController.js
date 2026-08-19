@@ -6,7 +6,7 @@ import { serializeUser } from '../utils/userHelpers.js'
 import { recalculateUserRating } from '../stats.js'
 import { checkLoginLock, getLoginFailureCount, recordLoginFailure, clearLoginFailures } from '../utils/loginGuard.js'
 import { verifyTurnstile } from '../utils/turnstile.js'
-import { sendRegistrationCode } from '../utils/email.js'
+import { sendEmailChangeCode as sendEmailChangeCodeMail, sendRegistrationCode } from '../utils/email.js'
 import {
   EMAIL_CODE_MAX_ATTEMPTS,
   EMAIL_CODE_RESEND_MS,
@@ -104,6 +104,68 @@ export const sendRegisterEmailCode = async (req, res) => {
   return res.json({ success: true, message: '验证码已发送，请检查邮箱' })
 }
 
+export const sendEmailChangeCode = async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  const email = normalizeEmail(req.body?.email)
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ message: '请输入有效的邮箱地址' })
+  }
+  if (email === normalizeEmail(user.email)) {
+    return res.status(400).json({ message: '新邮箱不能与当前邮箱相同' })
+  }
+  const ipRetryAfter = getEmailCodeIpRetryAfter(getClientIp(req))
+  if (ipRetryAfter > 0) {
+    return res.status(429).json({ message: '发送过于频繁，请稍后再试', retryAfter: ipRetryAfter })
+  }
+  const existingUser = await db.get(`SELECT id FROM users WHERE email = ?`, email)
+  if (existingUser && existingUser.id !== user.id) {
+    return res.status(409).json({ message: '该邮箱已被其他账号绑定' })
+  }
+  const existingCode = await db.get(
+    `SELECT last_sent_at FROM email_verifications WHERE email = ?`,
+    email
+  )
+  const lastSentAt = Date.parse(existingCode?.last_sent_at || '')
+  const retryAfterMs = Number.isFinite(lastSentAt)
+    ? EMAIL_CODE_RESEND_MS - (Date.now() - lastSentAt)
+    : 0
+  if (retryAfterMs > 0) {
+    return res.status(429).json({
+      message: `请 ${Math.ceil(retryAfterMs / 1000)} 秒后再试`,
+      retryAfter: Math.ceil(retryAfterMs / 1000),
+    })
+  }
+
+  const code = createEmailCode()
+  try {
+    await sendEmailChangeCodeMail({ email, code })
+  } catch (error) {
+    console.error('[email] 换绑验证码发送失败:', error?.message || error)
+    return res.status(503).json({ message: '邮件服务暂不可用，请稍后重试' })
+  }
+  const now = new Date()
+  const createdAt = now.toISOString()
+  const expiresAt = new Date(now.getTime() + EMAIL_CODE_TTL_MS).toISOString()
+  await db.run(
+    `INSERT INTO email_verifications (email, code_hash, expires_at, attempts, last_sent_at, created_at)
+     VALUES (?, ?, ?, 0, ?, ?)
+     ON CONFLICT(email) DO UPDATE SET
+       code_hash = excluded.code_hash,
+       expires_at = excluded.expires_at,
+       attempts = 0,
+       last_sent_at = excluded.last_sent_at,
+       created_at = excluded.created_at`,
+    email,
+    hashEmailCode(code),
+    expiresAt,
+    createdAt,
+    createdAt
+  )
+  return res.json({ success: true, message: '换绑验证码已发送，请检查新邮箱' })
+}
+
 export const register = async (req, res) => {
   const { id, name, password, emailCode } = req.body || {}
   const email = normalizeEmail(req.body?.email)
@@ -171,6 +233,63 @@ export const register = async (req, res) => {
     token,
     user: { id, name, email, isAdmin: false, isBanned: false, avatar: null },
   })
+}
+
+export const updateEmail = async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  const email = normalizeEmail(req.body?.email)
+  const emailCode = String(req.body?.emailCode || '')
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ message: '请输入有效的邮箱地址' })
+  }
+  if (!/^\d{6}$/.test(emailCode)) {
+    return res.status(400).json({ message: '请输入 6 位邮箱验证码' })
+  }
+  if (email === normalizeEmail(user.email)) {
+    return res.status(400).json({ message: '新邮箱不能与当前邮箱相同' })
+  }
+  const existingUser = await db.get(`SELECT id FROM users WHERE email = ?`, email)
+  if (existingUser && existingUser.id !== user.id) {
+    return res.status(409).json({ message: '该邮箱已被其他账号绑定' })
+  }
+  const verification = await db.get(
+    `SELECT code_hash, expires_at, attempts FROM email_verifications WHERE email = ?`,
+    email
+  )
+  if (!verification) {
+    return res.status(400).json({ message: '请先获取邮箱验证码' })
+  }
+  if (isExpired(verification.expires_at)) {
+    await db.run(`DELETE FROM email_verifications WHERE email = ?`, email)
+    return res.status(400).json({ message: '邮箱验证码已过期，请重新获取' })
+  }
+  if (verification.attempts >= EMAIL_CODE_MAX_ATTEMPTS) {
+    await db.run(`DELETE FROM email_verifications WHERE email = ?`, email)
+    return res.status(400).json({ message: '验证码错误次数过多，请重新获取' })
+  }
+  if (hashEmailCode(emailCode) !== verification.code_hash) {
+    const attempts = verification.attempts + 1
+    if (attempts >= EMAIL_CODE_MAX_ATTEMPTS) {
+      await db.run(`DELETE FROM email_verifications WHERE email = ?`, email)
+    } else {
+      await db.run(`UPDATE email_verifications SET attempts = ? WHERE email = ?`, attempts, email)
+    }
+    return res.status(400).json({ message: '邮箱验证码错误' })
+  }
+  const verifiedAt = new Date().toISOString()
+  await db.run(
+    `UPDATE users SET email = ?, email_verified_at = ? WHERE id = ?`,
+    email,
+    verifiedAt,
+    user.id
+  )
+  await db.run(`DELETE FROM email_verifications WHERE email = ?`, email)
+  user.email = email
+  user.email_verified_at = verifiedAt
+  const serialized = await serializeUser(db, user)
+  return res.json({ user: serialized })
 }
 
 export const login = async (req, res) => {

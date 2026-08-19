@@ -52,11 +52,6 @@
   box-shadow: none;
 }
 
-.profile-v2 .profile-avatar-large:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 0 0 4px var(--ss-accent-bg);
-}
-
 .profile-v2 .profile-avatar-large img {
   width: 100%;
   height: 100%;
@@ -68,6 +63,33 @@
   display: grid;
   gap: 4px;
   text-align: center;
+}
+
+.profile-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.profile-edit-trigger {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--ss-color-border);
+  border-radius: 7px;
+  background: var(--ss-hover-layer);
+  color: var(--ss-color-text-subtle);
+  cursor: pointer;
+}
+
+.profile-edit-trigger:hover,
+.profile-edit-trigger:focus-visible {
+  border-color: var(--ss-accent-border);
+  color: var(--ss-color-accent);
+  outline: none;
 }
 
 .profile-v2 .account-name {
@@ -86,6 +108,93 @@
   color: var(--ss-color-text-subtle);
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+.profile-edit-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-hover-layer);
+  text-align: left;
+}
+
+.profile-edit-head,
+.profile-edit-avatar-row,
+.profile-edit-inline-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-edit-head {
+  justify-content: space-between;
+  color: var(--ss-color-text);
+  font-size: 13px;
+}
+
+.profile-edit-close {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ss-color-text-subtle);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.profile-edit-close:hover,
+.profile-edit-close:focus-visible {
+  background: var(--ss-hover-layer);
+  color: var(--ss-color-text);
+  outline: none;
+}
+
+.profile-edit-avatar-row {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.profile-edit-label-title,
+.profile-edit-field label {
+  color: var(--ss-color-text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.profile-edit-hint {
+  margin-top: 3px;
+  color: var(--ss-color-text-subtle);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.profile-edit-field {
+  display: grid;
+  gap: 7px;
+}
+
+.profile-edit-inline-row {
+  align-items: stretch;
+}
+
+.profile-edit-inline-row .auth-input {
+  min-width: 0;
+  flex: 1;
+}
+
+.profile-edit-code-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.profile-edit-message {
+  margin-top: 0 !important;
 }
 
 .profile-v2 .profile-level-badge {

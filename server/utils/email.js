@@ -38,13 +38,20 @@ const getTransporter = () => {
 
 export const isEmailConfigured = () => Boolean(getSmtpConfig())
 
-export const sendRegistrationCode = async ({ email, code }) => {
+export const sendEmailCode = async ({ email, code, purpose = 'register' }) => {
   const { transporter: mailer, config } = getTransporter()
+  const isEmailChange = purpose === 'email-change'
+  const title = isEmailChange ? 'StarStack 邮箱换绑验证' : 'StarStack 注册验证码'
+  const description = isEmailChange ? '你正在为 StarStack 账号绑定这个邮箱。' : '你正在注册 StarStack 账号。'
   await mailer.sendMail({
     from: config.from,
     to: email,
-    subject: 'StarStack 注册验证码',
-    text: `你的 StarStack 注册验证码是：${code}\n\n验证码 10 分钟内有效。如果不是你本人操作，请忽略此邮件。`,
-    html: `<!doctype html><html lang="zh-CN"><body style="font-family:Arial,sans-serif;color:#172033;line-height:1.7"><h2>StarStack 注册验证</h2><p>你的注册验证码是：</p><p style="font-size:30px;font-weight:700;letter-spacing:8px;color:#2563eb">${code}</p><p>验证码 10 分钟内有效。如果不是你本人操作，请忽略此邮件。</p></body></html>`,
+    subject: title,
+    text: `${description}\n\n你的验证码是：${code}\n\n验证码 10 分钟内有效。如果不是你本人操作，请忽略此邮件。`,
+    html: `<!doctype html><html lang="zh-CN"><body style="font-family:Arial,sans-serif;color:#172033;line-height:1.7"><h2>${title}</h2><p>${description}</p><p>你的验证码是：</p><p style="font-size:30px;font-weight:700;letter-spacing:8px;color:#2563eb">${code}</p><p>验证码 10 分钟内有效。如果不是你本人操作，请忽略此邮件。</p></body></html>`,
   })
 }
+
+export const sendRegistrationCode = ({ email, code }) => sendEmailCode({ email, code, purpose: 'register' })
+
+export const sendEmailChangeCode = ({ email, code }) => sendEmailCode({ email, code, purpose: 'email-change' })
