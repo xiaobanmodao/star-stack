@@ -171,7 +171,9 @@ const AuthPage = ({
                 type="button"
                 onClick={onSendEmailCode}
                 disabled={submitting || emailSending || emailCooldown > 0}
+                aria-busy={emailSending || undefined}
               >
+                {emailSending && <span className="loading-button-icon" aria-hidden="true" />}
                 {emailSending ? '发送中…' : emailCooldown > 0 ? `${emailCooldown}s 后重发` : '发送验证码'}
               </button>
             </div>

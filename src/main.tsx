@@ -6,6 +6,7 @@ import 'highlight.js/styles/github-dark.css'
 import 'katex/dist/katex.min.css'
 import { applyAccent, applyTheme, readSavedAccent, readSavedTheme } from './utils/theme'
 import App from './App.tsx'
+import { ToastProvider } from './components/ui/Toast'
 
 // 渲染前应用主题与强调色，避免闪烁
 ;(() => {
@@ -60,9 +61,11 @@ window.addEventListener('unhandledrejection', (event) => {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <ToastProvider>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </ToastProvider>
   </StrictMode>,
 )
 

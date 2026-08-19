@@ -13,6 +13,7 @@ import SearchOverlay from './components/SearchOverlay'
 import ThemeToggle from './components/ThemeToggle'
 import UserMenu from './components/UserMenu'
 import LoadingState from './components/ui/LoadingState'
+import { useToast } from './components/ui/ToastContext'
 import AuthPage from './pages/AuthPage'
 import { useStarfield } from './hooks/useStarfield'
 import { fetchJson, isPollingPageVisible } from './utils'
@@ -63,6 +64,7 @@ function App() {
   const topbarRef = useRef<HTMLElement | null>(null)
   const navigate = useNavigate()
   const location = useLocation()
+  const { showToast } = useToast()
   const isAuthPage = location.pathname === '/auth'
   const isOjDetailOrJudgePage = location.pathname.match(/^\/oj\/(p\d+|judge)/)
   const [homeEnter, setHomeEnter] = useState(false)
@@ -84,7 +86,6 @@ function App() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
-  const [logoutNotice, setLogoutNotice] = useState('')
   const [currentUser, setCurrentUser] = useState<UserRecord | null>(null)
   const [authFrom, setAuthFrom] = useState('/')
 
@@ -344,14 +345,16 @@ function App() {
         localStorage.setItem(TOKEN_KEY, data.token)
         setCurrentUser(data.user)
         setAuthSuccess(authMode === 'register' ? '注册成功' : '登录成功')
+        showToast(authMode === 'register' ? '账号创建成功' : '欢迎回来', 'success')
         navigate(authFrom || '/')
       } catch {
         setAuthError('网络连接失败，请稍后重试')
+        showToast('网络连接失败，请稍后重试', 'error')
       } finally {
         setAuthSubmitting(false)
       }
     },
-    [authCaptchaRequired, authCaptchaToken, authFrom, authMode, authSubmitting, formConfirm, formEmail, formEmailCode, formId, formName, formPassword, navigate]
+    [authCaptchaRequired, authCaptchaToken, authFrom, authMode, authSubmitting, formConfirm, formEmail, formEmailCode, formId, formName, formPassword, navigate, showToast]
   )
 
   const handleSendEmailCode = useCallback(async () => {
@@ -376,12 +379,14 @@ function App() {
       }
       setAuthEmailCooldown(60)
       setAuthSuccess('验证码已发送，请检查邮箱')
+      showToast('验证码已发送，请检查邮箱', 'success')
     } catch {
       setAuthError('网络连接失败，请稍后重试')
+      showToast('网络连接失败，请稍后重试', 'error')
     } finally {
       setAuthEmailSending(false)
     }
-  }, [authEmailCooldown, authEmailSending, formEmail])
+  }, [authEmailCooldown, authEmailSending, formEmail, showToast])
 
   const handleLogout = useCallback(async () => {
     const token = localStorage.getItem(TOKEN_KEY)
@@ -457,14 +462,8 @@ function App() {
   const confirmLogout = useCallback(async () => {
     setShowLogoutConfirm(false)
     await handleLogout()
-    setLogoutNotice('您已退出')
-  }, [handleLogout])
-
-  useEffect(() => {
-    if (!logoutNotice) return
-    const timer = window.setTimeout(() => setLogoutNotice(''), 2400)
-    return () => window.clearTimeout(timer)
-  }, [logoutNotice])
+    showToast('您已退出登录', 'success')
+  }, [handleLogout, showToast])
 
   const handleAuthBack = useCallback(() => {
     navigate(authFrom || '/')
@@ -495,7 +494,14 @@ function App() {
   return (
     <>
       <canvas ref={canvasRef} className={`starfield ${isAuthPage ? 'auth-starfield' : ''}`} />
-      {!isAuthPage && <div className={`route-loading-bar ${routeSwitching ? 'active' : ''}`} aria-hidden="true" />}
+      {!isAuthPage && (
+        <div
+          className={`route-loading-bar ${routeSwitching ? 'active' : ''}`}
+          role={routeSwitching ? 'progressbar' : undefined}
+          aria-label={routeSwitching ? '页面加载中' : undefined}
+          aria-hidden={!routeSwitching}
+        />
+      )}
       {isAuthPage ? (
         <div className="auth-shell quiet-auth">
           <main className="auth-main">
@@ -554,9 +560,6 @@ function App() {
               <div className="topbar-badge">STARSTACK</div>
             </div>
             <div className="topbar-actions">
-              {logoutNotice && (
-                <div className="logout-notice" role="status">{logoutNotice}</div>
-              )}
               <button
                 className="topbar-message-btn"
                 onClick={() => navigate('/chat/plaza')}
@@ -603,7 +606,10 @@ function App() {
 
           <div className="app-body">
             <div className="content">
-              <main className={`main ${location.pathname === '/' ? 'home' : ''} ${homeEnter ? 'home-enter' : ''} ${routeSwitching ? 'route-switching' : ''}`}>
+              <main
+                className={`main ${location.pathname === '/' ? 'home' : ''} ${homeEnter ? 'home-enter' : ''} ${routeSwitching ? 'route-switching' : ''}`}
+                aria-busy={routeSwitching || undefined}
+              >
                 <Suspense fallback={<LoadingState label="正在打开页面…" />}>
                 <Routes>
                   <Route path="/" element={<HomePage />} />

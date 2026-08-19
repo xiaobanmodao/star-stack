@@ -20,6 +20,7 @@ export default function LoadingState({
       className={classNames('ss-loading', `ss-loading-${variant}`, className)}
       role="status"
       aria-live="polite"
+      aria-busy="true"
     >
       <span className="ss-loading-orbit" aria-hidden="true">
         <span className="ss-loading-orbit-dot dot-a" />

@@ -143,16 +143,6 @@ button.lang-switch-item:hover {
   line-height: 1;
 }
 
-.logout-notice {
-  padding: 6px 12px;
-  border-radius: 12px;
-  background: var(--ss-text-70);
-  border: 1px solid var(--ss-success-45);
-  color: var(--ss-color-success);
-  font-size: 12px;
-  letter-spacing: 0.1em;
-}
-
 .language-switch-overlay {
   position: absolute;
   inset: 0;
