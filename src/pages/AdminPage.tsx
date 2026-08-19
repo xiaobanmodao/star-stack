@@ -411,7 +411,11 @@ export default function AdminPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => void handleUserAction(`/api/admin/users/${user.id}/promote`)}
+                    onClick={() => {
+                      if (window.confirm(`确认将 ${user.id} 提升为管理员？`)) {
+                        void handleUserAction(`/api/admin/users/${user.id}/promote`)
+                      }
+                    }}
                     loading={adminActionBusy}
                   >
                     提升管理员
@@ -421,7 +425,11 @@ export default function AdminPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => void handleUserAction(`/api/admin/users/${user.id}/demote`)}
+                    onClick={() => {
+                      if (window.confirm(`确认取消 ${user.id} 的管理员权限？`)) {
+                        void handleUserAction(`/api/admin/users/${user.id}/demote`)
+                      }
+                    }}
                     loading={adminActionBusy}
                   >
                     降为普通
@@ -433,9 +441,11 @@ export default function AdminPage() {
                   onClick={() => {
                     const password = window.prompt('新密码（至少 6 位）')
                     if (!password) return
-                    void handleUserAction(`/api/admin/users/${user.id}/reset-password`, {
-                      password,
-                    })
+                    if (window.confirm(`确认重置 ${user.id} 的登录密码？`)) {
+                      void handleUserAction(`/api/admin/users/${user.id}/reset-password`, {
+                        password,
+                      })
+                    }
                   }}
                   loading={adminActionBusy}
                 >
@@ -444,11 +454,14 @@ export default function AdminPage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() =>
-                    void handleUserAction(`/api/admin/users/${user.id}/ban`, {
-                      banned: !user.isBanned,
-                    })
-                  }
+                  onClick={() => {
+                    const action = user.isBanned ? '解除封禁' : '封禁'
+                    if (window.confirm(`确认${action}用户 ${user.id}？`)) {
+                      void handleUserAction(`/api/admin/users/${user.id}/ban`, {
+                        banned: !user.isBanned,
+                      })
+                    }
+                  }}
                   loading={adminActionBusy}
                 >
                   {user.isBanned ? '解除封禁' : '封禁'}
@@ -568,6 +581,8 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
   }, [load, query])
 
   const updateStatus = async (problem: AdminProblem, nextStatus: string) => {
+    const statusText = nextStatus === 'published' ? '发布' : nextStatus === 'hidden' ? '隐藏' : '转为草稿'
+    if (!window.confirm(`确认将题目「${problem.title}」${statusText}？`)) return
     setBusyId(problem.id)
     setError('')
     try {
@@ -768,6 +783,7 @@ function AdminReportsSection() {
   }, [load])
 
   const handleDeleteAndResolve = async (report: AdminReport) => {
+    if (!window.confirm(`确认删除举报目标并将举报 #${report.id} 标记为已处理？`)) return
     setBusy(true)
     setError('')
     try {
