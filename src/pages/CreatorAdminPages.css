@@ -545,6 +545,103 @@
   grid-template-columns: minmax(250px, 1.7fr) minmax(90px, .65fr) minmax(90px, .7fr) minmax(70px, .5fr) minmax(130px, .9fr) minmax(300px, 1.7fr);
 }
 
+.admin-console-v2 .admin-review-panel {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 18px;
+}
+
+.admin-console-v2 .admin-review-meta,
+.admin-console-v2 .admin-review-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  color: var(--ss-color-text-muted);
+  font-size: 13px;
+}
+
+.admin-console-v2 .admin-review-content {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 16px;
+}
+
+.admin-console-v2 .admin-review-content > div,
+.admin-console-v2 .admin-review-testcase {
+  padding: 12px;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-bg-input);
+}
+
+.admin-console-v2 .admin-review-content p {
+  margin: 8px 0 0;
+  max-height: 150px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--ss-color-text-muted);
+}
+
+.admin-console-v2 .admin-review-testcases {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-console-v2 .admin-review-testcase {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-console-v2 .admin-review-testcase span {
+  color: var(--ss-color-text-muted);
+  font-size: 12px;
+}
+
+.admin-console-v2 .admin-review-testcase code {
+  max-height: 110px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 680px) {
+  .admin-console-v2 .admin-review-content { grid-template-columns: 1fr; }
+}
+
+.admin-console-v2 .admin-system-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.admin-console-v2 .admin-system-metric-card {
+  display: grid;
+  gap: 6px;
+  min-height: 104px;
+  padding: 16px;
+}
+
+.admin-console-v2 .admin-system-metric-card span,
+.admin-console-v2 .admin-system-metric-card small {
+  color: var(--ss-color-text-muted);
+}
+
+.admin-console-v2 .admin-system-metric-card strong {
+  font-size: 24px;
+}
+
+.admin-console-v2 .admin-system-metric-card.healthy strong { color: var(--ss-color-success); }
+.admin-console-v2 .admin-system-metric-card.unhealthy strong { color: var(--ss-color-danger); }
+
+@media (max-width: 980px) {
+  .admin-console-v2 .admin-system-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 680px) {
+  .admin-console-v2 .admin-system-metrics { grid-template-columns: 1fr; }
+}
+
 .admin-console-v2 .admin-problem-table .admin-row > div:first-child {
   min-width: 0;
   display: grid;

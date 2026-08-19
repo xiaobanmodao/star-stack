@@ -15,7 +15,10 @@ const IS_WIN = process.platform === 'win32'
 const IS_LINUX = process.platform === 'linux'
 const WORK_ROOT = IS_WIN ? path.join('C:\\', 'Temp', 'starstack-oj') : path.join(os.tmpdir(), 'starstack-oj')
 const CACHE_ROOT = path.join(WORK_ROOT, 'cache')
-const MEMORY_LIMIT_KB = 256 * 1024 // 256MB
+const configuredMemoryLimit = Number(process.env.JUDGE_MEMORY_LIMIT_KB)
+const MEMORY_LIMIT_KB = Number.isFinite(configuredMemoryLimit) && configuredMemoryLimit >= 64 * 1024
+  ? Math.min(configuredMemoryLimit, 512 * 1024)
+  : 256 * 1024 // 默认 256MB，允许生产环境在 64～512MB 内调整
 const NPROC_LIMIT = 32
 
 // 带容量上限的编译缓存，防止内存泄漏

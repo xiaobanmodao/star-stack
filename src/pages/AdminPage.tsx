@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
-import type { AdminAuditLog, AdminProblem, AdminReport, AdminStatsResponse, UserRecord, ApiResponse } from '../types'
+import type { AdminAuditLog, AdminMetricsResponse, AdminProblem, AdminReport, AdminStatsResponse, UserRecord, ApiResponse } from '../types'
 import './CreatorAdminPages.css'
 
 export default function AdminPage() {
@@ -545,6 +545,24 @@ export default function AdminPage() {
 
 // === 题目审核 ===
 
+type AdminProblemReview = {
+  problem: {
+    id: number
+    title: string
+    difficulty: string
+    tags: string[]
+    statement: string
+    inputDesc: string
+    outputDesc: string
+    dataRange?: string
+    status: string
+    creatorName?: string
+    createdAt?: string
+  }
+  testcases: { id: number; isSample: boolean; input: string; output: string; timeLimitMs: number }[]
+  revisions: { id: number; version: number; status: string; note?: string; changedByName?: string; createdAt: string; statementLength: number; testcaseCount: number }[]
+}
+
 function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
   const [status, setStatus] = useState<'all' | 'draft' | 'pending_review' | 'published' | 'hidden'>('all')
   const [query, setQuery] = useState('')
@@ -552,6 +570,8 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<number | null>(null)
+  const [review, setReview] = useState<AdminProblemReview | null>(null)
+  const [reviewLoading, setReviewLoading] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -624,6 +644,23 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
     }
   }
 
+  const openReview = async (problem: AdminProblem) => {
+    setReviewLoading(true)
+    setError('')
+    try {
+      const { response, data } = await fetchJson<{ review?: AdminProblemReview; message?: string }>(`/api/admin/problems/${problem.id}/review`)
+      if (!response.ok || !data?.review) {
+        setError(data?.message || '审核详情加载失败')
+        return
+      }
+      setReview(data.review)
+    } catch {
+      setError('网络异常，审核详情加载失败')
+    } finally {
+      setReviewLoading(false)
+    }
+  }
+
   const statusLabel = (value: string) => value === 'draft' ? '草稿' : value === 'pending_review' ? '待审核' : value === 'hidden' ? '隐藏' : '已发布'
 
   return (
@@ -653,6 +690,42 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
         <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>刷新</Button>
       </div>
       {error && <ErrorState description={error} onRetry={() => void load()} />}
+      {review && (
+        <Panel className="admin-review-panel">
+          <div className="admin-list-header">
+            <div>
+              <Badge tone="info">Review Detail</Badge>
+              <strong>P{review.problem.id} · {review.problem.title}</strong>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setReview(null)}>关闭详情</Button>
+          </div>
+          <div className="admin-review-meta">
+            <span>创建者：{review.problem.creatorName || '-'}</span>
+            <span>难度：{review.problem.difficulty}</span>
+            <span>测试点：{review.testcases.length}</span>
+            <span>版本：{review.revisions.length}</span>
+          </div>
+          <div className="admin-review-content">
+            <div><strong>题目描述</strong><p>{review.problem.statement || '暂无描述'}</p></div>
+            <div><strong>输入 / 输出</strong><p>{review.problem.inputDesc || '-'}<br />{review.problem.outputDesc || '-'}</p></div>
+          </div>
+          <div className="admin-review-testcases">
+            <strong>测试点预览</strong>
+            {review.testcases.map((testcase) => (
+              <div key={testcase.id} className="admin-review-testcase">
+                <span>{testcase.isSample ? '样例' : '测试点'} · {testcase.timeLimitMs}ms</span>
+                <code>输入：{testcase.input || '(空)'}\n输出：{testcase.output || '(空)'}</code>
+              </div>
+            ))}
+          </div>
+          <div className="admin-review-history">
+            <strong>版本摘要</strong>
+            {review.revisions.map((revision) => (
+              <span key={revision.id}>v{revision.version} · {revision.note || '更新'} · {revision.changedByName || '系统'} · {revision.testcaseCount} 个测试点</span>
+            ))}
+          </div>
+        </Panel>
+      )}
       {loading ? (
         <div className="oj-loading">加载中...</div>
       ) : problems.length === 0 ? (
@@ -678,6 +751,7 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
               <div>{problem.testcaseCount || 0}</div>
               <div>{problem.creatorName || problem.creatorId || '-'}</div>
               <div className="admin-row-actions">
+                <Button variant="ghost" size="sm" loading={reviewLoading} onClick={() => void openReview(problem)}>审核详情</Button>
                 <Button variant="ghost" size="sm" onClick={() => onEdit(problem.id)}>编辑</Button>
                 {problem.status !== 'published' && <Button variant="ghost" size="sm" loading={busyId === problem.id} onClick={() => void updateStatus(problem, 'published')}>发布</Button>}
                 {problem.status === 'published' && <Button variant="ghost" size="sm" loading={busyId === problem.id} onClick={() => void updateStatus(problem, 'hidden')}>隐藏</Button>}
@@ -918,6 +992,7 @@ function AdminReportsSection() {
 
 function AdminStatsSection() {
   const [stats, setStats] = useState<AdminStatsResponse['stats'] | null>(null)
+  const [metrics, setMetrics] = useState<AdminMetricsResponse['metrics'] | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -925,9 +1000,14 @@ function AdminStatsSection() {
     setLoading(true)
     setError('')
     try {
-      const { response, data } = await fetchJson<AdminStatsResponse & { message?: string }>('/api/admin/stats')
-      if (response.ok && data) setStats(data.stats)
-      else setError(data?.message || '看板数据加载失败')
+      const [statsResult, metricsResult] = await Promise.all([
+        fetchJson<AdminStatsResponse & { message?: string }>('/api/admin/stats'),
+        fetchJson<AdminMetricsResponse & { message?: string }>('/api/admin/metrics'),
+      ])
+      if (statsResult.response.ok && statsResult.data) setStats(statsResult.data.stats)
+      else setError(statsResult.data?.message || '看板数据加载失败')
+      if (metricsResult.response.ok && metricsResult.data) setMetrics(metricsResult.data.metrics)
+      else if (statsResult.response.ok) setError(metricsResult.data?.message || '系统监控加载失败')
     } catch {
       setError('网络异常，暂时无法加载看板')
     } finally {
@@ -968,14 +1048,45 @@ function AdminStatsSection() {
       ) : error ? (
         <ErrorState description={error} onRetry={() => void load()} />
       ) : (
-        <div className="admin-summary admin-summary-v2">
-          {cards.map((card) => (
-            <Panel key={card.label} className="summary-card admin-metric-card">
-              <div className="summary-label">{card.label}</div>
-              <div className="summary-value">{card.value}</div>
-            </Panel>
-          ))}
-        </div>
+        <>
+          <div className="admin-summary admin-summary-v2">
+            {cards.map((card) => (
+              <Panel key={card.label} className="summary-card admin-metric-card">
+                <div className="summary-label">{card.label}</div>
+                <div className="summary-value">{card.value}</div>
+              </Panel>
+            ))}
+          </div>
+          {metrics && (
+            <div className="admin-system-metrics">
+              <Panel className="admin-system-metric-card">
+                <span>评测队列</span>
+                <strong>{metrics.judge.activeJudges}/{metrics.judge.maxActiveJudges}</strong>
+                <small>排队 {metrics.judge.queuedJudges}/{metrics.judge.maxQueuedJudges}</small>
+              </Panel>
+              <Panel className="admin-system-metric-card">
+                <span>测试运行</span>
+                <strong>{metrics.judge.activeRuns}/{metrics.judge.maxActiveRuns}</strong>
+                <small>排队 {metrics.judge.queuedRuns}/{metrics.judge.maxQueuedRuns}</small>
+              </Panel>
+              <Panel className="admin-system-metric-card">
+                <span>进程内存</span>
+                <strong>{metrics.process.rss}</strong>
+                <small>堆内存 {metrics.process.heapUsed}</small>
+              </Panel>
+              <Panel className="admin-system-metric-card">
+                <span>数据库</span>
+                <strong>{metrics.database.submissions.Accepted || 0} AC</strong>
+                <small>{metrics.database.users} 用户 · {metrics.database.problems} 题目</small>
+              </Panel>
+              <Panel className={`admin-system-metric-card ${metrics.backup.healthy ? 'healthy' : 'unhealthy'}`}>
+                <span>数据库备份</span>
+                <strong>{metrics.backup.healthy ? '正常' : '需检查'}</strong>
+                <small>{metrics.backup.latest ? `${metrics.backup.latest.size} · ${metrics.backup.retentionCount} 份` : '暂无备份记录'}</small>
+              </Panel>
+            </div>
+          )}
+        </>
       )}
     </section>
   )

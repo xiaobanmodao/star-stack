@@ -11,6 +11,7 @@ module.exports = {
       autorestart: true,
       watch: false,
       max_memory_restart: '500M',
+      exp_backoff_restart_delay: 100,
       env: {
         NODE_ENV: 'production',
         PORT: 5174,
@@ -22,7 +23,8 @@ module.exports = {
         SMTP_SECURE: process.env.SMTP_SECURE || 'false',
         SMTP_USER: process.env.SMTP_USER || '',
         SMTP_PASS: process.env.SMTP_PASS || '',
-        MAIL_FROM: process.env.MAIL_FROM || ''
+        MAIL_FROM: process.env.MAIL_FROM || '',
+        JUDGE_MEMORY_LIMIT_KB: process.env.JUDGE_MEMORY_LIMIT_KB || '262144'
       },
       error_file: './logs/api-error.log',
       out_file: './logs/api-out.log',

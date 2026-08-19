@@ -71,6 +71,7 @@ OJ
 - `GET /api/oj/problems`
 - `GET /api/oj/problems/:id`
 - `POST /api/oj/submissions`（真实判题）
+- `POST /api/oj/submissions/:id/cancel`（取消尚未开始的排队提交）
 - `GET /api/oj/submissions`（当前用户提交）
 - `GET /api/oj/submissions/:id`（单条提交）
 - `GET /api/oj/submissions/all`（某题所有提交，含过滤）
@@ -81,6 +82,8 @@ OJ
 - `GET /api/problems/:id/revisions`（题目版本历史）
 - `POST /api/problems/:id/revisions/:revisionId/restore`（恢复题目版本）
 - `POST /api/problems/:id/submit-review`（作者提交审核）
+- `GET /api/admin/metrics`（管理员系统监控）
+- `GET /api/admin/problems/:id/review`（管理员审核详情、测试点和版本摘要）
 
 提交评测会先持久化为 `Queued`，随后进入有并发上限的评测队列；服务重启会恢复未完成的评测，前端也会通过提交记录继续轮询状态。
 

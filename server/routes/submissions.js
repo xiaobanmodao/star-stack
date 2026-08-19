@@ -4,6 +4,7 @@ import {
   getLatestSubmission,
   listAllSubmissions,
   getSubmission,
+  cancelSubmission,
   getJudgeStatus,
   submitSolution,
   streamSubmission,
@@ -18,6 +19,7 @@ router.get('/oj/submissions', listMySubmissions)
 router.get('/oj/submissions/latest', getLatestSubmission)
 router.get('/oj/submissions/all', listAllSubmissions)
 router.get('/oj/submissions/:id', getSubmission)
+router.post('/oj/submissions/:id/cancel', cancelSubmission)
 router.get('/oj/judge/status', getJudgeStatus)
 router.post('/oj/submissions', submitSolution)
 router.post('/oj/submissions/stream', streamSubmission)

@@ -705,7 +705,18 @@ export const listBookmarks = async (req, res) => {
       )
       return res.json({ posts: posts.map((p) => ({ id: p.id, title: p.title, userId: p.user_id, userName: p.user_name, commentCount: p.comment_count, likeCount: p.like_count, createdAt: p.created_at })) })
     }
-    return res.json({ problems: ids.map((row) => row.target_id) })
+    if (ids.length === 0) return res.json({ problems: [] })
+    const problems = await db.all(
+      `SELECT p.id, p.title, p.difficulty, p.slug, b.created_at
+       FROM bookmarks b JOIN problems p ON p.id = b.target_id
+       WHERE b.user_id = ? AND b.target_type = 'problem'
+       ORDER BY b.created_at DESC`,
+      user.id,
+    )
+    return res.json({ problems: problems.map((problem) => ({
+      id: problem.id, title: problem.title, difficulty: problem.difficulty,
+      slug: problem.slug, createdAt: problem.created_at,
+    })) })
   } catch (error) {
     console.error('Failed to list bookmarks:', error)
     return res.status(500).json({ message: '获取收藏失败' })

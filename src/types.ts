@@ -545,6 +545,39 @@ export type AdminStatsResponse = {
   }
 }
 
+export type AdminMetricsResponse = {
+  metrics: {
+    process: {
+      uptimeSeconds: number
+      rss: string
+      heapUsed: string
+    }
+    database: {
+      users: number
+      problems: number
+      revisions: number
+      statusHistory: number
+      submissions: Record<string, number>
+    }
+    judge: {
+      activeJudges: number
+      queuedJudges: number
+      maxActiveJudges: number
+      maxQueuedJudges: number
+      activeRuns: number
+      queuedRuns: number
+      maxActiveRuns: number
+      maxQueuedRuns: number
+    }
+    backup: {
+      latest?: { name: string; size: string; updatedAt: string } | null
+      ageSeconds?: number | null
+      healthy: boolean
+      retentionCount: number
+    }
+  }
+}
+
 export type AuthMode = 'login' | 'register'
 
 export type AuthPageProps = {

@@ -5,7 +5,9 @@ import { localDay } from '../utils/dateHelpers.js'
 import { broadcastToScope } from './chatController.js'
 import { recordAdminAction } from '../utils/adminAudit.js'
 import { createNotification } from '../utils/notifications.js'
-import { recordProblemStatusChange } from '../utils/problemRevisions.js'
+import { parseRevisionSnapshot, recordProblemStatusChange } from '../utils/problemRevisions.js'
+import { collectSystemMetrics } from '../utils/monitoring.js'
+import { getJudgeQueueSnapshot } from './submissionsController.js'
 
 const parsePositiveInteger = (value) => {
   const parsed = Number.parseInt(String(value ?? ''), 10)
@@ -335,6 +337,71 @@ export const getAdminStats = async (req, res) => {
   } catch (error) {
     console.error('Failed to get admin stats:', error)
     return res.status(500).json({ message: '获取统计失败' })
+  }
+}
+
+export const getAdminMetrics = async (req, res) => {
+  const auth = await requireAdmin(req, res)
+  if (!auth) return
+  try {
+    const metrics = await collectSystemMetrics({ db: auth.db, judge: getJudgeQueueSnapshot() })
+    return res.json({ metrics })
+  } catch (error) {
+    console.error('Failed to get admin metrics:', error)
+    return res.status(500).json({ message: '获取系统监控失败' })
+  }
+}
+
+export const getAdminProblemReview = async (req, res) => {
+  const auth = await requireAdmin(req, res)
+  if (!auth) return
+  const problemId = parsePositiveInteger(req.params.id)
+  if (!problemId) return res.status(400).json({ message: '无效的题目 ID' })
+  try {
+    const problem = await auth.db.get(
+      `SELECT p.id, p.slug, p.title, p.difficulty, p.tags, p.statement, p.input_desc, p.output_desc,
+              p.data_range, p.status, p.creator_id, p.created_at, u.name AS creator_name
+       FROM problems p LEFT JOIN users u ON u.id = p.creator_id WHERE p.id = ?`,
+      problemId,
+    )
+    if (!problem) return res.status(404).json({ message: '题目不存在' })
+    const testcases = await auth.db.all(
+      `SELECT id, is_sample, input, output, time_limit_ms FROM testcases WHERE problem_id = ? ORDER BY id ASC LIMIT 20`,
+      problemId,
+    )
+    const revisions = await auth.db.all(
+      `SELECT r.id, r.version, r.status, r.changed_by, r.note, r.created_at, u.name AS changed_by_name, r.snapshot_json
+       FROM problem_revisions r LEFT JOIN users u ON u.id = r.changed_by
+       WHERE r.problem_id = ? ORDER BY r.version DESC LIMIT 12`,
+      problemId,
+    )
+    return res.json({
+      review: {
+        problem: {
+          id: problem.id, slug: problem.slug, title: problem.title, difficulty: problem.difficulty,
+          tags: String(problem.tags || '').split(',').map((tag) => tag.trim()).filter(Boolean),
+          statement: problem.statement, inputDesc: problem.input_desc, outputDesc: problem.output_desc,
+          dataRange: problem.data_range, status: problem.status, creatorId: problem.creator_id,
+          creatorName: problem.creator_name || problem.creator_id, createdAt: problem.created_at,
+        },
+        testcases: testcases.map((testcase) => ({
+          id: testcase.id, isSample: Boolean(testcase.is_sample), input: String(testcase.input || '').slice(0, 600),
+          output: String(testcase.output || '').slice(0, 600), timeLimitMs: testcase.time_limit_ms,
+        })),
+        revisions: revisions.map((revision) => {
+          const snapshot = parseRevisionSnapshot(revision.snapshot_json)
+          return {
+            id: revision.id, version: revision.version, status: revision.status, note: revision.note,
+            changedByName: revision.changed_by_name || revision.changed_by || '系统', createdAt: revision.created_at,
+            statementLength: snapshot?.statement?.length || 0,
+            testcaseCount: (snapshot?.samples?.length || 0) + (snapshot?.testData?.length || 0),
+          }
+        }),
+      },
+    })
+  } catch (error) {
+    console.error('Failed to get admin problem review:', error)
+    return res.status(500).json({ message: '获取题目审核详情失败' })
   }
 }
 

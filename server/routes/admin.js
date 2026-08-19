@@ -8,6 +8,8 @@ import {
   banUser,
   deleteAdminUser,
   getAdminStats,
+  getAdminMetrics,
+  getAdminProblemReview,
   listAdminReports,
   resolveReport,
   adminDeleteMessage,
@@ -36,11 +38,13 @@ router.delete('/users/:id', deleteAdminUser)
 
 // Problem moderation
 router.get('/problems', listAdminProblems)
+router.get('/problems/:id/review', getAdminProblemReview)
 router.post('/problems/:id/status', setProblemStatus)
 router.delete('/problems/:id', deleteAdminProblem)
 
 // Dashboard stats
 router.get('/stats', getAdminStats)
+router.get('/metrics', getAdminMetrics)
 
 // Reports
 router.get('/reports', listAdminReports)

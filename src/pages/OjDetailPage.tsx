@@ -63,6 +63,8 @@ export default function OjDetailPage() {
   const [relatedPosts, setRelatedPosts] = useState<DiscussionPost[]>([])
   const [discussionTotal, setDiscussionTotal] = useState(0)
   const [discussionLoading, setDiscussionLoading] = useState(false)
+  const [bookmarked, setBookmarked] = useState(false)
+  const [bookmarkBusy, setBookmarkBusy] = useState(false)
   const latestIdeSubmissionCacheRef = useRef<{ problemId: number; submission: OjSubmission | null } | null>(null)
   const restoredSubmissionKeyRef = useRef('')
 
@@ -128,6 +130,36 @@ export default function OjDetailPage() {
     }, 0)
     return () => window.clearTimeout(timer)
   }, [loadProblem])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!currentUser || !id) {
+      setBookmarked(false)
+      return () => { cancelled = true }
+    }
+    void fetchJson<{ bookmarked: boolean }>(`/api/bookmarks/status?targetType=problem&targetId=${id}`).then(({ response, data }) => {
+      if (!cancelled && response.ok) setBookmarked(Boolean(data?.bookmarked))
+    })
+    return () => { cancelled = true }
+  }, [currentUser, id])
+
+  const toggleProblemBookmark = async () => {
+    if (!currentUser) {
+      openAuth('login')
+      return
+    }
+    if (bookmarkBusy || !problem) return
+    setBookmarkBusy(true)
+    try {
+      const { response, data } = await fetchJson<{ bookmarked?: boolean }>('/api/bookmarks', {
+        method: 'POST',
+        body: JSON.stringify({ targetType: 'problem', targetId: problem.id }),
+      })
+      if (response.ok) setBookmarked(Boolean(data?.bookmarked))
+    } finally {
+      setBookmarkBusy(false)
+    }
+  }
 
   useEffect(() => {
     if (!problem) return
@@ -287,6 +319,9 @@ export default function OjDetailPage() {
             <div className="oj-section-header-row">
               <h3>题目描述</h3>
               <div className="hero-actions">
+                <button className={`ghost small ${bookmarked ? 'active' : ''}`} onClick={() => void toggleProblemBookmark()} disabled={bookmarkBusy}>
+                  {bookmarked ? '已收藏' : '收藏题目'}
+                </button>
                 {currentUser && (
                   <button
                     className="ghost small"

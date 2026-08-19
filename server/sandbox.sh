@@ -21,6 +21,8 @@ fi
 # 资源限制 (ulimit)
 # 虚拟内存限制
 ulimit -v "$MEM_LIMIT_KB" 2>/dev/null || true
+# CPU 时间上限（秒），与 timeout 的墙钟限制同时生效，防止异常进程长期占用 CPU。
+ulimit -t "$TIME_LIMIT" 2>/dev/null || true
 # 最大文件大小 50MB
 ulimit -f 51200 2>/dev/null || true
 # 最大进程数

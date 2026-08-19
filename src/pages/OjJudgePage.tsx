@@ -70,6 +70,17 @@ const getJudgeStatusMeta = (status: string | undefined, stage: JudgeStage): Judg
     }
   }
 
+  if (status === 'Cancelled') {
+    return {
+      label: '已取消',
+      shortLabel: 'STOP',
+      tone: 'neutral',
+      kind: 'idle',
+      title: '评测请求已取消',
+      description: '这次提交没有继续消耗评测资源，你可以修改代码后重新提交。',
+    }
+  }
+
   if (status === 'Time Limit Exceeded') {
     return {
       label: 'Time Limit Exceeded',
@@ -148,6 +159,7 @@ export default function OjJudgePage() {
   const [queuePosition, setQueuePosition] = useState<number | null>(null)
   const [celebrationStats, setCelebrationStats] = useState<JudgeCelebrationStats | null>(null)
   const [recentAchievements, setRecentAchievements] = useState<Achievement[]>([])
+  const [cancelling, setCancelling] = useState(false)
 
   const loadSubmission = useCallback(async (idValue: number) => {
     setError('')
@@ -376,6 +388,30 @@ export default function OjJudgePage() {
     void submitJudge()
   }, [retryPayload, submitJudge])
 
+  const cancelQueuedSubmission = useCallback(async () => {
+    if (!submissionId || cancelling) return
+    setCancelling(true)
+    try {
+      const { response, data } = await fetchJson<{ message?: string }>(`/api/oj/submissions/${submissionId}/cancel`, {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        setError(data?.message || '取消失败，请刷新后重试')
+        return
+      }
+      streamAbortRef.current?.abort()
+      setQueuePosition(null)
+      setSubmission((current) => current ? { ...current, status: 'Cancelled', message: data?.message || '评测请求已取消' } : current)
+      setStage('fail')
+      setShowResults(true)
+      setError('评测请求已取消')
+    } catch {
+      setError('网络异常，取消请求未完成')
+    } finally {
+      setCancelling(false)
+    }
+  }, [cancelling, submissionId])
+
   // 卸载时中止评测流连接
   useEffect(() => {
     return () => {
@@ -573,6 +609,11 @@ export default function OjJudgePage() {
             {canRetrySubmission && (
               <Button variant="primary" onClick={retrySubmission}>
                 重新提交
+              </Button>
+            )}
+            {submissionId && submission?.status === 'Queued' && (
+              <Button variant="ghost" onClick={() => void cancelQueuedSubmission()} loading={cancelling}>
+                取消排队
               </Button>
             )}
             {problemId && (

@@ -41,6 +41,17 @@ const detectedCpuCount = typeof os.availableParallelism === 'function'
 const judgeConcurrency = Math.min(2, Math.max(1, Number(process.env.JUDGE_CONCURRENCY) || detectedCpuCount))
 const judgeQueue = createExecutionQueue({ maxActive: judgeConcurrency, maxQueued: 50, maxQueuedPerKey: 2 })
 const sandboxQueue = createExecutionQueue({ maxActive: Math.min(2, judgeConcurrency), maxQueued: 30, maxQueuedPerKey: 2 })
+const persistedJudgeTasks = new Map()
+
+const registerPersistedJudgeTask = (submissionId, task) => {
+  if (!task.accepted) return
+  const key = Number(submissionId)
+  persistedJudgeTasks.set(key, task)
+  void task.promise.then(
+    () => { if (persistedJudgeTasks.get(key) === task) persistedJudgeTasks.delete(key) },
+    () => { if (persistedJudgeTasks.get(key) === task) persistedJudgeTasks.delete(key) },
+  )
+}
 
 const beginSandboxRun = (userId, res) => {
   if (runRateLimits.has(userId)) {
@@ -349,7 +360,7 @@ export const recoverPendingSubmissions = async () => {
       await _markSubmissionTerminal(db, row.id, 'Failed', '服务重启后评测队列容量不足，请重新提交')
       continue
     }
-    const task = _enqueuePersistedSubmission(db, {
+  const task = _enqueuePersistedSubmission(db, {
       submissionId: row.id,
       problemId: row.problem_id,
       userId: row.user_id,
@@ -357,6 +368,7 @@ export const recoverPendingSubmissions = async () => {
       code: row.code,
       testcases,
     })
+    registerPersistedJudgeTask(row.id, task)
     if (!task.accepted) {
       void task.promise.catch(() => undefined)
       await _markSubmissionTerminal(db, row.id, 'Failed', '服务重启后评测队列容量不足，请重新提交')
@@ -368,6 +380,23 @@ export const recoverPendingSubmissions = async () => {
   }
   if (recovered > 0) console.log(`[judge] recovered ${recovered} pending submission(s)`)
   return recovered
+}
+
+export const cancelSubmission = async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const submissionId = Number(req.params.id)
+  if (!submissionId) return res.status(400).json({ message: '无效的提交编号' })
+  const row = await auth.db.get(`SELECT id, user_id, status FROM submissions WHERE id = ?`, submissionId)
+  if (!row) return res.status(404).json({ message: '提交不存在' })
+  if (row.user_id !== auth.user.id && !auth.user.is_admin) return res.status(403).json({ message: '无权限操作此提交' })
+  if (row.status !== 'Queued') {
+    return res.status(409).json({ message: row.status === 'Judging' ? '评测已经开始，暂不支持取消' : '该提交已经结束' })
+  }
+  const task = persistedJudgeTasks.get(submissionId)
+  if (!task || !task.cancel()) return res.status(409).json({ message: '提交正在切换状态，请刷新后重试' })
+  await _markSubmissionTerminal(auth.db, submissionId, 'Cancelled', '评测请求已取消')
+  return res.json({ ok: true, status: 'Cancelled' })
 }
 
 const _postSubmitHooks = async (db, userId, submissionId, problemId, status, createdAt) => {
@@ -430,6 +459,7 @@ export const submitSolution = async (req, res) => {
     code: String(code),
     testcases,
   })
+  registerPersistedJudgeTask(queued.submissionId, judgeTask)
   if (!judgeTask.accepted) {
     void judgeTask.promise.catch(() => undefined)
     await _markSubmissionTerminal(db, queued.submissionId, 'Failed', '评测队列已满，请稍后重试')
@@ -517,6 +547,7 @@ export const streamSubmission = async (req, res) => {
       onStart: () => sendEvent('start', { submissionId: queuedSubmission.submissionId, totalCases: testcases.length }),
       onTestCase: (tc) => sendEvent('testcase', tc),
     })
+    registerPersistedJudgeTask(queuedSubmission.submissionId, judgeTask)
     if (!judgeTask.accepted) {
       void judgeTask.promise.catch(() => undefined)
       await _markSubmissionTerminal(db, queuedSubmission.submissionId, 'Failed', '评测队列已满，请稍后重试')

@@ -50,6 +50,7 @@ export default function AccountPage() {
   const [ratingHistory, setRatingHistory] = useState<{ date: string; rating: number }[]>([])
   const [relations, setRelations] = useState<FollowRelations | null>(null)
   const [bookmarks, setBookmarks] = useState<{ id: number; title: string; userName: string; commentCount: number; createdAt: string }[]>([])
+  const [problemBookmarks, setProblemBookmarks] = useState<{ id: number; title: string; difficulty?: string; createdAt: string }[]>([])
   const [checkin, setCheckin] = useState<CheckinResponse | null>(null)
   const [checkingIn, setCheckingIn] = useState(false)
   const [checkinError, setCheckinError] = useState('')
@@ -135,6 +136,17 @@ export default function AccountPage() {
       void fetchJson<UserProfileResponse>(`/api/users/${currentUser.id}/profile`).then(({ response, data }) => {
         if (response.ok && data) setRelations(data.relations)
       })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [currentUser])
+
+  useEffect(() => {
+    if (!currentUser?.id) return
+    const timer = window.setTimeout(() => {
+      void fetchJson<{ problems: { id: number; title: string; difficulty?: string; createdAt: string }[] }>('/api/bookmarks?targetType=problem')
+        .then(({ response, data }) => {
+          if (response.ok && data) setProblemBookmarks(data.problems || [])
+        })
     }, 0)
     return () => window.clearTimeout(timer)
   }, [currentUser])
@@ -491,6 +503,28 @@ export default function AccountPage() {
                   <span className="profile-bookmark-title">{bookmark.title}</span>
                   <span className="profile-bookmark-meta">
                     {bookmark.userName} · 💬 {bookmark.commentCount} · {new Date(bookmark.createdAt).toLocaleDateString('zh-CN')}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </Panel>
+        )}
+
+        {problemBookmarks.length > 0 && (
+          <Panel className="profile-bookmarks">
+            <div className="profile-panel-head">
+              <div>
+                <div className="profile-kicker">OJ Bookmarks</div>
+                <h2>收藏题目</h2>
+              </div>
+              <span>{problemBookmarks.length} 道</span>
+            </div>
+            <div className="profile-bookmarks-list">
+              {problemBookmarks.map((bookmark) => (
+                <button key={bookmark.id} type="button" onClick={() => navigate(`/oj/p${bookmark.id}`)}>
+                  <span className="profile-bookmark-title">P{bookmark.id} · {bookmark.title}</span>
+                  <span className="profile-bookmark-meta">
+                    {bookmark.difficulty || '未分类'} · {new Date(bookmark.createdAt).toLocaleDateString('zh-CN')}
                   </span>
                 </button>
               ))}
