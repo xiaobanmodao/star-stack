@@ -36,6 +36,23 @@ pm2 save
 
 `TURNSTILE_HOSTNAMES` 已在 `ecosystem.config.cjs` 中限制为 `xingzhan.cc,www.xingzhan.cc`。不要把 Secret Key 写入仓库、前端代码或聊天记录。
 
+### 注册邮箱验证码
+
+注册需要邮箱验证码。以 Gmail SMTP 为例，先在发信 Google 账号中开启两步验证，再创建应用专用密码；应用专用密码只用于 SMTP，不要使用 Google 登录密码。服务器 PM2 环境需要配置：
+
+```bash
+export SMTP_HOST='smtp.gmail.com'
+export SMTP_PORT='587'
+export SMTP_SECURE='false'
+export SMTP_USER='你的发信邮箱'
+export SMTP_PASS='Google生成的应用专用密码'
+export MAIL_FROM='StarStack <你的发信邮箱>'
+pm2 startOrRestart ecosystem.config.cjs --update-env
+pm2 save
+```
+
+应用专用密码和 `SMTP_PASS` 只保存在服务器 PM2 环境中，不要提交 `.env` 或写入仓库。后续日常更新使用 `pm2 restart star-stack-api`，避免在未重新注入密钥时用 `--update-env` 覆盖邮件环境变量。
+
 ## 2. 首次部署
 
 ### 2.1 安装服务器依赖
@@ -190,7 +207,7 @@ npm run build
 rsync -a --delete dist/ /var/www/starstack-dist/
 
 # 7. 启动后端并检查 Nginx 配置
-pm2 startOrRestart ecosystem.config.cjs --update-env
+pm2 restart star-stack-api
 pm2 save
 nginx -t && systemctl reload nginx
 

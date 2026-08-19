@@ -16,7 +16,8 @@
 import { closeDb, getDb, initDb } from './db.js'
 
 const REQUIRED_SCHEMA = {
-  users: ['id', 'name', 'password_hash', 'is_admin', 'is_banned', 'avatar', 'rating', 'bio', 'onboarded_at', 'created_at'],
+  users: ['id', 'name', 'password_hash', 'email', 'email_verified_at', 'is_admin', 'is_banned', 'avatar', 'rating', 'bio', 'onboarded_at', 'created_at'],
+  email_verifications: ['email', 'code_hash', 'expires_at', 'attempts', 'last_sent_at', 'created_at'],
   sessions: ['token', 'user_id', 'created_at'],
   problems: ['id', 'slug', 'title', 'difficulty', 'tags', 'statement', 'input_desc', 'output_desc', 'data_range', 'samples', 'creator_id', 'status', 'created_at'],
   submissions: ['id', 'problem_id', 'user_id', 'language', 'code', 'status', 'time_ms', 'memory_kb', 'message', 'results_json', 'score', 'created_at'],
@@ -64,6 +65,8 @@ const REQUIRED_INDEXES = [
   'idx_testcases_problem',
   'idx_testcases_problem_sample',
   'idx_problems_status_difficulty',
+  'idx_email_verifications_expires',
+  'idx_users_email_unique',
 ]
 
 const verifySchema = async (db) => {

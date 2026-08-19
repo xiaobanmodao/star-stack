@@ -78,15 +78,22 @@ const AuthPage = ({
   onSubmit,
   formId,
   formName,
+  formEmail,
+  formEmailCode,
   formPassword,
   formConfirm,
   onFormIdChange,
   onFormNameChange,
+  onFormEmailChange,
+  onFormEmailCodeChange,
   onFormPasswordChange,
   onFormConfirmChange,
+  onSendEmailCode,
   error,
   success,
   submitting,
+  emailSending,
+  emailCooldown,
   captchaRequired,
   captchaResetKey,
   onCaptchaTokenChange,
@@ -136,6 +143,19 @@ const AuthPage = ({
             />
           </label>
         )}
+        {mode === 'register' && (
+          <label>
+            邮箱
+            <input
+              className="auth-input"
+              type="email"
+              value={formEmail}
+              onChange={(event) => onFormEmailChange(event.target.value)}
+              autoComplete="email"
+              placeholder="用于接收注册验证码"
+            />
+          </label>
+        )}
         <label>
           密码
           <input
@@ -154,6 +174,31 @@ const AuthPage = ({
               value={formConfirm}
               onChange={(event) => onFormConfirmChange(event.target.value)}
             />
+          </label>
+        )}
+        {mode === 'register' && (
+          <label>
+            邮箱验证码
+            <div className="auth-code-row">
+              <input
+                className="auth-input"
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                value={formEmailCode}
+                onChange={(event) => onFormEmailCodeChange(event.target.value.replace(/\D/g, ''))}
+                placeholder="6 位验证码"
+                autoComplete="one-time-code"
+              />
+              <button
+                className="ghost auth-code-button"
+                type="button"
+                onClick={onSendEmailCode}
+                disabled={submitting || emailSending || emailCooldown > 0}
+              >
+                {emailSending ? '发送中…' : emailCooldown > 0 ? `${emailCooldown}s 后重发` : '发送验证码'}
+              </button>
+            </div>
           </label>
         )}
         {(mode === 'register' || captchaRequired) && (

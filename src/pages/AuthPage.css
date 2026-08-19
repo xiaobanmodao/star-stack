@@ -87,6 +87,23 @@
   box-shadow: 0 0 0 2px var(--ss-accent-bg-strong);
 }
 
+.auth-code-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.auth-code-row .auth-input {
+  min-width: 0;
+}
+
+.auth-code-button {
+  white-space: nowrap;
+  min-height: 40px;
+  padding-inline: 12px;
+}
+
 .auth-error {
   color: var(--ss-color-danger);
   background: var(--ss-danger-12);

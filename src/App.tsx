@@ -78,6 +78,8 @@ function App() {
   const [authCaptchaRequired, setAuthCaptchaRequired] = useState(false)
   const [authCaptchaToken, setAuthCaptchaToken] = useState('')
   const [authCaptchaResetKey, setAuthCaptchaResetKey] = useState(0)
+  const [authEmailSending, setAuthEmailSending] = useState(false)
+  const [authEmailCooldown, setAuthEmailCooldown] = useState(0)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -90,6 +92,8 @@ function App() {
 
   const [formId, setFormId] = useState('')
   const [formName, setFormName] = useState('')
+  const [formEmail, setFormEmail] = useState('')
+  const [formEmailCode, setFormEmailCode] = useState('')
   const [formPassword, setFormPassword] = useState('')
   const [formConfirm, setFormConfirm] = useState('')
 
@@ -141,6 +145,14 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [routeSignature])
 
+  useEffect(() => {
+    if (authEmailCooldown <= 0) return
+    const timer = window.setInterval(() => {
+      setAuthEmailCooldown((value) => Math.max(0, value - 1))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [authEmailCooldown])
+
   const setAuthModeSafe = useCallback((mode: AuthMode) => {
     setAuthMode(mode)
     setAuthError('')
@@ -148,6 +160,9 @@ function App() {
     setAuthCaptchaRequired(mode === 'register')
     setAuthCaptchaToken('')
     setAuthCaptchaResetKey((value) => value + 1)
+    setAuthEmailSending(false)
+    setAuthEmailCooldown(0)
+    setFormEmailCode('')
   }, [])
 
   const openAuth = useCallback(
@@ -279,6 +294,14 @@ function App() {
         return
       }
       if (authMode === 'register') {
+        if (!formEmail.trim()) {
+          setAuthError('请填写邮箱')
+          return
+        }
+        if (!formEmailCode.trim()) {
+          setAuthError('请填写邮箱验证码')
+          return
+        }
         if (!formName.trim()) {
           setAuthError('请填写名称')
           return
@@ -298,6 +321,8 @@ function App() {
       }
       if (authMode === 'register') {
         payload.name = formName.trim()
+        payload.email = formEmail.trim()
+        payload.emailCode = formEmailCode.trim()
       }
       if (authCaptchaToken) payload.turnstileToken = authCaptchaToken
       setAuthSubmitting(true)
@@ -325,8 +350,43 @@ function App() {
         setAuthSubmitting(false)
       }
     },
-    [authCaptchaRequired, authCaptchaToken, authFrom, authMode, authSubmitting, formConfirm, formId, formName, formPassword, navigate]
+    [authCaptchaRequired, authCaptchaToken, authFrom, authMode, authSubmitting, formConfirm, formEmail, formEmailCode, formId, formName, formPassword, navigate]
   )
+
+  const handleSendEmailCode = useCallback(async () => {
+    if (authEmailSending || authEmailCooldown > 0) return
+    setAuthError('')
+    setAuthSuccess('')
+    const email = formEmail.trim()
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setAuthError('请输入有效的邮箱地址')
+      return
+    }
+    if (!authCaptchaToken) {
+      setAuthError('请先完成安全验证')
+      return
+    }
+    setAuthEmailSending(true)
+    try {
+      const { response, data } = await fetchJson<ApiResponse<{ retryAfter?: number }>>('/api/register/email-code', {
+        method: 'POST',
+        body: JSON.stringify({ email, turnstileToken: authCaptchaToken }),
+      })
+      if (!response.ok) {
+        setAuthError(data?.message || '验证码发送失败')
+        if (response.status === 429 && data?.retryAfter) setAuthEmailCooldown(data.retryAfter)
+        return
+      }
+      setAuthEmailCooldown(60)
+      setAuthSuccess('验证码已发送，请检查邮箱')
+      setAuthCaptchaToken('')
+      setAuthCaptchaResetKey((value) => value + 1)
+    } catch {
+      setAuthError('网络连接失败，请稍后重试')
+    } finally {
+      setAuthEmailSending(false)
+    }
+  }, [authCaptchaToken, authEmailCooldown, authEmailSending, formEmail])
 
   const handleLogout = useCallback(async () => {
     const token = localStorage.getItem(TOKEN_KEY)
@@ -455,15 +515,22 @@ function App() {
                     onSubmit={handleAuthSubmit}
                     formId={formId}
                     formName={formName}
+                    formEmail={formEmail}
+                    formEmailCode={formEmailCode}
                     formPassword={formPassword}
                     formConfirm={formConfirm}
                     onFormIdChange={setFormId}
                     onFormNameChange={setFormName}
+                    onFormEmailChange={setFormEmail}
+                    onFormEmailCodeChange={setFormEmailCode}
                     onFormPasswordChange={setFormPassword}
                     onFormConfirmChange={setFormConfirm}
+                    onSendEmailCode={handleSendEmailCode}
                     error={authError}
                     success={authSuccess}
                     submitting={authSubmitting}
+                    emailSending={authEmailSending}
+                    emailCooldown={authEmailCooldown}
                     captchaRequired={authCaptchaRequired}
                     captchaResetKey={authCaptchaResetKey}
                     onCaptchaTokenChange={setAuthCaptchaToken}

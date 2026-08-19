@@ -519,15 +519,22 @@ export type AuthPageProps = {
   onSubmit: (event: React.FormEvent) => void
   formId: string
   formName: string
+  formEmail: string
+  formEmailCode: string
   formPassword: string
   formConfirm: string
   onFormIdChange: (value: string) => void
   onFormNameChange: (value: string) => void
+  onFormEmailChange: (value: string) => void
+  onFormEmailCodeChange: (value: string) => void
   onFormPasswordChange: (value: string) => void
   onFormConfirmChange: (value: string) => void
+  onSendEmailCode: () => void
   error: string
   success: string
   submitting: boolean
+  emailSending: boolean
+  emailCooldown: number
   captchaRequired: boolean
   captchaResetKey: number
   onCaptchaTokenChange: (token: string) => void

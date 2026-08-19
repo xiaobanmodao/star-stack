@@ -16,7 +16,13 @@ module.exports = {
         PORT: 5174,
         ALLOWED_ORIGINS: 'https://xingzhan.cc,https://www.xingzhan.cc',
         TURNSTILE_HOSTNAMES: 'xingzhan.cc,www.xingzhan.cc',
-        TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY || ''
+        TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY || '',
+        SMTP_HOST: process.env.SMTP_HOST || '',
+        SMTP_PORT: process.env.SMTP_PORT || '587',
+        SMTP_SECURE: process.env.SMTP_SECURE || 'false',
+        SMTP_USER: process.env.SMTP_USER || '',
+        SMTP_PASS: process.env.SMTP_PASS || '',
+        MAIL_FROM: process.env.MAIL_FROM || ''
       },
       error_file: './logs/api-error.log',
       out_file: './logs/api-out.log',

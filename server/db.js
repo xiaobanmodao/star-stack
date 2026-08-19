@@ -268,9 +268,19 @@ export const initDb = async () => {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       password_hash TEXT NOT NULL,
+      email TEXT,
+      email_verified_at TEXT,
       is_admin INTEGER NOT NULL DEFAULT 0,
       is_banned INTEGER NOT NULL DEFAULT 0,
       onboarded_at TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS email_verifications (
+      email TEXT PRIMARY KEY,
+      code_hash TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_sent_at TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS sessions (
@@ -318,6 +328,7 @@ export const initDb = async () => {
       FOREIGN KEY (problem_id) REFERENCES problems (id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id);
+    CREATE INDEX IF NOT EXISTS idx_email_verifications_expires ON email_verifications (expires_at);
     CREATE INDEX IF NOT EXISTS idx_submissions_user ON submissions (user_id);
     CREATE INDEX IF NOT EXISTS idx_submissions_problem ON submissions (problem_id);
     CREATE INDEX IF NOT EXISTS idx_testcases_problem ON testcases (problem_id);
@@ -342,6 +353,17 @@ export const initDb = async () => {
   if (!columnNames.includes('rating')) {
     await db.exec(`ALTER TABLE users ADD COLUMN rating REAL NOT NULL DEFAULT 0;`)
   }
+  if (!columnNames.includes('email')) {
+    await db.exec(`ALTER TABLE users ADD COLUMN email TEXT;`)
+  }
+  if (!columnNames.includes('email_verified_at')) {
+    await db.exec(`ALTER TABLE users ADD COLUMN email_verified_at TEXT;`)
+  }
+  await db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
+    ON users(email)
+    WHERE email IS NOT NULL AND email <> ''
+  `)
 
   const testcaseColumns = await db.all(`PRAGMA table_info(testcases)`)
   const testcaseNames = testcaseColumns.map((col) => col.name)

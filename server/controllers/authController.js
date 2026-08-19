@@ -6,13 +6,91 @@ import { serializeUser } from '../utils/userHelpers.js'
 import { recalculateUserRating } from '../stats.js'
 import { checkLoginLock, getLoginFailureCount, recordLoginFailure, clearLoginFailures } from '../utils/loginGuard.js'
 import { verifyTurnstile } from '../utils/turnstile.js'
+import { sendRegistrationCode } from '../utils/email.js'
+import {
+  EMAIL_CODE_MAX_ATTEMPTS,
+  EMAIL_CODE_RESEND_MS,
+  EMAIL_CODE_TTL_MS,
+  createEmailCode,
+  hashEmailCode,
+  isExpired,
+  isValidEmail,
+  normalizeEmail,
+} from '../utils/emailVerification.js'
 
 const createToken = () => randomBytes(24).toString('hex')
 
+export const sendRegisterEmailCode = async (req, res) => {
+  const email = normalizeEmail(req.body?.email)
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ message: '请输入有效的邮箱地址' })
+  }
+  const captcha = await verifyTurnstile({ token: req.body?.turnstileToken, req, action: 'register' })
+  if (!captcha.ok) {
+    return res.status(403).json({ message: '请完成安全验证后再发送验证码', captchaRequired: true })
+  }
+
+  const db = await getDb()
+  const existingUser = await db.get(`SELECT id FROM users WHERE email = ?`, email)
+  if (existingUser) {
+    return res.status(409).json({ message: '该邮箱已被注册' })
+  }
+
+  const existingCode = await db.get(
+    `SELECT last_sent_at FROM email_verifications WHERE email = ?`,
+    email
+  )
+  const lastSentAt = Date.parse(existingCode?.last_sent_at || '')
+  const retryAfterMs = Number.isFinite(lastSentAt)
+    ? EMAIL_CODE_RESEND_MS - (Date.now() - lastSentAt)
+    : 0
+  if (retryAfterMs > 0) {
+    return res.status(429).json({
+      message: `请 ${Math.ceil(retryAfterMs / 1000)} 秒后再试`,
+      retryAfter: Math.ceil(retryAfterMs / 1000),
+    })
+  }
+
+  const code = createEmailCode()
+  try {
+    await sendRegistrationCode({ email, code })
+  } catch (error) {
+    console.error('[email] 注册验证码发送失败:', error?.message || error)
+    return res.status(503).json({ message: '邮件服务暂不可用，请稍后重试' })
+  }
+
+  const now = new Date()
+  const createdAt = now.toISOString()
+  const expiresAt = new Date(now.getTime() + EMAIL_CODE_TTL_MS).toISOString()
+  await db.run(
+    `INSERT INTO email_verifications (email, code_hash, expires_at, attempts, last_sent_at, created_at)
+     VALUES (?, ?, ?, 0, ?, ?)
+     ON CONFLICT(email) DO UPDATE SET
+       code_hash = excluded.code_hash,
+       expires_at = excluded.expires_at,
+       attempts = 0,
+       last_sent_at = excluded.last_sent_at,
+       created_at = excluded.created_at`,
+    email,
+    hashEmailCode(code),
+    expiresAt,
+    createdAt,
+    createdAt
+  )
+  return res.json({ success: true, message: '验证码已发送，请检查邮箱' })
+}
+
 export const register = async (req, res) => {
-  const { id, name, password, turnstileToken } = req.body || {}
-  if (!id || !name || !password) {
+  const { id, name, password, emailCode, turnstileToken } = req.body || {}
+  const email = normalizeEmail(req.body?.email)
+  if (!id || !name || !password || !email || !emailCode) {
     return res.status(400).json({ message: '请填写完整信息' })
+  }
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ message: '请输入有效的邮箱地址' })
+  }
+  if (!/^\d{6}$/.test(String(emailCode))) {
+    return res.status(400).json({ message: '请输入 6 位邮箱验证码' })
   }
   if (password.length < 6) {
     return res.status(400).json({ message: '密码至少 6 位' })
@@ -26,13 +104,44 @@ export const register = async (req, res) => {
   if (existing) {
     return res.status(409).json({ message: '该 ID 已被注册' })
   }
+  const existingEmail = await db.get(`SELECT id FROM users WHERE email = ?`, email)
+  if (existingEmail) {
+    return res.status(409).json({ message: '该邮箱已被注册' })
+  }
+
+  const verification = await db.get(
+    `SELECT email, code_hash, expires_at, attempts FROM email_verifications WHERE email = ?`,
+    email
+  )
+  if (!verification) {
+    return res.status(400).json({ message: '请先获取邮箱验证码' })
+  }
+  if (isExpired(verification.expires_at)) {
+    await db.run(`DELETE FROM email_verifications WHERE email = ?`, email)
+    return res.status(400).json({ message: '邮箱验证码已过期，请重新获取' })
+  }
+  if (verification.attempts >= EMAIL_CODE_MAX_ATTEMPTS) {
+    await db.run(`DELETE FROM email_verifications WHERE email = ?`, email)
+    return res.status(400).json({ message: '验证码错误次数过多，请重新获取' })
+  }
+  if (hashEmailCode(String(emailCode)) !== verification.code_hash) {
+    const attempts = verification.attempts + 1
+    if (attempts >= EMAIL_CODE_MAX_ATTEMPTS) {
+      await db.run(`DELETE FROM email_verifications WHERE email = ?`, email)
+    } else {
+      await db.run(`UPDATE email_verifications SET attempts = ? WHERE email = ?`, attempts, email)
+    }
+    return res.status(400).json({ message: '邮箱验证码错误' })
+  }
+
   const passwordHash = await bcrypt.hash(password, 10)
   const createdAt = new Date().toISOString()
   await db.run(
-    `INSERT INTO users (id, name, password_hash, is_admin, is_banned, created_at)
-     VALUES (?, ?, ?, 0, 0, ?)`,
-    id, name, passwordHash, createdAt
+    `INSERT INTO users (id, name, password_hash, email, email_verified_at, is_admin, is_banned, created_at)
+     VALUES (?, ?, ?, ?, ?, 0, 0, ?)`,
+    id, name, passwordHash, email, createdAt, createdAt
   )
+  await db.run(`DELETE FROM email_verifications WHERE email = ?`, email)
   const token = createToken()
   await db.run(
     `INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)`,
