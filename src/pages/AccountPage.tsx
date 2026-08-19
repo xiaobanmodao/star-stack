@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CalendarCheck, Flame, Pencil, Trophy } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
+import { useToast } from '../components/ui/ToastContext'
 import type {
   Achievement,
   AchievementsResponse,
@@ -41,6 +42,7 @@ const getRatingDelta = (history: { date: string; rating: number }[]) => {
 export default function AccountPage() {
   const navigate = useNavigate()
   const { currentUser, openAuth } = useAppContext()
+  const { showToast } = useToast()
   const [profileStats, setProfileStats] = useState<ProfileStats | null>(null)
   const [heatmapData, setHeatmapData] = useState<HeatmapData[]>([])
   const [achievements, setAchievements] = useState<Achievement[]>([])
@@ -67,15 +69,24 @@ export default function AccountPage() {
     if (!currentUser || checkingIn || checkin?.checkedToday) return
     setCheckingIn(true)
     setCheckinError('')
-    const { response, data } = await fetchJson<CheckinResponse>('/api/me/checkin', {
-      method: 'POST',
-    })
-    setCheckingIn(false)
-    if (!response.ok || !data) {
-      setCheckinError(data?.message || '签到失败，请重试。')
-      return
+    try {
+      const { response, data } = await fetchJson<CheckinResponse>('/api/me/checkin', {
+        method: 'POST',
+      })
+      if (!response.ok || !data) {
+        const message = data?.message || '签到失败，请重试。'
+        setCheckinError(message)
+        showToast(message, 'error')
+        return
+      }
+      setCheckin(data)
+      showToast(data.message || '今日签到成功', 'success')
+    } catch {
+      setCheckinError('网络异常，签到未完成。')
+      showToast('网络异常，签到未完成', 'error')
+    } finally {
+      setCheckingIn(false)
     }
-    setCheckin(data)
   }
 
   useEffect(() => {

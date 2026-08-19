@@ -429,6 +429,39 @@
   gap: 12px;
 }
 
+.ide-draft-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ss-color-text-subtle);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.ide-draft-status-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--ss-color-text-subtle);
+}
+
+.ide-draft-status.is-restoring .ide-draft-status-dot {
+  background: var(--ss-color-accent-strong);
+  box-shadow: 0 0 0 3px var(--ss-accent-bg);
+  animation: ss-loading-dot-pulse 1.2s ease-in-out infinite;
+}
+
+.ide-draft-status.is-restored .ide-draft-status-dot,
+.ide-draft-status.is-saved .ide-draft-status-dot {
+  background: var(--ss-color-success);
+}
+
+.ide-draft-status.is-empty .ide-draft-status-dot {
+  background: var(--ss-color-text-subtle);
+}
+
 .ide-header-right {
   display: flex;
   align-items: center;

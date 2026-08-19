@@ -2,6 +2,7 @@ import 'katex/dist/katex.min.css'
 import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
+import { useToast } from '../components/ui/ToastContext'
 import LoadingState from '../components/ui/LoadingState'
 import { Badge, ErrorState } from '../components/ui'
 import { fetchJson, openInNewTab, preloadOjIdeAssets } from '../utils'
@@ -47,6 +48,7 @@ const writeIdeDraftCache = (drafts: IdeDraftCache) => {
 export default function OjDetailPage() {
   const navigate = useNavigate()
   const { currentUser, addToPlan, problemPlan, removeFromPlan, openAuth } = useAppContext()
+  const { showToast } = useToast()
   const params = useParams()
   const location = useLocation()
   const { pathname } = location
@@ -65,6 +67,7 @@ export default function OjDetailPage() {
   const [discussionLoading, setDiscussionLoading] = useState(false)
   const [bookmarked, setBookmarked] = useState(false)
   const [bookmarkBusy, setBookmarkBusy] = useState(false)
+  const [planBusy, setPlanBusy] = useState(false)
   const latestIdeSubmissionCacheRef = useRef<{ problemId: number; submission: OjSubmission | null } | null>(null)
   const restoredSubmissionKeyRef = useRef('')
 
@@ -155,9 +158,41 @@ export default function OjDetailPage() {
         method: 'POST',
         body: JSON.stringify({ targetType: 'problem', targetId: problem.id }),
       })
-      if (response.ok) setBookmarked(Boolean(data?.bookmarked))
+      if (response.ok) {
+        const nextBookmarked = Boolean(data?.bookmarked)
+        setBookmarked(nextBookmarked)
+        showToast(nextBookmarked ? '题目已收藏' : '已取消收藏', 'success')
+      } else {
+        showToast(data && 'message' in data ? String(data.message) : '收藏操作失败，请稍后重试', 'error')
+      }
+    } catch {
+      showToast('网络异常，收藏操作未完成', 'error')
     } finally {
       setBookmarkBusy(false)
+    }
+  }
+
+  const toggleProblemPlan = async () => {
+    if (!currentUser) {
+      openAuth('login')
+      return
+    }
+    if (!problem || planBusy) return
+    const plan = problemPlan.find((item) => item.problem_id === problem.id)
+    setPlanBusy(true)
+    try {
+      const result = plan
+        ? await removeFromPlan(plan.id)
+        : await addToPlan(problem.id)
+      if (result.success) {
+        showToast(result.message || (plan ? '已从刷题计划移除' : '已加入刷题计划'), 'success')
+      } else {
+        showToast(result.message || '刷题计划更新失败', 'error')
+      }
+    } catch {
+      showToast('网络异常，刷题计划未更新', 'error')
+    } finally {
+      setPlanBusy(false)
     }
   }
 
@@ -319,23 +354,17 @@ export default function OjDetailPage() {
             <div className="oj-section-header-row">
               <h3>题目描述</h3>
               <div className="hero-actions">
-                <button className={`ghost small ${bookmarked ? 'active' : ''}`} onClick={() => void toggleProblemBookmark()} disabled={bookmarkBusy}>
-                  {bookmarked ? '已收藏' : '收藏题目'}
+                  <button className={`ghost small ${bookmarked ? 'active' : ''}`} onClick={() => void toggleProblemBookmark()} disabled={bookmarkBusy} aria-busy={bookmarkBusy || undefined}>
+                  {bookmarkBusy ? '处理中…' : bookmarked ? '已收藏' : '收藏题目'}
                 </button>
                 {currentUser && (
                   <button
                     className="ghost small"
-                    onClick={async () => {
-                      const inPlan = problemPlan.some(p => p.problem_id === problem.id)
-                      if (inPlan) {
-                        const plan = problemPlan.find(p => p.problem_id === problem.id)
-                        if (plan) await removeFromPlan(plan.id)
-                      } else {
-                        await addToPlan(problem.id)
-                      }
-                    }}
+                    onClick={() => void toggleProblemPlan()}
+                    disabled={planBusy}
+                    aria-busy={planBusy || undefined}
                   >
-                    {problemPlan.some(p => p.problem_id === problem.id) ? '从计划移除' : '加入计划'}
+                    {planBusy ? '处理中…' : problemPlan.some(p => p.problem_id === problem.id) ? '从计划移除' : '加入计划'}
                   </button>
                 )}
                 <button
@@ -351,7 +380,7 @@ export default function OjDetailPage() {
                     }
                   } : openIde}
                 >
-                  {ideOpen ? '关闭提交' : '提交'}
+                  {ideOpen ? '关闭编辑器' : '打开编辑器'}
                 </button>
               </div>
             </div>
@@ -384,8 +413,10 @@ export default function OjDetailPage() {
                         onMouseEnter={preloadOjIde}
                         onFocus={preloadOjIde}
                         onClick={() => handleRunSample(index)}
+                        disabled={pendingSampleRunIndex !== null}
+                        aria-busy={pendingSampleRunIndex === index || undefined}
                       >
-                        运行此样例
+                        {pendingSampleRunIndex === index ? '准备运行…' : '运行此样例'}
                       </button>
                     </div>
                     <pre>{item.input}</pre>

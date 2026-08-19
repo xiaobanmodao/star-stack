@@ -411,6 +411,24 @@
   font-size: 13px;
 }
 
+.daily-quest-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ss-color-text-subtle);
+  font-size: 13px;
+}
+
+.daily-quest-loading::before {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--ss-accent-border);
+  border-right-color: transparent;
+  border-radius: 50%;
+  content: '';
+  animation: ui-spin 720ms linear infinite;
+}
+
 .daily-quest-side {
   display: grid;
   justify-items: end;

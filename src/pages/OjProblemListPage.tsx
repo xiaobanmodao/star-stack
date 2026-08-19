@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, type KeyboardEvent } from 'react'
+import { useState, useEffect, useCallback, type KeyboardEvent, type MouseEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
+import { useToast } from '../components/ui/ToastContext'
 import CustomSelect from '../components/CustomSelect'
 import TagSelector from '../components/TagSelector'
 import { Badge, Button, DataList, DataListHead, DataListRow, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
@@ -29,6 +30,7 @@ export default function OjProblemListPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { currentUser, addToPlan, problemPlan, removeFromPlan } = useAppContext()
+  const { showToast } = useToast()
   const [search, setSearch] = useState(() => searchParams.get('search') || '')
   const [difficulty, setDifficulty] = useState(() => searchParams.get('difficulty') || '')
   const [solvedFilter, setSolvedFilter] = useState(() => searchParams.get('solved') || '')
@@ -40,6 +42,8 @@ export default function OjProblemListPage() {
   const [problemLoading, setProblemLoading] = useState(false)
   const [problemError, setProblemError] = useState('')
   const [daily, setDaily] = useState<DailyQuest | null>(null)
+  const [dailyLoading, setDailyLoading] = useState(true)
+  const [planBusyId, setPlanBusyId] = useState<number | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageInput, setPageInput] = useState('1')
   const itemsPerPage = 20
@@ -58,16 +62,20 @@ export default function OjProblemListPage() {
     setProblemError('')
     const params = buildQueryParams()
     setSearchParams(params, { replace: true })
-    const { response, data } = await fetchJson<ProblemsResponse>(`/api/oj/problems?${params.toString()}`)
-    if (!response.ok) {
-      setProblemError(data?.message || '无法加载题目')
+    try {
+      const { response, data } = await fetchJson<ProblemsResponse>(`/api/oj/problems?${params.toString()}`)
+      if (!response.ok) {
+        setProblemError(data?.message || '无法加载题目')
+        return
+      }
+      setProblemList(data?.problems || [])
+      setCurrentPage(1)
+      setPageInput('1')
+    } catch {
+      setProblemError('网络异常，暂时无法加载题库')
+    } finally {
       setProblemLoading(false)
-      return
     }
-    setProblemList(data?.problems || [])
-    setProblemLoading(false)
-    setCurrentPage(1)
-    setPageInput('1')
   }, [buildQueryParams, setSearchParams])
 
   useEffect(() => {
@@ -82,9 +90,32 @@ export default function OjProblemListPage() {
     let cancelled = false
     void fetchJson<DailyQuest>('/api/problems/daily').then(({ response, data }) => {
       if (!cancelled && response.ok && data) setDaily(data)
+    }).catch(() => undefined).finally(() => {
+      if (!cancelled) setDailyLoading(false)
     })
     return () => { cancelled = true }
   }, [loadProblems])
+
+  const togglePlan = async (event: MouseEvent, problem: OjProblemSummary) => {
+    event.stopPropagation()
+    if (planBusyId !== null) return
+    const plan = problemPlan.find((item) => item.problem_id === problem.id)
+    setPlanBusyId(problem.id)
+    try {
+      const result = plan
+        ? await removeFromPlan(plan.id)
+        : await addToPlan(problem.id)
+      if (result.success) {
+        showToast(result.message || (plan ? '已从刷题计划移除' : '已加入刷题计划'), 'success')
+      } else {
+        showToast(result.message || '刷题计划更新失败', 'error')
+      }
+    } catch {
+      showToast('网络异常，刷题计划未更新', 'error')
+    } finally {
+      setPlanBusyId(null)
+    }
+  }
 
   // 计算分页
   const totalPages = Math.ceil(problemList.length / itemsPerPage)
@@ -172,7 +203,9 @@ export default function OjProblemListPage() {
       <Panel className="daily-quest-card">
         <div className="daily-quest-main">
           <span className="daily-quest-kicker">Daily Quest · 今日推荐</span>
-          {daily?.problem ? (
+          {dailyLoading ? (
+            <div className="daily-quest-loading" role="status">正在生成今日推荐…</div>
+          ) : daily?.problem ? (
             <>
               <div className="daily-quest-title-row">
                 <span className={`oj-badge ${daily.problem.difficulty}`}>{daily.problem.difficulty}</span>
@@ -218,6 +251,8 @@ export default function OjProblemListPage() {
       <Panel className="problem-library-toolbar">
         <input
           className="auth-input"
+          type="search"
+          aria-label="搜索题目"
           placeholder="搜索题号、标题或标签"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
@@ -335,16 +370,8 @@ export default function OjProblemListPage() {
                   variant={problemPlan.some(p => p.problem_id === problem.id) ? 'secondary' : 'ghost'}
                   size="sm"
                   className="problem-library-plan-btn"
-                  onClick={async (e) => {
-                    e.stopPropagation()
-                    const inPlan = problemPlan.some(p => p.problem_id === problem.id)
-                    if (inPlan) {
-                      const plan = problemPlan.find(p => p.problem_id === problem.id)
-                      if (plan) await removeFromPlan(plan.id)
-                    } else {
-                      await addToPlan(problem.id)
-                    }
-                  }}
+                  onClick={(event) => void togglePlan(event, problem)}
+                  loading={planBusyId === problem.id}
                   title={problemPlan.some(p => p.problem_id === problem.id) ? "从计划中移除" : "加入做题计划"}
                 >
                   {problemPlan.some(p => p.problem_id === problem.id) ? '已加入' : '加入'}

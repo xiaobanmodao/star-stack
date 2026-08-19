@@ -192,6 +192,9 @@ const OjIdePanel = ({
   const [runInput, setRunInput] = useState(initialDraft?.runInput || '')
   const [runOutput, setRunOutput] = useState('')
   const [runExpected, setRunExpected] = useState(initialDraft?.runExpected || '')
+  const [draftState, setDraftState] = useState<'restoring' | 'restored' | 'saved' | 'empty'>(
+    initialDraft?.code?.trim() ? 'saved' : currentUser ? 'restoring' : 'empty'
+  )
 
   const userEditedRef = useRef(false)
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
@@ -200,6 +203,7 @@ const OjIdePanel = ({
   const draftSyncTimerRef = useRef<number | null>(null)
   const pendingSampleRunRef = useRef<number | null>(null)
   const submitBusyRef = useRef(false)
+  const outputRef = useRef<HTMLPreElement | null>(null)
 
   const flushDraft = useCallback(() => {
     onDraftChange(problem.id, {
@@ -251,19 +255,30 @@ const OjIdePanel = ({
 
   useEffect(() => {
     if (!currentUser) return
-    if (initialDraft?.code?.trim()) return
+    if (initialDraft?.code?.trim()) {
+      setDraftState('saved')
+      return
+    }
     let cancelled = false
     ;(async () => {
-      const submission = await loadLatestSubmissionForIde(problem.id)
-      if (cancelled || userEditedRef.current) return
-      if (submission?.code) {
-        setLanguage(submission.language || language)
-        codeRef.current = submission.code
-        const editor = editorRef.current
-        if (editor && editor.getValue() !== submission.code) {
-          editor.setValue(submission.code)
+      setDraftState('restoring')
+      try {
+        const submission = await loadLatestSubmissionForIde(problem.id)
+        if (cancelled || userEditedRef.current) return
+        if (submission?.code) {
+          setLanguage(submission.language || language)
+          codeRef.current = submission.code
+          const editor = editorRef.current
+          if (editor && editor.getValue() !== submission.code) {
+            editor.setValue(submission.code)
+          }
+          setDraftState('restored')
+          scheduleDraftSync()
+        } else {
+          setDraftState('empty')
         }
-        scheduleDraftSync()
+      } catch {
+        if (!cancelled) setDraftState('empty')
       }
     })()
     return () => { cancelled = true }
@@ -280,6 +295,7 @@ const OjIdePanel = ({
 
   const updateLanguage = useCallback((next: string) => {
     userEditedRef.current = true
+    setDraftState('saved')
     const editor = editorRef.current
     const monaco = monacoRef.current
     const model = editor?.getModel()
@@ -340,6 +356,11 @@ const OjIdePanel = ({
     }
   }, [currentUser, fetchJson, language, openAuth, problem.id])
 
+  useEffect(() => {
+    const output = outputRef.current
+    if (output && runOutput) output.scrollTop = output.scrollHeight
+  }, [runOutput])
+
   const runSample = useCallback(async (index: number) => {
     const sample = problem.samples?.[index]
     if (!sample) return
@@ -388,6 +409,10 @@ const OjIdePanel = ({
               onChange={updateLanguage}
               options={languageOptions.map((item) => ({ value: item.value, label: item.label }))}
             />
+            <div className={`ide-draft-status is-${draftState}`} role="status" aria-live="polite">
+              <span className="ide-draft-status-dot" aria-hidden="true" />
+              {draftState === 'restoring' ? '正在恢复代码…' : draftState === 'restored' ? '已恢复最近提交' : draftState === 'saved' ? '草稿已保留' : '等待输入代码'}
+            </div>
           </div>
           <div className="ide-header-right">
             <button
@@ -417,6 +442,7 @@ const OjIdePanel = ({
                 editor.onDidChangeModelContent(() => {
                   userEditedRef.current = true
                   codeRef.current = editor.getValue()
+                  setDraftState('saved')
                   setSubmitError('')
                   scheduleDraftSync()
                 })
@@ -508,7 +534,7 @@ const OjIdePanel = ({
                   </span>
                 )}
               </div>
-                <pre className="ide-run-output">{runOutput || '暂无输出'}</pre>
+                <pre ref={outputRef} className="ide-run-output" aria-live="polite">{runOutput || (runStatus === '运行中' ? '正在等待运行结果…' : '运行结果会显示在这里')}</pre>
               </div>
             </div>
 
