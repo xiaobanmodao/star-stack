@@ -27,6 +27,7 @@ const MyProblemsPage = lazy(() => import('./pages/MyProblemsPage'))
 const CreateProblemPage = lazy(() => import('./pages/CreateProblemPage'))
 const EditProblemPage = lazy(() => import('./pages/EditProblemPage'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
+const ProfileEditPage = lazy(() => import('./pages/ProfileEditPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const OjHomePage = lazy(() => import('./pages/OjHomePage'))
 const OjProblemListPage = lazy(() => import('./pages/OjProblemListPage'))
@@ -607,6 +608,7 @@ function App() {
                 <Routes>
                   <Route path="/" element={<HomePage />} />
                   <Route path="/account" element={<AccountPage />} />
+                  <Route path="/account/edit" element={<ProfileEditPage />} />
                   <Route path="/user/:userId" element={<UserProfilePage />} />
                   {/* 排行榜功能已屏蔽 */}
                   <Route path="/leaderboard" element={<Navigate to="/" replace />} />
