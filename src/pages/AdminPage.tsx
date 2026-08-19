@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
+import { useToast } from '../components/ui/ToastContext'
 import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
 import type { AdminAuditLog, AdminMetricsResponse, AdminProblem, AdminReport, AdminStatsResponse, UserRecord, ApiResponse } from '../types'
@@ -8,13 +9,14 @@ import './CreatorAdminPages.css'
 
 export default function AdminPage() {
   const { currentUser, openAuth } = useAppContext()
+  const { showToast } = useToast()
   const navigate = useNavigate()
   const [adminUsers, setAdminUsers] = useState<UserRecord[]>([])
   const [adminLoading, setAdminLoading] = useState(false)
   const [adminError, setAdminError] = useState('')
   const [adminActionError, setAdminActionError] = useState('')
   const [adminActionMessage, setAdminActionMessage] = useState('')
-  const [adminActionBusy, setAdminActionBusy] = useState(false)
+  const [adminActionBusyKey, setAdminActionBusyKey] = useState('')
   const [adminCreating, setAdminCreating] = useState(false)
   const [adminTab, setAdminTab] = useState<'users' | 'problems' | 'reports' | 'logs' | 'stats'>('users')
   const [adminUsersPage, setAdminUsersPage] = useState(1)
@@ -84,6 +86,7 @@ export default function AdminPage() {
       setNewUserPassword('')
       setNewUserIsAdmin(false)
       setAdminActionMessage('用户已创建')
+      showToast('用户已创建', 'success')
       await loadAdminUsers()
     } catch {
       setAdminActionError('网络异常，用户创建未完成')
@@ -93,9 +96,10 @@ export default function AdminPage() {
   }
 
   const handleUserAction = async (url: string, body?: Record<string, unknown>) => {
+    if (adminActionBusyKey) return
     setAdminActionError('')
     setAdminActionMessage('')
-    setAdminActionBusy(true)
+    setAdminActionBusyKey(url)
     try {
       const { response, data } = await fetchJson<ApiResponse>(url, {
         method: 'POST',
@@ -106,19 +110,22 @@ export default function AdminPage() {
         return
       }
       setAdminActionMessage('操作已完成')
+      showToast('管理员操作已完成', 'success')
       await loadAdminUsers()
     } catch {
       setAdminActionError('网络异常，操作未完成')
     } finally {
-      setAdminActionBusy(false)
+      setAdminActionBusyKey('')
     }
   }
 
   const handleDeleteUser = async (id: string) => {
+    const busyKey = `delete:${id}`
+    if (adminActionBusyKey) return
     if (!window.confirm(`确认删除用户 ${id} ?`)) return
     setAdminActionError('')
     setAdminActionMessage('')
-    setAdminActionBusy(true)
+    setAdminActionBusyKey(busyKey)
     try {
       const { response, data } = await fetchJson<ApiResponse>(`/api/admin/users/${id}`, {
         method: 'DELETE',
@@ -128,11 +135,12 @@ export default function AdminPage() {
         return
       }
       setAdminActionMessage('用户已删除')
+      showToast('用户已删除', 'success')
       await loadAdminUsers()
     } catch {
       setAdminActionError('网络异常，删除未完成')
     } finally {
-      setAdminActionBusy(false)
+      setAdminActionBusyKey('')
     }
   }
 
@@ -245,26 +253,26 @@ export default function AdminPage() {
         title="星栈后台管理"
         description="用户、题库与测试用例配置集中在一个轻量控制台里，优先保证可扫读和低性能设备流畅度。"
         actions={
-          <Button variant="ghost" onClick={loadAdminUsers} disabled={adminLoading}>
+          <Button variant="ghost" onClick={loadAdminUsers} loading={adminLoading}>
             刷新用户
           </Button>
         }
       />
 
-      <div className="admin-tabs" role="tablist">
-        <button type="button" className={adminTab === 'users' ? 'active' : ''} onClick={() => setAdminTab('users')}>
+      <div className="admin-tabs" role="tablist" aria-label="后台功能模块">
+        <button type="button" role="tab" aria-selected={adminTab === 'users'} className={adminTab === 'users' ? 'active' : ''} onClick={() => setAdminTab('users')}>
           用户管理
         </button>
-        <button type="button" className={adminTab === 'problems' ? 'active' : ''} onClick={() => setAdminTab('problems')}>
+        <button type="button" role="tab" aria-selected={adminTab === 'problems'} className={adminTab === 'problems' ? 'active' : ''} onClick={() => setAdminTab('problems')}>
           题目管理
         </button>
-        <button type="button" className={adminTab === 'reports' ? 'active' : ''} onClick={() => setAdminTab('reports')}>
+        <button type="button" role="tab" aria-selected={adminTab === 'reports'} className={adminTab === 'reports' ? 'active' : ''} onClick={() => setAdminTab('reports')}>
           举报处理
         </button>
-        <button type="button" className={adminTab === 'logs' ? 'active' : ''} onClick={() => setAdminTab('logs')}>
+        <button type="button" role="tab" aria-selected={adminTab === 'logs'} className={adminTab === 'logs' ? 'active' : ''} onClick={() => setAdminTab('logs')}>
           操作日志
         </button>
-        <button type="button" className={adminTab === 'stats' ? 'active' : ''} onClick={() => setAdminTab('stats')}>
+        <button type="button" role="tab" aria-selected={adminTab === 'stats'} className={adminTab === 'stats' ? 'active' : ''} onClick={() => setAdminTab('stats')}>
           站点看板
         </button>
       </div>
@@ -416,7 +424,7 @@ export default function AdminPage() {
                         void handleUserAction(`/api/admin/users/${user.id}/promote`)
                       }
                     }}
-                    loading={adminActionBusy}
+                    loading={adminActionBusyKey === `/api/admin/users/${user.id}/promote`}
                   >
                     提升管理员
                   </Button>
@@ -430,7 +438,7 @@ export default function AdminPage() {
                         void handleUserAction(`/api/admin/users/${user.id}/demote`)
                       }
                     }}
-                    loading={adminActionBusy}
+                    loading={adminActionBusyKey === `/api/admin/users/${user.id}/demote`}
                   >
                     降为普通
                   </Button>
@@ -447,7 +455,7 @@ export default function AdminPage() {
                       })
                     }
                   }}
-                  loading={adminActionBusy}
+                  loading={adminActionBusyKey === `/api/admin/users/${user.id}/reset-password`}
                 >
                   重置密码
                 </Button>
@@ -462,11 +470,11 @@ export default function AdminPage() {
                       })
                     }
                   }}
-                  loading={adminActionBusy}
+                  loading={adminActionBusyKey === `/api/admin/users/${user.id}/ban`}
                 >
                   {user.isBanned ? '解除封禁' : '封禁'}
                 </Button>
-                <Button variant="danger" size="sm" onClick={() => void handleDeleteUser(user.id)} loading={adminActionBusy}>
+                <Button variant="danger" size="sm" onClick={() => void handleDeleteUser(user.id)} loading={adminActionBusyKey === `delete:${user.id}`}>
                   删除
                 </Button>
               </div>

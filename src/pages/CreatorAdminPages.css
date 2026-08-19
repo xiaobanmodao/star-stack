@@ -1139,6 +1139,13 @@ button.danger:hover {
   color: var(--ss-color-text);
 }
 
+.admin-console-v2 .admin-tabs button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--ss-color-accent-strong);
+  outline-offset: 2px;
+}
+
 .admin-console-v2 .admin-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
