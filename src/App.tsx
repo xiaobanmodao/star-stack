@@ -589,6 +589,7 @@ function App() {
                     className="topbar-message-btn"
                     onClick={() => navigate('/messages')}
                     title={unreadMessageCount > 0 ? `${unreadMessageCount} 条未读消息` : '私信'}
+                    aria-label={unreadMessageCount > 0 ? `私信，${unreadMessageCount} 条未读消息` : '私信'}
                   >
                     <svg viewBox="0 0 24 24" width="20" height="20">
                       <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
@@ -671,21 +672,21 @@ function App() {
             </div>
           </div>
           <nav className="mobile-tabbar" aria-label="移动端导航">
-            <button className={location.pathname === '/' ? 'active' : ''} type="button" onClick={() => navigate('/')}>
+            <button className={location.pathname === '/' ? 'active' : ''} type="button" aria-current={location.pathname === '/' ? 'page' : undefined} onClick={() => navigate('/')}>
               <span className="mobile-tabbar-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5" /><path d="M5.5 10.8V20h5v-5h3v5h5v-9.2" /></svg>
               </span>
               首页
             </button>
             {OJ_ENABLED && (
-              <button className={location.pathname.startsWith('/oj') ? 'active' : ''} type="button" onClick={() => navigate('/oj/list')}>
+              <button className={location.pathname.startsWith('/oj') ? 'active' : ''} type="button" aria-current={location.pathname.startsWith('/oj') ? 'page' : undefined} onClick={() => navigate('/oj/list')}>
                 <span className="mobile-tabbar-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24"><path d="M7.5 7 3.5 12l4 5" /><path d="M16.5 7 20.5 12l-4 5" /><path d="M10 17l4-10" /></svg>
                 </span>
                 题库
               </button>
             )}
-            <button className={location.pathname.startsWith('/chat') ? 'active' : ''} type="button" onClick={() => navigate('/chat')}>
+            <button className={location.pathname.startsWith('/chat') ? 'active' : ''} type="button" aria-current={location.pathname.startsWith('/chat') ? 'page' : undefined} onClick={() => navigate('/chat')}>
               <span className="mobile-tabbar-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
               </span>
