@@ -157,6 +157,7 @@ export default function OjJudgePage() {
   }[]>([])
   const [totalCases, setTotalCases] = useState(0)
   const [queuePosition, setQueuePosition] = useState<number | null>(null)
+  const [activeSubmissionId, setActiveSubmissionId] = useState<number | null>(null)
   const [celebrationStats, setCelebrationStats] = useState<JudgeCelebrationStats | null>(null)
   const [recentAchievements, setRecentAchievements] = useState<Achievement[]>([])
   const [cancelling, setCancelling] = useState(false)
@@ -173,15 +174,9 @@ export default function OjJudgePage() {
       }
       if (data?.submission) {
         streamCompletedRef.current = true
+        setActiveSubmissionId(data.submission.id)
         setSubmission(data.submission)
         const pending = data.submission.status === 'Queued' || data.submission.status === 'Judging'
-        if (pending) {
-          setQueuePosition(data.submission.queuePosition && data.submission.queuePosition > 0 ? data.submission.queuePosition : null)
-          setStage('running')
-          setShowResults(false)
-          setError('')
-          return
-        }
         const failed = data.submission.status !== 'Accepted'
         if (failed && data.submission.code && data.submission.language) {
           setRetryPayload({
@@ -190,8 +185,15 @@ export default function OjJudgePage() {
             language: data.submission.language,
             code: data.submission.code,
           })
-        } else {
+        } else if (!pending) {
           setRetryPayload(null)
+        }
+        if (pending) {
+          setQueuePosition(data.submission.queuePosition && data.submission.queuePosition > 0 ? data.submission.queuePosition : null)
+          setStage('running')
+          setShowResults(false)
+          setError('')
+          return
         }
         setStage(data.submission.status === 'Accepted' ? 'success' : 'fail')
         setShowResults(true)
@@ -305,14 +307,20 @@ export default function OjJudgePage() {
             try {
               const payload = JSON.parse(line.slice(6))
               if (eventType === 'queued') {
-                if (Number(payload.submissionId) > 0) persistedSubmissionIdRef.current = Number(payload.submissionId)
+                if (Number(payload.submissionId) > 0) {
+                  persistedSubmissionIdRef.current = Number(payload.submissionId)
+                  setActiveSubmissionId(Number(payload.submissionId))
+                }
                 setQueuePosition(Number(payload.position) > 0 ? Number(payload.position) : null)
                 if (payload.totalCases) setTotalCases(payload.totalCases)
               } else if (eventType === 'heartbeat') {
                 const position = Number(payload.queuePosition) || 0
                 setQueuePosition(position > 0 ? position : null)
               } else if (eventType === 'start') {
-                if (Number(payload.submissionId) > 0) persistedSubmissionIdRef.current = Number(payload.submissionId)
+                if (Number(payload.submissionId) > 0) {
+                  persistedSubmissionIdRef.current = Number(payload.submissionId)
+                  setActiveSubmissionId(Number(payload.submissionId))
+                }
                 setQueuePosition(null)
                 setTotalCases(payload.totalCases)
               } else if (eventType === 'testcase') {
@@ -321,6 +329,7 @@ export default function OjJudgePage() {
                 setQueuePosition(null)
                 persistedSubmissionIdRef.current = null
                 doneSubmission = payload.submission
+                if (Number(payload.submission?.id) > 0) setActiveSubmissionId(Number(payload.submission.id))
               } else if (eventType === 'error') {
                 setQueuePosition(null)
                 setError(payload.message || '评测失败，请稍后重试')
@@ -385,14 +394,16 @@ export default function OjJudgePage() {
     setStreamResults([])
     setTotalCases(0)
     setQueuePosition(null)
+    setActiveSubmissionId(null)
     void submitJudge()
   }, [retryPayload, submitJudge])
 
   const cancelQueuedSubmission = useCallback(async () => {
-    if (!submissionId || cancelling) return
+    const targetSubmissionId = submissionId || activeSubmissionId
+    if (!targetSubmissionId || cancelling) return
     setCancelling(true)
     try {
-      const { response, data } = await fetchJson<{ message?: string }>(`/api/oj/submissions/${submissionId}/cancel`, {
+      const { response, data } = await fetchJson<{ message?: string }>(`/api/oj/submissions/${targetSubmissionId}/cancel`, {
         method: 'POST',
       })
       if (!response.ok) {
@@ -401,6 +412,7 @@ export default function OjJudgePage() {
       }
       streamAbortRef.current?.abort()
       setQueuePosition(null)
+      setActiveSubmissionId(targetSubmissionId)
       setSubmission((current) => current ? { ...current, status: 'Cancelled', message: data?.message || '评测请求已取消' } : current)
       setStage('fail')
       setShowResults(true)
@@ -410,7 +422,7 @@ export default function OjJudgePage() {
     } finally {
       setCancelling(false)
     }
-  }, [cancelling, submissionId])
+  }, [activeSubmissionId, cancelling, submissionId])
 
   // 卸载时中止评测流连接
   useEffect(() => {
@@ -436,6 +448,7 @@ export default function OjJudgePage() {
       setStreamResults([])
       setTotalCases(0)
       setQueuePosition(null)
+      setActiveSubmissionId(null)
     }
     lastPayloadKeyRef.current = payloadKey
   }, [locationState.code, locationState.language, locationState.problemId])
@@ -456,6 +469,7 @@ export default function OjJudgePage() {
     setStreamResults([])
     setTotalCases(0)
     setQueuePosition(null)
+    setActiveSubmissionId(null)
   }, [submissionId])
 
   useEffect(() => {
@@ -551,9 +565,10 @@ export default function OjJudgePage() {
   const problemTitle = submission?.problemTitle || locationState.problemTitle || retryPayload?.problemTitle || (problemId ? `P${problemId}` : '提交结果')
   const statusMeta = getJudgeStatusMeta(submission?.status, stage)
   const canRetrySubmission = stage === 'fail' && Boolean(retryPayload)
-  const passedCases = results.filter((item) => item.status === 'Accepted').length
-  const firstFailedCase = results.find((item) => item.status !== 'Accepted')
-  const resultCaseCount = results.length || totalCases
+  const visibleResults = stage === 'running' ? streamResults : results
+  const passedCases = visibleResults.filter((item) => item.status === 'Accepted').length
+  const firstFailedCase = visibleResults.find((item) => item.status !== 'Accepted')
+  const resultCaseCount = stage === 'running' ? (totalCases || streamResults.length) : results.length
   const visibleProgress = resultCaseCount > 0
     ? Math.round(((stage === 'running' ? streamResults.length : passedCases) / resultCaseCount) * 100)
     : 0
@@ -611,7 +626,7 @@ export default function OjJudgePage() {
                 重新提交
               </Button>
             )}
-            {submissionId && submission?.status === 'Queued' && (
+            {(submission?.status === 'Queued' || (stage === 'running' && queuePosition && activeSubmissionId)) && (
               <Button variant="ghost" onClick={() => void cancelQueuedSubmission()} loading={cancelling}>
                 取消排队
               </Button>
@@ -780,12 +795,12 @@ export default function OjJudgePage() {
         </div>
       )}
 
-      {stage === 'running' && totalCases > 0 && (
+      {stage === 'running' && (totalCases > 0 || streamResults.length > 0) && (
         <Panel className="sse-progress judge-live-progress">
           <div className="sse-progress-bar">
-            <div className="sse-progress-fill" style={{ width: `${(streamResults.length / totalCases) * 100}%` }} />
+            <div className="sse-progress-fill" style={{ width: `${totalCases > 0 ? (streamResults.length / totalCases) * 100 : 0}%` }} />
           </div>
-          <div className="sse-progress-text">{streamResults.length} / {totalCases}</div>
+          <div className="sse-progress-text">已完成 {streamResults.length}{totalCases > 0 ? ` / ${totalCases}` : ' 个测试点'}</div>
           <div className="sse-testcase-grid">
             {streamResults.map((tc) => (
               <span key={tc.index} className={`sse-tc-dot ${tc.status === 'Accepted' ? 'ac' : tc.status === 'Time Limit Exceeded' ? 'tle' : 'err'}`} title={`#${tc.index + 1}: ${tc.status}`} />
@@ -797,18 +812,18 @@ export default function OjJudgePage() {
         </Panel>
       )}
 
-      {showResults && (
+      {(showResults || stage === 'running') && (
         <Panel className="submit-results judge-results-panel">
           <div className="judge-panel-head">
             <div>
               <div className="judge-panel-kicker">Test Cases</div>
-              <h3>测试点结果</h3>
-            </div>
-            <span>{passedCases} / {results.length || 0} Accepted</span>
+            <h3>{stage === 'running' ? '实时测试点结果' : '测试点结果'}</h3>
+          </div>
+            <span>{passedCases} / {resultCaseCount || 0} Accepted{stage === 'running' ? ' · 实时更新' : ''}</span>
           </div>
           <div className="submit-results-grid">
-            {results.length === 0 && <div className="admin-empty">暂无测试点结果</div>}
-            {results.map((item) => (
+            {visibleResults.length === 0 && <div className="admin-empty">等待第一个测试点返回结果…</div>}
+            {visibleResults.map((item) => (
               <div
                 key={`${item.index}-${item.status}`}
                 className={`submit-result ${item.status === 'Accepted' ? 'ok' : 'bad'}`}

@@ -355,6 +355,65 @@
   }
 }
 
+@media (max-width: 720px) {
+  .judge-page-v2 {
+    gap: 10px;
+  }
+
+  .judge-overview {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 10px !important;
+  }
+
+  .judge-visual,
+  .judge-visual .submit-anim {
+    min-height: 168px;
+  }
+
+  .judge-overview-main {
+    padding: 4px;
+  }
+
+  .judge-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .judge-panel-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .judge-results-panel,
+  .judge-live-progress,
+  .judge-first-fail-panel {
+    padding: 12px !important;
+  }
+
+  .judge-results-panel .submit-results-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .judge-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .judge-overview-main h2 {
+    font-size: 24px;
+  }
+
+  .judge-page-v2 .ui-page-header-actions {
+    width: 100%;
+  }
+
+  .judge-page-v2 .ui-page-header-actions .ui-button {
+    flex: 1 1 auto;
+  }
+}
+
 @media (max-width: 560px) {
   .judge-summary-grid,
   .judge-results-panel .submit-results-grid {

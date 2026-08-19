@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { NotificationItem, NotificationType, NotificationsResponse } from '../types'
 import { fetchJson } from '../utils'
@@ -30,6 +30,14 @@ const formatNotifTime = (iso: string) => {
   return `${date.getMonth() + 1}月${date.getDate()}日`
 }
 
+type NotificationFilter = 'all' | 'social' | 'oj' | 'system'
+
+const getNotificationFilter = (item: NotificationItem): Exclude<NotificationFilter, 'all'> => {
+  if (item.type.startsWith('problem.') || item.type === 'achievement.unlocked') return 'oj'
+  if (item.type === 'follow' || item.type === 'comment' || item.type === 'reply' || item.type === 'mention') return 'social'
+  return 'system'
+}
+
 /** 根据通知目标跳转 */
 const targetOf = (item: NotificationItem, navigate: ReturnType<typeof useNavigate>) => {
   if (item.targetType === 'post' && item.targetId) {
@@ -53,6 +61,9 @@ export default function NotificationBell() {
   const [loading, setLoading] = useState(false)
   const [pushEnabled, setPushEnabled] = useState(isPushEnabled)
   const [pushBusy, setPushBusy] = useState(false)
+  const [activeFilter, setActiveFilter] = useState<NotificationFilter>('all')
+  const [unreadOnly, setUnreadOnly] = useState(false)
+  const [readBusy, setReadBusy] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
 
   const loadUnread = useCallback(async () => {
@@ -115,13 +126,19 @@ export default function NotificationBell() {
   }
 
   const handleReadAll = async () => {
-    const { response, data } = await fetchJson<{ unreadCount: number }>('/api/notifications/read', {
-      method: 'POST',
-      body: JSON.stringify({ all: true }),
-    })
-    if (response.ok) {
-      setUnreadCount(data?.unreadCount ?? 0)
-      setItems((prev) => prev.map((item) => ({ ...item, isRead: true })))
+    if (readBusy) return
+    setReadBusy(true)
+    try {
+      const { response, data } = await fetchJson<{ unreadCount: number }>('/api/notifications/read', {
+        method: 'POST',
+        body: JSON.stringify({ all: true }),
+      })
+      if (response.ok) {
+        setUnreadCount(data?.unreadCount ?? 0)
+        setItems((prev) => prev.map((item) => ({ ...item, isRead: true })))
+      }
+    } finally {
+      setReadBusy(false)
     }
   }
 
@@ -145,6 +162,11 @@ export default function NotificationBell() {
     }
   }
 
+  const filteredItems = useMemo(() => items.filter((item) => {
+    const matchesFilter = activeFilter === 'all' || getNotificationFilter(item) === activeFilter
+    return matchesFilter && (!unreadOnly || !item.isRead)
+  }), [activeFilter, items, unreadOnly])
+
   return (
     <div className="notification-bell" ref={panelRef}>
       <button
@@ -153,6 +175,8 @@ export default function NotificationBell() {
         onClick={() => setOpen((prev) => !prev)}
         title={unreadCount > 0 ? `${unreadCount} 条新通知` : '通知'}
         aria-label="通知"
+        aria-expanded={open}
+        aria-haspopup="dialog"
       >
         <svg viewBox="0 0 24 24" width="20" height="20">
           <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
@@ -165,15 +189,37 @@ export default function NotificationBell() {
         <div className="notif-panel">
           <div className="notif-panel-head">
             <span>通知</span>
-            {unreadCount > 0 && <button type="button" onClick={() => void handleReadAll()}>全部已读</button>}
+            {unreadCount > 0 && <button type="button" onClick={() => void handleReadAll()} disabled={readBusy}>{readBusy ? '处理中…' : '全部已读'}</button>}
+          </div>
+          <div className="notif-filters" role="tablist" aria-label="通知筛选">
+            {([
+              ['all', '全部'],
+              ['social', '互动'],
+              ['oj', '题库'],
+              ['system', '其他'],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={activeFilter === value}
+                className={activeFilter === value ? 'active' : ''}
+                onClick={() => setActiveFilter(value)}
+              >
+                {label}
+              </button>
+            ))}
+            <button type="button" className={`notif-unread-toggle ${unreadOnly ? 'active' : ''}`} onClick={() => setUnreadOnly((value) => !value)}>
+              仅未读
+            </button>
           </div>
           <div className="notif-list">
             {loading ? (
               <div className="notif-empty">加载中...</div>
-            ) : items.length === 0 ? (
+            ) : filteredItems.length === 0 ? (
               <div className="notif-empty">还没有通知</div>
             ) : (
-              items.map((item) => (
+              filteredItems.map((item) => (
                 <button
                   key={item.id}
                   type="button"

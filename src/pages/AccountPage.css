@@ -664,6 +664,114 @@
   margin-top: 12px;
 }
 
+.profile-recent-submissions {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.profile-recent-list {
+  display: grid;
+  gap: 6px;
+}
+
+.profile-recent-list button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: var(--ss-radius-md);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-recent-list button:hover {
+  border-color: var(--ss-color-border);
+  background: var(--ss-hover-layer);
+}
+
+.profile-submission-status {
+  min-width: 42px;
+  padding: 4px 6px;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-sm);
+  color: var(--ss-color-text-muted);
+  font-family: var(--ss-font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.profile-submission-status.accepted {
+  border-color: var(--ss-success-border);
+  background: var(--ss-success-bg);
+  color: var(--ss-color-success);
+}
+
+.profile-submission-status.pending {
+  border-color: var(--ss-accent-border);
+  background: var(--ss-accent-bg);
+  color: var(--ss-color-accent);
+}
+
+.profile-submission-status.failed {
+  border-color: var(--ss-danger-border);
+  background: var(--ss-danger-bg);
+  color: var(--ss-color-danger);
+}
+
+.profile-submission-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.profile-submission-copy strong,
+.profile-submission-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-submission-copy strong {
+  color: var(--ss-color-text);
+  font-size: 13px;
+}
+
+.profile-submission-copy span {
+  color: var(--ss-color-text-subtle);
+  font-size: 11px;
+}
+
+.profile-submission-arrow {
+  color: var(--ss-color-text-subtle);
+  font-size: 16px;
+}
+
+.profile-recent-empty {
+  padding: 18px 10px;
+  border: 1px dashed var(--ss-color-border);
+  border-radius: var(--ss-radius-md);
+  color: var(--ss-color-text-subtle);
+  font-size: 13px;
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  .profile-recent-list button {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .profile-submission-arrow {
+    display: none;
+  }
+}
+
 /* ---------- 浅色主题：星图节点改浅底深字 ---------- */
 :root[data-theme='light'] .profile-star-node {
   background: var(--ss-star-node-bg);

@@ -10,8 +10,10 @@ import type {
   DifficultyStats,
   HeatmapData,
   HeatmapResponse,
+  OjSubmission,
   ProfileStats,
   ProfileStatsResponse,
+  SubmissionsResponse,
 } from '../types'
 import { fetchJson } from '../utils'
 import { OJ_ENABLED } from '../constants'
@@ -39,6 +41,17 @@ const getRatingDelta = (history: { date: string; rating: number }[]) => {
   return history[history.length - 1].rating - history[0].rating
 }
 
+const getSubmissionLabel = (status: string) => {
+  if (status === 'Accepted') return 'AC'
+  if (status === 'Wrong Answer') return 'WA'
+  if (status === 'Time Limit Exceeded') return 'TLE'
+  if (status === 'Runtime Error') return 'RE'
+  if (status === 'Compile Error') return 'CE'
+  if (status === 'Queued') return '排队'
+  if (status === 'Judging') return '评测'
+  return status || '未知'
+}
+
 export default function AccountPage() {
   const navigate = useNavigate()
   const { currentUser, openAuth } = useAppContext()
@@ -50,6 +63,7 @@ export default function AccountPage() {
   const [profileError, setProfileError] = useState('')
   const [profileReloadKey, setProfileReloadKey] = useState(0)
   const [ratingHistory, setRatingHistory] = useState<{ date: string; rating: number }[]>([])
+  const [recentSubmissions, setRecentSubmissions] = useState<OjSubmission[]>([])
   const [relations, setRelations] = useState<FollowRelations | null>(null)
   const [bookmarks, setBookmarks] = useState<{ id: number; title: string; userName: string; commentCount: number; createdAt: string }[]>([])
   const [problemBookmarks, setProblemBookmarks] = useState<{ id: number; title: string; difficulty?: string; createdAt: string }[]>([])
@@ -104,11 +118,12 @@ export default function AccountPage() {
       setLoading(true)
       setProfileError('')
       try {
-        const [statsRes, heatmapRes, achievementsRes, ratingRes] = await Promise.all([
+        const [statsRes, heatmapRes, achievementsRes, ratingRes, submissionsRes] = await Promise.all([
           fetchJson<ProfileStatsResponse>(`/api/user/profile/${currentUser.id}`),
           fetchJson<{ heatmap: HeatmapResponse }>(`/api/user/heatmap/${currentUser.id}`),
           fetchJson<{ achievements: AchievementsResponse }>(`/api/user/achievements/${currentUser.id}`),
-          fetchJson<{ history: { date: string; rating: number }[] }>(`/api/user/rating-history/${currentUser.id}`)
+          fetchJson<{ history: { date: string; rating: number }[] }>(`/api/user/rating-history/${currentUser.id}`),
+          fetchJson<SubmissionsResponse>('/api/oj/submissions'),
         ])
 
         if (!mounted) return
@@ -119,6 +134,7 @@ export default function AccountPage() {
         if (heatmapRes.response.ok && heatmapRes.data) setHeatmapData(heatmapRes.data.heatmap || [])
         if (achievementsRes.response.ok && achievementsRes.data) setAchievements(achievementsRes.data.achievements || [])
         if (ratingRes.response.ok && ratingRes.data) setRatingHistory(ratingRes.data.history || [])
+        if (submissionsRes.response.ok && submissionsRes.data) setRecentSubmissions((submissionsRes.data.submissions || []).slice(0, 6))
 
         if (failed) {
           setProfileError('部分成长数据加载失败，其他内容仍可正常使用。')
@@ -442,6 +458,34 @@ export default function AccountPage() {
             </svg>
           </Panel>
           )}
+
+          <Panel className="profile-recent-submissions">
+            <div className="profile-panel-head">
+              <div>
+                <div className="profile-kicker">Recent Runs</div>
+                <h2>最近提交</h2>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => navigate('/oj/submissions')}>查看全部</Button>
+            </div>
+            {recentSubmissions.length === 0 ? (
+              <div className="profile-recent-empty">还没有提交记录，去题库完成第一道题吧。</div>
+            ) : (
+              <div className="profile-recent-list">
+                {recentSubmissions.map((item) => (
+                  <button key={item.id} type="button" onClick={() => navigate(`/oj/judge/${item.id}`)}>
+                    <span className={`profile-submission-status ${item.status === 'Accepted' ? 'accepted' : item.status === 'Queued' || item.status === 'Judging' ? 'pending' : 'failed'}`}>
+                      {getSubmissionLabel(item.status)}
+                    </span>
+                    <span className="profile-submission-copy">
+                      <strong>P{item.problemId} · {item.problemTitle || '未命名题目'}</strong>
+                      <span>{item.language} · {item.score ?? 0} 分 · {item.createdAt ? new Date(item.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '刚刚'}</span>
+                    </span>
+                    <span className="profile-submission-arrow" aria-hidden="true">→</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Panel>
         </>
         ) : (
           <Panel className="profile-oj-paused">

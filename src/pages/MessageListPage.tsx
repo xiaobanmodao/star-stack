@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import type { Conversation, ConversationsResponse } from '../types'
 import { fetchJson, htmlToPlainText, isPollingPageVisible } from '../utils'
 import './OpsPages.css'
@@ -14,15 +14,19 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<{ id: string; name: string; avatar?: string }[]>([])
   const [searching, setSearching] = useState(false)
+  const [loadError, setLoadError] = useState('')
 
   const loadConversations = useCallback(async () => {
     try {
       const { response, data } = await fetchJson<ConversationsResponse>('/api/messages/conversations')
       if (response.ok && data) {
         setConversations(data.conversations || [])
+        setLoadError('')
+      } else {
+        setLoadError('会话列表加载失败，请重试。')
       }
-    } catch (error) {
-      console.error('Failed to load conversations:', error)
+    } catch {
+      setLoadError('网络异常，会话列表暂时不可用。')
     } finally {
       setLoading(false)
     }
@@ -131,6 +135,8 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
         <Panel>
           <div className="loading-state">加载中...</div>
         </Panel>
+      ) : loadError ? (
+        <ErrorState description={loadError} onRetry={() => { setLoading(true); void loadConversations() }} />
       ) : conversations.length === 0 ? (
         <Panel>
           <EmptyState
