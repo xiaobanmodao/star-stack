@@ -182,7 +182,7 @@ export const listAdminProblems = async (req, res) => {
   try {
     const query = normalizeSearch(req.query.q)
     const requestedStatus = normalizeSearch(req.query.status, 20)
-    const allowedStatuses = new Set(['draft', 'published', 'hidden'])
+    const allowedStatuses = new Set(['draft', 'pending_review', 'published', 'hidden'])
     const where = []
     const params = []
     if (allowedStatuses.has(requestedStatus)) {
@@ -237,7 +237,7 @@ export const setProblemStatus = async (req, res) => {
   const problemId = parsePositiveInteger(req.params.id)
   const status = normalizeSearch(req.body?.status, 20)
   if (!problemId) return res.status(400).json({ message: '无效的题目 ID' })
-  if (!['draft', 'published', 'hidden'].includes(status)) {
+  if (!['draft', 'pending_review', 'published', 'hidden'].includes(status)) {
     return res.status(400).json({ message: '无效的题目状态' })
   }
   const problem = await db.get(`SELECT id, status, title FROM problems WHERE id = ?`, problemId)
@@ -287,13 +287,14 @@ export const getAdminStats = async (req, res) => {
   if (!auth) return
   const { db } = auth
   try {
-    const [users, posts, comments, chatMessages, rooms, reports, todayActive] = await Promise.all([
+    const [users, posts, comments, chatMessages, rooms, reports, pendingProblems, todayActive] = await Promise.all([
       db.get(`SELECT COUNT(*) as c FROM users`),
       db.get(`SELECT COUNT(*) as c FROM discussion_posts`),
       db.get(`SELECT COUNT(*) as c FROM discussion_comments`),
       db.get(`SELECT COUNT(*) as c FROM chat_messages`),
       db.get(`SELECT COUNT(*) as c FROM chat_rooms`),
       db.get(`SELECT COUNT(*) as c FROM reports WHERE status = 'open'`),
+      db.get(`SELECT COUNT(*) as c FROM problems WHERE status = 'pending_review'`),
       db.get(`SELECT COUNT(*) as c FROM chat_activity_log WHERE day = ?`, localDay()),
     ])
     return res.json({
@@ -304,6 +305,7 @@ export const getAdminStats = async (req, res) => {
         chatMessages: chatMessages?.c || 0,
         rooms: rooms?.c || 0,
         openReports: reports?.c || 0,
+        pendingProblems: pendingProblems?.c || 0,
         todayActive: todayActive?.c || 0,
       },
     })

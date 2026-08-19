@@ -14,6 +14,7 @@ export default function MyProblemsPage() {
   const [error, setError] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [pageInput, setPageInput] = useState('1')
+  const [reviewingId, setReviewingId] = useState<number | null>(null)
   const itemsPerPage = 20
 
   const loadMyProblems = async () => {
@@ -68,6 +69,33 @@ export default function MyProblemsPage() {
     navigate(`/edit-problem/${problemId}`)
   }
 
+  const handleSubmitReview = async (problem: OjProblemSummary, event: React.MouseEvent) => {
+    event.stopPropagation()
+    if (!window.confirm(`确认提交题目「${problem.title}」审核？提交后管理员审核通过才会进入题库。`)) return
+    setReviewingId(problem.id)
+    try {
+      const { response, data } = await fetchJson<ApiResponse>(`/api/problems/${problem.id}/submit-review`, {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        alert(data?.message || '提交审核失败')
+        return
+      }
+      await loadMyProblems()
+    } catch {
+      alert('网络异常，提交审核失败')
+    } finally {
+      setReviewingId(null)
+    }
+  }
+
+  const statusMeta = (status?: string) => {
+    if (status === 'published') return { label: '已发布', tone: 'success' as const }
+    if (status === 'pending_review') return { label: '审核中', tone: 'info' as const }
+    if (status === 'hidden') return { label: '已隐藏', tone: 'danger' as const }
+    return { label: '草稿', tone: 'warning' as const }
+  }
+
   const totalPages = Math.ceil(problems.length / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
@@ -118,7 +146,7 @@ export default function MyProblemsPage() {
     return null
   }
 
-  const publishedCount = problems.length
+  const totalProblemCount = problems.length
   const easyCount = problems.filter((problem) => ['入门', '普及-'].includes(problem.difficulty)).length
   const advancedCount = problems.filter((problem) => ['提高+', '省选', 'NOI', '国集'].includes(problem.difficulty)).length
 
@@ -138,7 +166,7 @@ export default function MyProblemsPage() {
       <div className="my-problems-summary">
         <Panel>
           <span>题目总数</span>
-          <strong>{publishedCount}</strong>
+          <strong>{totalProblemCount}</strong>
         </Panel>
         <Panel>
           <span>入门训练</span>
@@ -175,7 +203,7 @@ export default function MyProblemsPage() {
             <div
               key={problem.id}
               className="oj-card my-problem-card my-problem-card-v2"
-              onClick={() => navigate(`/oj/p${problem.id}`)}
+              onClick={() => navigate(problem.status === 'published' ? `/oj/p${problem.id}` : `/edit-problem/${problem.id}`)}
             >
               <div className="oj-card-title">
                 <span className="oj-code-label">p{problem.id}</span>
@@ -183,6 +211,7 @@ export default function MyProblemsPage() {
               </div>
               <div className="oj-card-meta">
                 <Badge tone="info">{problem.difficulty}</Badge>
+                <Badge tone={statusMeta(problem.status).tone}>{statusMeta(problem.status).label}</Badge>
                 <div className="oj-tags">
                   {problem.tags.map((tag) => (
                     <span key={tag} className="oj-tag">
@@ -199,6 +228,16 @@ export default function MyProblemsPage() {
                 >
                   编辑
                 </Button>
+                {problem.status === 'draft' && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    loading={reviewingId === problem.id}
+                    onClick={(e) => void handleSubmitReview(problem, e)}
+                  >
+                    提交审核
+                  </Button>
+                )}
                 <Button
                   variant="danger"
                   size="sm"

@@ -22,7 +22,7 @@ export type AdminProblem = {
   title: string
   difficulty: string
   tags: string[]
-  status: 'draft' | 'published' | 'hidden' | string
+  status: 'draft' | 'pending_review' | 'published' | 'hidden' | string
   creatorId?: string | null
   creatorName?: string
   testcaseCount?: number
@@ -36,6 +36,7 @@ export type OjProblemSummary = {
   difficulty: string
   tags: string[]
   createdAt?: string
+  status?: 'draft' | 'pending_review' | 'published' | 'hidden' | string
   acCount?: number
   totalCount?: number
   passRate?: number
@@ -534,6 +535,7 @@ export type AdminStatsResponse = {
     chatMessages: number
     rooms: number
     openReports: number
+    pendingProblems: number
     todayActive: number
   }
 }

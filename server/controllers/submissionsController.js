@@ -1,6 +1,8 @@
 import { getDb } from '../db.js'
+import os from 'os'
 import { requireUser } from '../middleware/auth.js'
 import { BoundedCache } from '../utils/boundedCache.js'
+import { createExecutionQueue } from '../utils/executionQueue.js'
 import { judgeSubmission, runSample, runSamples } from '../judge.js'
 import { DEFAULT_TESTCASE_TIME_LIMIT_MS } from '../utils/testcaseLimits.js'
 import {
@@ -31,70 +33,14 @@ const MAX_CODE_LENGTH = 100000
 const judgeRateLimits = new BoundedCache(2000, 10000)
 const runRateLimits = new BoundedCache(5000, 1000)
 
-// 单个 Node 进程内的有界 FIFO 执行队列。
-// 队列只负责调度，不会把用户代码并行塞进同一个工作目录。
-const createExecutionQueue = ({ maxActive, maxQueued }) => {
-  const pending = []
-  let active = 0
-
-  const drain = () => {
-    while (active < maxActive && pending.length > 0) {
-      const task = pending.shift()
-      if (!task || task.cancelled) continue
-
-      task.started = true
-      active += 1
-      Promise.resolve()
-        .then(() => task.onStart?.())
-        .then(() => task.run())
-        .then(task.resolve, task.reject)
-        .finally(() => {
-          active = Math.max(0, active - 1)
-          drain()
-        })
-    }
-  }
-
-  const enqueue = (run, { onStart } = {}) => {
-    let task
-    const promise = new Promise((resolve, reject) => {
-      task = { run, onStart, resolve, reject, started: false, cancelled: false }
-      pending.push(task)
-      drain()
-    })
-
-    return {
-      promise,
-      getPosition: () => {
-        if (!task || task.started || task.cancelled) return null
-        const index = pending.indexOf(task)
-        return index >= 0 ? index + 1 : null
-      },
-      cancel: () => {
-        if (!task || task.started || task.cancelled) return false
-        const index = pending.indexOf(task)
-        if (index < 0) return false
-        pending.splice(index, 1)
-        task.cancelled = true
-        task.reject(new Error('评测请求已取消'))
-        drain()
-        return true
-      },
-    }
-  }
-
-  return {
-    enqueue,
-    isFull: () => pending.length >= maxQueued,
-    get active() { return active },
-    get queued() { return pending.length },
-    maxActive,
-    maxQueued,
-  }
-}
-
-const judgeQueue = createExecutionQueue({ maxActive: 4, maxQueued: 50 })
-const sandboxQueue = createExecutionQueue({ maxActive: 8, maxQueued: 50 })
+// 2 核 2G 服务器上给用户代码保留明确的并发上限，避免多个编译/运行进程互相争抢 CPU 和内存。
+// 可通过 JUDGE_CONCURRENCY 覆盖，但默认最多使用 2 个评测 worker。
+const detectedCpuCount = typeof os.availableParallelism === 'function'
+  ? os.availableParallelism()
+  : os.cpus().length
+const judgeConcurrency = Math.min(2, Math.max(1, Number(process.env.JUDGE_CONCURRENCY) || detectedCpuCount))
+const judgeQueue = createExecutionQueue({ maxActive: judgeConcurrency, maxQueued: 50, maxQueuedPerKey: 2 })
+const sandboxQueue = createExecutionQueue({ maxActive: Math.min(2, judgeConcurrency), maxQueued: 30, maxQueuedPerKey: 2 })
 
 const beginSandboxRun = (userId, res) => {
   if (runRateLimits.has(userId)) {
@@ -102,7 +48,7 @@ const beginSandboxRun = (userId, res) => {
     res.status(429).json({ message: '测试运行过于频繁，请稍后再试' })
     return false
   }
-  if (sandboxQueue.isFull()) {
+  if (sandboxQueue.isFullFor(userId)) {
     res.setHeader('Retry-After', '5')
     res.status(503).json({
       message: '测试运行排队人数已满，请稍后再试',
@@ -303,7 +249,7 @@ export const submitSolution = async (req, res) => {
     res.setHeader('Retry-After', '10')
     return res.status(429).json({ message: '提交过于频繁，请稍后再试' })
   }
-  if (judgeQueue.isFull()) {
+  if (judgeQueue.isFullFor(user.id)) {
     res.setHeader('Retry-After', '5')
     return res.status(503).json({
       message: '评测排队人数已满，请稍后再试',
@@ -315,7 +261,10 @@ export const submitSolution = async (req, res) => {
   }
   judgeRateLimits.set(user.id, Date.now())
 
-  const judgeTask = judgeQueue.enqueue(() => judgeSubmission({ language, code: String(code), testcases }))
+  const judgeTask = judgeQueue.enqueue(
+    () => judgeSubmission({ language, code: String(code), testcases }),
+    { key: user.id },
+  )
   const judgeResult = await judgeTask.promise
 
   const saved = await _saveSubmission(db, { problemId: Number(problemId), userId: user.id, language, code: String(code), judgeResult })
@@ -353,7 +302,7 @@ export const streamSubmission = async (req, res) => {
     res.setHeader('Retry-After', '10')
     return res.status(429).json({ message: '提交过于频繁，请稍后再试' })
   }
-  if (judgeQueue.isFull()) {
+  if (judgeQueue.isFullFor(user.id)) {
     res.setHeader('Retry-After', '5')
     return res.status(503).json({
       message: '评测排队人数已满，请稍后再试',
@@ -372,20 +321,24 @@ export const streamSubmission = async (req, res) => {
   res.flushHeaders()
 
   let closed = false
-  req.on('close', () => { closed = true })
+  let judgeTask
+  let heartbeatTimer
+  req.on('close', () => {
+    closed = true
+    // 仅取消还未开始的任务；运行中的评测由沙箱自身超时与回收，避免残留孤儿进程。
+    judgeTask?.cancel()
+  })
   const sendEvent = (event, data) => {
     if (closed) return
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
   }
-  let judgeTask
-  let heartbeatTimer
   try {
     judgeTask = judgeQueue.enqueue(
       () => judgeSubmission({
         language, code: String(code), testcases,
         onTestCase: (tc) => sendEvent('testcase', tc),
       }),
-      { onStart: () => sendEvent('start', { totalCases: testcases.length }) },
+      { key: user.id, onStart: () => sendEvent('start', { totalCases: testcases.length }) },
     )
 
     const queuePosition = judgeTask.getPosition()
@@ -406,7 +359,6 @@ export const streamSubmission = async (req, res) => {
       })
     }, 15000)
 
-    req.on('close', () => { judgeTask?.cancel() })
     const judgeResult = await judgeTask.promise
 
     const saved = await _saveSubmission(db, { problemId: Number(problemId), userId: user.id, language, code: String(code), judgeResult })
@@ -454,7 +406,7 @@ export const runSampleHandler = async (req, res) => {
     code: String(code),
     input: String(sample.input ?? ''),
     timeLimitMs: sample.timeLimitMs || DEFAULT_TESTCASE_TIME_LIMIT_MS,
-  }))
+  }), { key: user.id })
   try {
     const runResult = await runTask.promise
     const normalize = (text) => String(text ?? '').replace(/\r\n/g, '\n').trim()
@@ -488,7 +440,7 @@ export const runCustomHandler = async (req, res) => {
     code: String(code),
     input: String(input ?? ''),
     timeLimitMs: DEFAULT_TESTCASE_TIME_LIMIT_MS,
-  }))
+  }), { key: user.id })
   try {
     const runResult = await runTask.promise
     const normalize = (text) => String(text ?? '').replace(/\r\n/g, '\n').trim()
@@ -531,7 +483,7 @@ export const runSamplesHandler = async (req, res) => {
       input: String(s.input ?? ''),
       timeLimitMs: s.timeLimitMs || DEFAULT_TESTCASE_TIME_LIMIT_MS,
     })),
-  }))
+  }), { key: user.id })
   try {
     const runResult = await runTask.promise
     if (runResult.status !== 'OK') {

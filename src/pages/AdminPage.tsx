@@ -546,7 +546,7 @@ export default function AdminPage() {
 // === 题目审核 ===
 
 function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
-  const [status, setStatus] = useState<'all' | 'draft' | 'published' | 'hidden'>('all')
+  const [status, setStatus] = useState<'all' | 'draft' | 'pending_review' | 'published' | 'hidden'>('all')
   const [query, setQuery] = useState('')
   const [problems, setProblems] = useState<AdminProblem[]>([])
   const [loading, setLoading] = useState(true)
@@ -581,7 +581,7 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
   }, [load, query])
 
   const updateStatus = async (problem: AdminProblem, nextStatus: string) => {
-    const statusText = nextStatus === 'published' ? '发布' : nextStatus === 'hidden' ? '隐藏' : '转为草稿'
+    const statusText = nextStatus === 'published' ? '发布' : nextStatus === 'hidden' ? '隐藏' : nextStatus === 'pending_review' ? '标记为审核中' : '转为草稿'
     if (!window.confirm(`确认将题目「${problem.title}」${statusText}？`)) return
     setBusyId(problem.id)
     setError('')
@@ -622,7 +622,7 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
     }
   }
 
-  const statusLabel = (value: string) => value === 'draft' ? '草稿' : value === 'hidden' ? '隐藏' : '已发布'
+  const statusLabel = (value: string) => value === 'draft' ? '草稿' : value === 'pending_review' ? '待审核' : value === 'hidden' ? '隐藏' : '已发布'
 
   return (
     <section className="admin-section admin-users-panel">
@@ -644,6 +644,7 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
         <select className="auth-input" value={status} onChange={(event) => setStatus(event.target.value as typeof status)} aria-label="题目状态">
           <option value="all">全部状态</option>
           <option value="draft">草稿</option>
+          <option value="pending_review">待审核</option>
           <option value="published">已发布</option>
           <option value="hidden">已隐藏</option>
         </select>
@@ -671,7 +672,7 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
                 <span className="admin-problem-slug">P{problem.id} · {problem.slug || '-'}</span>
               </div>
               <div>{problem.difficulty}</div>
-              <div><Badge tone={problem.status === 'published' ? 'success' : problem.status === 'hidden' ? 'danger' : 'warning'}>{statusLabel(problem.status)}</Badge></div>
+              <div><Badge tone={problem.status === 'published' ? 'success' : problem.status === 'hidden' ? 'danger' : problem.status === 'pending_review' ? 'info' : 'warning'}>{statusLabel(problem.status)}</Badge></div>
               <div>{problem.testcaseCount || 0}</div>
               <div>{problem.creatorName || problem.creatorId || '-'}</div>
               <div className="admin-row-actions">
@@ -948,6 +949,7 @@ function AdminStatsSection() {
         { label: '聊天室', value: stats.rooms },
         { label: '今日活跃', value: stats.todayActive },
         { label: '待处理举报', value: stats.openReports },
+        { label: '待审核题目', value: stats.pendingProblems },
       ]
     : []
 

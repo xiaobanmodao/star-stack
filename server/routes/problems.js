@@ -9,6 +9,7 @@ import {
   getMyProblems,
   getProblemForEdit,
   updateProblem,
+  submitProblemForReview,
   deleteProblem,
 } from '../controllers/problemsController.js'
 
@@ -23,6 +24,7 @@ router.post('/problems', createProblem)
 router.get('/my-problems', getMyProblems)
 router.get('/problems/:id/edit', getProblemForEdit)
 router.put('/problems/:id', updateProblem)
+router.post('/problems/:id/submit-review', submitProblemForReview)
 router.delete('/problems/:id', deleteProblem)
 
 export default router

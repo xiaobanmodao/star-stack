@@ -7,6 +7,11 @@ import {
   parseTestcaseTimeLimit,
 } from '../utils/testcaseLimits.js'
 import { recordAdminAction } from '../utils/adminAudit.js'
+import {
+  getAdminCreateStatus,
+  getCreatorUpdateStatus,
+  normalizeProblemStatus,
+} from '../utils/problemStatus.js'
 
 const solutionRateLimits = new BoundedCache(5000, 10000)
 const MAX_TEST_FILE_BYTES = 2 * 1024 * 1024
@@ -368,11 +373,8 @@ export const createProblem = async (req, res) => {
   if (sampleError) return res.status(400).json({ message: sampleError })
   if (testFileError) return res.status(400).json({ message: testFileError })
 
-  // 普通出题者不能通过篡改请求体把草稿直接发布或解除管理员隐藏；
-  // 只有管理员可以改变题目审核状态。
-  const nextStatus = user.is_admin
-    ? (['draft', 'published', 'hidden'].includes(status) ? status : (problem.status || 'draft'))
-    : (problem.status || 'draft')
+  // 普通出题者创建的题目始终从草稿开始，管理员创建时可以直接发布或保存草稿。
+  const nextStatus = user.is_admin ? getAdminCreateStatus(status) : 'draft'
 
   const now = new Date().toISOString()
   try {
@@ -391,7 +393,7 @@ export const createProblem = async (req, res) => {
       Array.isArray(tags) ? tags.join(',') : (tags || ''),
       sanitizedStatement, sanitizedInputDesc, sanitizedOutputDesc, sanitizedDataRange,
       JSON.stringify(normalizedSamples), user.id,
-      user.is_admin ? (status === 'draft' ? 'draft' : 'published') : 'draft',
+      nextStatus,
       now
     )
 
@@ -417,7 +419,7 @@ export const createProblem = async (req, res) => {
         action: 'problem.create',
         targetType: 'problem',
         targetId: nextId,
-        detail: { title: title.trim(), status: status === 'draft' ? 'draft' : 'published' },
+        detail: { title: title.trim(), status: nextStatus },
       })
     }
     return res.json({ message: '题目创建成功', problemId: nextId, slug: `p${nextId}` })
@@ -509,6 +511,11 @@ export const updateProblem = async (req, res) => {
   if (sampleError) return res.status(400).json({ message: sampleError })
   if (testFileError) return res.status(400).json({ message: testFileError })
 
+  // 管理员可以调整审核状态；普通作者编辑非草稿题目时退回草稿，必须重新提交审核。
+  const nextStatus = user.is_admin
+    ? normalizeProblemStatus(status, problem.status || 'draft')
+    : getCreatorUpdateStatus(problem.status)
+
   const now = new Date().toISOString()
   try {
     await db.exec('BEGIN IMMEDIATE')
@@ -586,4 +593,33 @@ export const deleteProblem = async (req, res) => {
     console.error('删除题目失败:', error)
     return res.status(500).json({ message: '删除题目失败' })
   }
+}
+
+export const submitProblemForReview = async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  const problemId = Number(req.params.id)
+  if (!problemId) return res.status(400).json({ message: '无效的题目ID' })
+
+  const problem = await db.get(
+    `SELECT id, creator_id, title, status FROM problems WHERE id = ?`,
+    problemId,
+  )
+  if (!problem) return res.status(404).json({ message: '题目不存在' })
+  if (problem.creator_id !== user.id && !user.is_admin) {
+    return res.status(403).json({ message: '无权限提交此题目审核' })
+  }
+  if (user.is_admin) {
+    return res.status(400).json({ message: '管理员可以直接在管理面板发布题目' })
+  }
+  if (problem.status === 'pending_review') {
+    return res.status(400).json({ message: '题目已经在审核中' })
+  }
+  if (problem.status !== 'draft') {
+    return res.status(400).json({ message: '只有草稿题目可以提交审核' })
+  }
+
+  await db.run(`UPDATE problems SET status = 'pending_review' WHERE id = ?`, problemId)
+  return res.json({ message: '题目已提交审核', problemId, status: 'pending_review' })
 }
