@@ -174,6 +174,7 @@ const LEGACY_COLUMN_PATCHES = [
   { table: 'submissions', column: 'results_json', definition: 'TEXT' },
   { table: 'submissions', column: 'score', definition: 'INTEGER DEFAULT 0' },
   { table: 'testcases', column: 'is_sample', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'testcases', column: 'time_limit_ms', definition: 'INTEGER NOT NULL DEFAULT 1500' },
 ]
 
 const ensureLegacyColumns = async (db) => {
@@ -241,12 +242,13 @@ const ensureBuiltinProblems = async (db) => {
       await db.run(`DELETE FROM testcases WHERE problem_id = ?`, problem.id)
       for (const testcase of problem.testcases) {
         await db.run(
-          `INSERT INTO testcases (problem_id, input, output, is_sample, created_at)
-           VALUES (?, ?, ?, ?, ?)`,
+          `INSERT INTO testcases (problem_id, input, output, is_sample, time_limit_ms, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
           problem.id,
           testcase.input,
           testcase.output,
           testcase.is_sample,
+          testcase.time_limit_ms || 1500,
           now
         )
       }
@@ -311,6 +313,7 @@ export const initDb = async () => {
       input TEXT NOT NULL,
       output TEXT NOT NULL,
       is_sample INTEGER NOT NULL DEFAULT 0,
+      time_limit_ms INTEGER NOT NULL DEFAULT 1500,
       created_at TEXT NOT NULL,
       FOREIGN KEY (problem_id) REFERENCES problems (id) ON DELETE CASCADE
     );
@@ -403,11 +406,12 @@ export const initDb = async () => {
       for (const sample of samples) {
         if (!sample?.input || sample?.output === undefined) continue
         await db.run(
-          `INSERT INTO testcases (problem_id, input, output, is_sample, created_at)
-           VALUES (?, ?, ?, 1, ?)`,
+          `INSERT INTO testcases (problem_id, input, output, is_sample, time_limit_ms, created_at)
+           VALUES (?, ?, ?, 1, ?, ?)`,
           row.id,
           String(sample.input),
           String(sample.output),
+          sample.timeLimitMs || 1500,
           now
         )
       }

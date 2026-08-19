@@ -136,8 +136,15 @@ export default function OjJudgePage() {
   const streamAbortRef = useRef<AbortController | null>(null)
   const lastPayloadKeyRef = useRef('')
   const previousSubmissionIdRef = useRef(submissionId)
-  const [streamResults, setStreamResults] = useState<{ index: number; status: string; message: string; timeMs: number }[]>([])
+  const [streamResults, setStreamResults] = useState<{
+    index: number
+    status: string
+    message: string
+    timeMs: number
+    timeLimitMs?: number
+  }[]>([])
   const [totalCases, setTotalCases] = useState(0)
+  const [queuePosition, setQueuePosition] = useState<number | null>(null)
   const [celebrationStats, setCelebrationStats] = useState<JudgeCelebrationStats | null>(null)
   const [recentAchievements, setRecentAchievements] = useState<Achievement[]>([])
 
@@ -208,6 +215,7 @@ export default function OjJudgePage() {
     streamAbortRef.current = abortController
     setStreamResults([])
     setTotalCases(0)
+    setQueuePosition(null)
     setCelebrationStats(null)
     setRecentAchievements([])
 
@@ -232,10 +240,12 @@ export default function OjJudgePage() {
         const typedError = errData as {
           message?: string
           activeJudges?: number
+          queuedJudges?: number
           maxActiveJudges?: number
+          maxQueuedJudges?: number
         } | null
         const queueHint = resp.status === 503 && typedError?.activeJudges !== undefined && typedError.maxActiveJudges !== undefined
-          ? `（当前 ${typedError.activeJudges}/${typedError.maxActiveJudges} 个评测任务运行中）`
+          ? `（运行中 ${typedError.activeJudges}/${typedError.maxActiveJudges}，排队中 ${typedError.queuedJudges ?? 0}/${typedError.maxQueuedJudges ?? '--'}）`
           : ''
         const retryAfter = resp.headers.get('Retry-After')
         const retryHint = retryAfter ? `，约 ${retryAfter} 秒后可重试` : ''
@@ -273,13 +283,22 @@ export default function OjJudgePage() {
           } else if (line.startsWith('data: ')) {
             try {
               const payload = JSON.parse(line.slice(6))
-              if (eventType === 'start') {
+              if (eventType === 'queued') {
+                setQueuePosition(Number(payload.position) > 0 ? Number(payload.position) : null)
+                if (payload.totalCases) setTotalCases(payload.totalCases)
+              } else if (eventType === 'heartbeat') {
+                const position = Number(payload.queuePosition) || 0
+                setQueuePosition(position > 0 ? position : null)
+              } else if (eventType === 'start') {
+                setQueuePosition(null)
                 setTotalCases(payload.totalCases)
               } else if (eventType === 'testcase') {
                 setStreamResults(prev => [...prev, payload])
               } else if (eventType === 'done') {
+                setQueuePosition(null)
                 doneSubmission = payload.submission
               } else if (eventType === 'error') {
+                setQueuePosition(null)
                 setError(payload.message || '评测失败，请稍后重试')
                 setStage('fail')
                 setShowResults(true)
@@ -334,6 +353,7 @@ export default function OjJudgePage() {
     setShowResults(false)
     setStreamResults([])
     setTotalCases(0)
+    setQueuePosition(null)
     void submitJudge()
   }, [retryPayload, submitJudge])
 
@@ -360,6 +380,7 @@ export default function OjJudgePage() {
       setShowResults(false)
       setStreamResults([])
       setTotalCases(0)
+      setQueuePosition(null)
     }
     lastPayloadKeyRef.current = payloadKey
   }, [locationState.code, locationState.language, locationState.problemId])
@@ -379,6 +400,7 @@ export default function OjJudgePage() {
     setShowResults(false)
     setStreamResults([])
     setTotalCases(0)
+    setQueuePosition(null)
   }, [submissionId])
 
   useEffect(() => {
@@ -602,7 +624,13 @@ export default function OjJudgePage() {
               </div>
             ))}
           </div>
-          {!submission && stage === 'running' && <div className="judge-status-wait">正在判题，测试点会陆续点亮。</div>}
+          {!submission && stage === 'running' && (
+            <div className="judge-status-wait">
+              {queuePosition
+                ? `评测资源繁忙，已进入队列，当前排位约为第 ${queuePosition} 位。`
+                : '正在判题，测试点会陆续点亮。'}
+            </div>
+          )}
         </div>
       </Panel>
 
@@ -611,7 +639,12 @@ export default function OjJudgePage() {
           <div className="judge-first-fail">
             <span>第一个失败点</span>
             <strong>#{firstFailedCase.index + 1} · {firstFailedCase.status}</strong>
-            {firstFailedCase.timeMs !== undefined && <em>{firstFailedCase.timeMs}ms</em>}
+            {firstFailedCase.timeMs !== undefined && (
+              <em>
+                {firstFailedCase.timeMs}ms
+                {firstFailedCase.timeLimitMs !== undefined && ` / 限时 ${firstFailedCase.timeLimitMs}ms`}
+              </em>
+            )}
             {firstFailedCase.message && <p>{firstFailedCase.message}</p>}
           </div>
         </Panel>
@@ -714,7 +747,12 @@ export default function OjJudgePage() {
               >
                 <div className="submit-result-index">#{item.index + 1}</div>
                 <div className="submit-result-status">{item.status}</div>
-                {item.timeMs !== undefined && <div className="submit-result-time">{item.timeMs}ms</div>}
+                {item.timeMs !== undefined && (
+                  <div className="submit-result-time">
+                    {item.timeMs}ms
+                    {item.timeLimitMs !== undefined && ` / 限时 ${item.timeLimitMs}ms`}
+                  </div>
+                )}
                 {item.message && <div className="submit-result-message">{item.message}</div>}
               </div>
             ))}

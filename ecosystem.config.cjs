@@ -14,7 +14,9 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 5174,
-        ALLOWED_ORIGINS: 'https://xingzhan.cc,https://www.xingzhan.cc'
+        ALLOWED_ORIGINS: 'https://xingzhan.cc,https://www.xingzhan.cc',
+        TURNSTILE_HOSTNAMES: 'xingzhan.cc,www.xingzhan.cc',
+        TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY || ''
       },
       error_file: './logs/api-error.log',
       out_file: './logs/api-out.log',

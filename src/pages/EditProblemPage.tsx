@@ -5,11 +5,17 @@ import CustomSelect from '../components/CustomSelect'
 import TagSelector from '../components/TagSelector'
 import { Badge, Button, ErrorState, LoadingState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
-import { DIFFICULTY_OPTIONS } from '../constants'
+import {
+  DEFAULT_TESTCASE_TIME_LIMIT_MS,
+  DIFFICULTY_OPTIONS,
+  MAX_TESTCASE_TIME_LIMIT_MS,
+  MIN_TESTCASE_TIME_LIMIT_MS,
+} from '../constants'
 import type { ApiResponse } from '../types'
 import './CreatorAdminPages.css'
 
-type TestFileDraft = { name: string; type: 'in' | 'out'; content: string }
+type SampleDraft = { input: string; output: string; timeLimitMs: number }
+type TestFileDraft = { name: string; type: 'in' | 'out'; content: string; timeLimitMs: number }
 
 const sortTestFiles = (files: TestFileDraft[]) => [...files].sort((a, b) => {
   const nameResult = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
@@ -17,15 +23,22 @@ const sortTestFiles = (files: TestFileDraft[]) => [...files].sort((a, b) => {
 })
 
 const validateTestFiles = (files: TestFileDraft[]) => {
-  const pairs = new Map<string, { input?: TestFileDraft; output?: TestFileDraft }>()
+  const pairs = new Map<string, { input?: TestFileDraft; output?: TestFileDraft; timeLimitMs?: number }>()
   for (const file of files) {
     const name = file.name.trim()
     const match = name.match(/^(.+)\.(in|out)$/i)
     if (!match || match[2].toLowerCase() !== file.type) {
       return `测试文件 ${name || '未命名'} 的扩展名与类型不匹配`
     }
+    if (!Number.isInteger(file.timeLimitMs) || file.timeLimitMs < MIN_TESTCASE_TIME_LIMIT_MS || file.timeLimitMs > MAX_TESTCASE_TIME_LIMIT_MS) {
+      return `测试点 ${match[1]} 限时需为 ${MIN_TESTCASE_TIME_LIMIT_MS}～${MAX_TESTCASE_TIME_LIMIT_MS}ms`
+    }
     const key = match[1].toLowerCase()
     const pair = pairs.get(key) || {}
+    if (pair.timeLimitMs !== undefined && pair.timeLimitMs !== file.timeLimitMs) {
+      return `测试点 ${match[1]} 的输入输出限时不一致`
+    }
+    pair.timeLimitMs = file.timeLimitMs
     if (file.type === 'in') {
       if (pair.input) return `测试文件 ${name} 重复`
       pair.input = file
@@ -53,8 +66,8 @@ export default function EditProblemPage() {
   const [inputDesc, setInputDesc] = useState('')
   const [outputDesc, setOutputDesc] = useState('')
   const [dataRange, setDataRange] = useState('')
-  const [samples, setSamples] = useState<{ input: string; output: string }[]>([
-    { input: '', output: '' }
+  const [samples, setSamples] = useState<SampleDraft[]>([
+    { input: '', output: '', timeLimitMs: DEFAULT_TESTCASE_TIME_LIMIT_MS }
   ])
   const [testFiles, setTestFiles] = useState<TestFileDraft[]>([])
   const [error, setError] = useState('')
@@ -84,7 +97,7 @@ export default function EditProblemPage() {
           inputDesc?: string
           outputDesc?: string
           dataRange?: string
-          samples: { input: string; output: string }[]
+          samples: { input: string; output: string; timeLimitMs?: number }[]
           testFiles?: TestFileDraft[]
         }
         message?: string
@@ -105,8 +118,17 @@ export default function EditProblemPage() {
       setInputDesc(problem.inputDesc || '')
       setOutputDesc(problem.outputDesc || '')
       setDataRange(problem.dataRange || '')
-      setSamples(problem.samples.length > 0 ? problem.samples : [{ input: '', output: '' }])
-      setTestFiles(sortTestFiles(problem.testFiles || []))
+      setSamples(problem.samples.length > 0
+        ? problem.samples.map((sample) => ({
+          input: sample.input,
+          output: sample.output,
+          timeLimitMs: sample.timeLimitMs || DEFAULT_TESTCASE_TIME_LIMIT_MS,
+        }))
+        : [{ input: '', output: '', timeLimitMs: DEFAULT_TESTCASE_TIME_LIMIT_MS }])
+      setTestFiles(sortTestFiles((problem.testFiles || []).map((file) => ({
+        ...file,
+        timeLimitMs: file.timeLimitMs || DEFAULT_TESTCASE_TIME_LIMIT_MS,
+      }))))
     } catch {
       setError('网络异常，暂时无法加载题目')
     } finally {
@@ -115,7 +137,7 @@ export default function EditProblemPage() {
   }
 
   const addSample = () => {
-    setSamples((prev) => [...prev, { input: '', output: '' }])
+    setSamples((prev) => [...prev, { input: '', output: '', timeLimitMs: DEFAULT_TESTCASE_TIME_LIMIT_MS }])
   }
 
   const removeSample = (index: number) => {
@@ -125,6 +147,16 @@ export default function EditProblemPage() {
   const updateSample = (index: number, field: 'input' | 'output', value: string) => {
     setSamples((prev) => prev.map((sample, sampleIndex) => (
       sampleIndex === index ? { ...sample, [field]: value } : sample
+    )))
+  }
+
+  const updateSampleTimeLimit = (index: number, value: string) => {
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric)) return
+    setSamples((prev) => prev.map((sample, sampleIndex) => (
+      sampleIndex === index
+        ? { ...sample, timeLimitMs: Math.min(MAX_TESTCASE_TIME_LIMIT_MS, Math.max(MIN_TESTCASE_TIME_LIMIT_MS, Math.round(numeric))) }
+        : sample
     )))
   }
 
@@ -152,7 +184,7 @@ export default function EditProblemPage() {
         const content = await file.text()
         setTestFiles((prev) => sortTestFiles([
           ...prev.filter((item) => item.name !== fileName),
-          { name: fileName, type: ext as 'in' | 'out', content },
+          { name: fileName, type: ext as 'in' | 'out', content, timeLimitMs: DEFAULT_TESTCASE_TIME_LIMIT_MS },
         ]))
       } catch {
         setError(`文件 ${fileName} 读取失败`)
@@ -165,6 +197,20 @@ export default function EditProblemPage() {
     const file = testFiles[index]
     if (file && !window.confirm(`确定删除测试文件 ${file.name} 吗？`)) return
     setTestFiles((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const updateTestFileTimeLimit = (index: number, value: string) => {
+    const file = testFiles[index]
+    if (!file) return
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric)) return
+    const timeLimitMs = Math.min(MAX_TESTCASE_TIME_LIMIT_MS, Math.max(MIN_TESTCASE_TIME_LIMIT_MS, Math.round(numeric)))
+    const baseName = file.name.replace(/\.(in|out)$/i, '').toLowerCase()
+    setTestFiles((prev) => prev.map((item) => (
+      item.name.replace(/\.(in|out)$/i, '').toLowerCase() === baseName
+        ? { ...item, timeLimitMs }
+        : item
+    )))
   }
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -403,22 +449,36 @@ export default function EditProblemPage() {
               <div className="form-section">
                 <div className="form-label-row">
                   <label className="form-label">样例数据 *</label>
-                  <span className="form-hint">当前有效样例 {validSampleCount} 组</span>
+                  <span className="form-hint">当前有效样例 {validSampleCount} 组，限时最高 3000ms</span>
                 </div>
                 {samples.map((sample, index) => (
                   <div key={index} className="sample-group">
                     <div className="sample-header">
                       <span>样例 {index + 1}</span>
-                      {samples.length > 1 && (
-                        <Button
-                          type="button"
-                          variant="danger"
-                          size="sm"
-                          onClick={() => removeSample(index)}
-                        >
-                          删除
-                        </Button>
-                      )}
+                      <div className="sample-header-actions">
+                        <label className="testcase-time-limit">
+                          限时
+                          <input
+                            type="number"
+                            min={MIN_TESTCASE_TIME_LIMIT_MS}
+                            max={MAX_TESTCASE_TIME_LIMIT_MS}
+                            step={100}
+                            value={sample.timeLimitMs}
+                            onChange={(e) => updateSampleTimeLimit(index, e.target.value)}
+                          />
+                          ms
+                        </label>
+                        {samples.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="danger"
+                            size="sm"
+                            onClick={() => removeSample(index)}
+                          >
+                            删除
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     <div className="sample-row">
                       <div className="sample-col">
@@ -449,9 +509,9 @@ export default function EditProblemPage() {
               <div className="form-section">
                 <label className="form-label">测试数据</label>
                 <div className="form-hint">
-                  上传 .in 和 .out 文件作为测试数据。文件名应成对，例如：1.in 和 1.out
+                  上传 .in 和 .out 文件作为测试数据。文件名应成对，例如：1.in 和 1.out；每对文件就是一个测试点。
                   <br />
-                  注意：上传新文件将替换所有现有测试数据
+                  每个测试点可单独设置限时，范围为 {MIN_TESTCASE_TIME_LIMIT_MS}～{MAX_TESTCASE_TIME_LIMIT_MS}ms；在 .in 文件一侧设置。
                 </div>
                 <input
                   type="file"
@@ -466,6 +526,22 @@ export default function EditProblemPage() {
                       <div key={index} className="test-file-item">
                         <span className={`file-badge ${file.type}`}>{file.type}</span>
                         <span className="file-name">{file.name}</span>
+                        {file.type === 'in' ? (
+                          <label className="testcase-time-limit">
+                            限时
+                            <input
+                              type="number"
+                              min={MIN_TESTCASE_TIME_LIMIT_MS}
+                              max={MAX_TESTCASE_TIME_LIMIT_MS}
+                              step={100}
+                              value={file.timeLimitMs}
+                              onChange={(e) => updateTestFileTimeLimit(index, e.target.value)}
+                            />
+                            ms
+                          </label>
+                        ) : (
+                          <span className="testcase-time-follow">跟随测试点</span>
+                        )}
                         <Button
                           type="button"
                           variant="danger"

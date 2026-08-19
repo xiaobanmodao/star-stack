@@ -16,6 +16,26 @@
 
 生产服务由 Nginx 提供前端静态文件和 HTTPS，由 Nginx 将 `/api/` 转发到 PM2 管理的 Express 服务。判题依赖 C++17、Python 3 和 Java 17。
 
+### Cloudflare Turnstile
+
+注册和异常登录使用 Cloudflare Turnstile。`Site Key` 是前端公开配置，`Secret Key` 只能保存到后端运行环境，不能提交到 Git。
+
+首次部署或更新前端时，在项目根目录创建未提交的 `.env.production`：
+
+```bash
+VITE_TURNSTILE_SITE_KEY=你的公开SiteKey
+```
+
+后端 PM2 环境需要配置：
+
+```bash
+export TURNSTILE_SECRET_KEY='你的SecretKey'
+pm2 startOrRestart ecosystem.config.cjs --update-env
+pm2 save
+```
+
+`TURNSTILE_HOSTNAMES` 已在 `ecosystem.config.cjs` 中限制为 `xingzhan.cc,www.xingzhan.cc`。不要把 Secret Key 写入仓库、前端代码或聊天记录。
+
 ## 2. 首次部署
 
 ### 2.1 安装服务器依赖

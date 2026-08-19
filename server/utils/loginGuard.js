@@ -1,7 +1,7 @@
-// 按 IP 失败计数，5 次失败后锁定 15 秒
+// 按 IP 失败计数，5 次失败后锁定 10 分钟
 const loginFailures = new Map() // ip -> { count, lockedUntil }
 const MAX_LOGIN_FAILURES = 5
-const LOGIN_LOCK_MS = 15 * 1000
+const LOGIN_LOCK_MS = 10 * 60 * 1000
 
 export const checkLoginLock = (ip) => {
   const entry = loginFailures.get(ip)
@@ -20,5 +20,7 @@ export const recordLoginFailure = (ip) => {
   }
   loginFailures.set(ip, entry)
 }
+
+export const getLoginFailureCount = (ip) => loginFailures.get(ip)?.count || 0
 
 export const clearLoginFailures = (ip) => loginFailures.delete(ip)

@@ -7,6 +7,10 @@ export const TOKEN_KEY = 'starstack_token'
 // 后端 API（/api/oj/*、/api/leaderboard 等）保持原样，不受此开关影响。
 export const OJ_ENABLED = true
 
+export const DEFAULT_TESTCASE_TIME_LIMIT_MS = 1500
+export const MIN_TESTCASE_TIME_LIMIT_MS = 100
+export const MAX_TESTCASE_TIME_LIMIT_MS = 3000
+
 export const LANGUAGE_OPTIONS = [
   {
     label: 'C++17',

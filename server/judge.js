@@ -4,8 +4,12 @@ import os from 'os'
 import crypto from 'crypto'
 import { spawn } from 'child_process'
 import { fileURLToPath } from 'url'
+import {
+  DEFAULT_TESTCASE_TIME_LIMIT_MS,
+  normalizeTestcaseTimeLimit,
+} from './utils/testcaseLimits.js'
 
-const TIME_LIMIT_MS = 1500
+const TIME_LIMIT_MS = DEFAULT_TESTCASE_TIME_LIMIT_MS
 const COMPILE_LIMIT_MS = 15000
 const IS_WIN = process.platform === 'win32'
 const IS_LINUX = process.platform === 'linux'
@@ -487,6 +491,7 @@ export const judgeSubmission = async ({ language, code, testcases, onTestCase })
     const normalizedCases = testcases.map((tc) => ({
       input: String(tc.input ?? ''),
       expected: normalizeOutput(String(tc.output ?? '')),
+      timeLimitMs: normalizeTestcaseTimeLimit(tc.timeLimitMs),
     }))
 
     const results = []
@@ -499,21 +504,21 @@ export const judgeSubmission = async ({ language, code, testcases, onTestCase })
         execResult = await runCommand(workspace.exec, [], {
           cwd: workspace.root,
           input: tc.input,
-          timeout: TIME_LIMIT_MS,
+          timeout: tc.timeLimitMs,
           env: WORK_ENV || undefined,
         })
       } else if (language === 'Python') {
         execResult = await runCommand(PYTHON_CMD, [workspace.exec], {
           cwd: workspace.root,
           input: tc.input,
-          timeout: TIME_LIMIT_MS,
+          timeout: tc.timeLimitMs,
           env: WORK_ENV || undefined,
         })
       } else {
         execResult = await runCommand(JAVA_CMD, [workspace.exec], {
           cwd: workspace.root,
           input: tc.input,
-          timeout: TIME_LIMIT_MS,
+          timeout: tc.timeLimitMs,
           env: WORK_ENV || undefined,
         })
       }
@@ -543,10 +548,19 @@ export const judgeSubmission = async ({ language, code, testcases, onTestCase })
         status: caseStatus,
         message: caseMessage,
         timeMs: execResult.duration,
+        timeLimitMs: tc.timeLimitMs,
       })
 
       if (typeof onTestCase === 'function') {
-        try { onTestCase({ index, status: caseStatus, message: caseMessage, timeMs: execResult.duration }) } catch {}
+        try {
+          onTestCase({
+            index,
+            status: caseStatus,
+            message: caseMessage,
+            timeMs: execResult.duration,
+            timeLimitMs: tc.timeLimitMs,
+          })
+        } catch {}
       }
     }
 
@@ -576,7 +590,7 @@ export const judgeSubmission = async ({ language, code, testcases, onTestCase })
     // 注意：不删除编译缓存，让缓存继续有效以提高性能
   }
 }
-export const runSample = async ({ language, code, input }) => {
+export const runSample = async ({ language, code, input, timeLimitMs = TIME_LIMIT_MS }) => {
   const workspace = await prepareWorkspace(language, code)
   const codeHash = getCodeHash(language, code)
 
@@ -590,6 +604,7 @@ export const runSample = async ({ language, code, input }) => {
     if (!workspace.exec || !workspace.source) {
       return result
     }
+    const sampleTimeLimitMs = normalizeTestcaseTimeLimit(timeLimitMs)
     const compileResult = await compileSource(language, code, workspace)
     if (!compileResult.ok) {
       return {
@@ -633,21 +648,21 @@ export const runSample = async ({ language, code, input }) => {
       execResult = await runCommand(workspace.exec, [], {
         cwd: workspace.root,
         input,
-        timeout: TIME_LIMIT_MS,
+        timeout: sampleTimeLimitMs,
         env: WORK_ENV || undefined,
       })
     } else if (language === 'Python') {
       execResult = await runCommand(PYTHON_CMD, [workspace.exec], {
         cwd: workspace.root,
         input,
-        timeout: TIME_LIMIT_MS,
+        timeout: sampleTimeLimitMs,
         env: WORK_ENV || undefined,
       })
     } else {
       execResult = await runCommand(JAVA_CMD, [workspace.exec], {
         cwd: workspace.root,
         input,
-        timeout: TIME_LIMIT_MS,
+        timeout: sampleTimeLimitMs,
         env: WORK_ENV || undefined,
       })
     }
@@ -711,27 +726,33 @@ export const runSamples = async ({ language, code, inputs }) => {
     const results = []
     let overallStatus = 'OK'
     let overallMessage = '运行完成'
-    for (const input of inputs) {
+    for (const rawInput of inputs) {
+      const input = typeof rawInput === 'object'
+        ? {
+          value: String(rawInput?.input ?? ''),
+          timeLimitMs: normalizeTestcaseTimeLimit(rawInput?.timeLimitMs),
+        }
+        : { value: String(rawInput ?? ''), timeLimitMs: TIME_LIMIT_MS }
       let execResult
       if (language === 'C++') {
         execResult = await runCommand(workspace.exec, [], {
           cwd: workspace.root,
-          input,
-          timeout: TIME_LIMIT_MS,
+          input: input.value,
+          timeout: input.timeLimitMs,
           env: WORK_ENV || undefined,
         })
       } else if (language === 'Python') {
         execResult = await runCommand(PYTHON_CMD, [workspace.exec], {
           cwd: workspace.root,
-          input,
-          timeout: TIME_LIMIT_MS,
+          input: input.value,
+          timeout: input.timeLimitMs,
           env: WORK_ENV || undefined,
         })
       } else {
         execResult = await runCommand(JAVA_CMD, [workspace.exec], {
           cwd: workspace.root,
-          input,
-          timeout: TIME_LIMIT_MS,
+          input: input.value,
+          timeout: input.timeLimitMs,
           env: WORK_ENV || undefined,
         })
       }

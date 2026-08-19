@@ -1,5 +1,75 @@
 import './AuthPage.css'
+import { useEffect, useRef } from 'react'
 import type { AuthPageProps } from '../types'
+
+type TurnstileOptions = {
+  sitekey: string
+  action: string
+  theme: 'auto'
+  callback: (token: string) => void
+  'error-callback': () => void
+  'expired-callback': () => void
+}
+
+type TurnstileApi = {
+  render: (container: HTMLElement, options: TurnstileOptions) => string
+  remove?: (widgetId: string) => void
+}
+
+declare global {
+  interface Window {
+    turnstile?: TurnstileApi
+  }
+}
+
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined
+
+const TurnstileWidget = ({
+  action,
+  resetKey,
+  onToken,
+}: {
+  action: string
+  resetKey: number
+  onToken: (token: string) => void
+}) => {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    onToken('')
+    if (!TURNSTILE_SITE_KEY || !containerRef.current) return
+
+    let widgetId: string | undefined
+    let attempts = 0
+    let timer: number | undefined
+    const renderWidget = () => {
+      if (!containerRef.current || !window.turnstile) {
+        attempts += 1
+        if (attempts < 100) timer = window.setTimeout(renderWidget, 100)
+        return
+      }
+      widgetId = window.turnstile.render(containerRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        action,
+        theme: 'auto',
+        callback: onToken,
+        'error-callback': () => onToken(''),
+        'expired-callback': () => onToken(''),
+      })
+    }
+
+    renderWidget()
+    return () => {
+      if (timer) window.clearTimeout(timer)
+      if (widgetId && window.turnstile?.remove) window.turnstile.remove(widgetId)
+    }
+  }, [action, onToken, resetKey])
+
+  if (!TURNSTILE_SITE_KEY) {
+    return <div className="auth-captcha-missing">安全验证暂未配置</div>
+  }
+  return <div ref={containerRef} className="auth-turnstile" aria-label="安全验证" />
+}
 
 const AuthPage = ({
   mode,
@@ -17,6 +87,9 @@ const AuthPage = ({
   error,
   success,
   submitting,
+  captchaRequired,
+  captchaResetKey,
+  onCaptchaTokenChange,
 }: AuthPageProps) => (
   <section className="auth-page">
     <div className="auth-panel">
@@ -82,6 +155,13 @@ const AuthPage = ({
               onChange={(event) => onFormConfirmChange(event.target.value)}
             />
           </label>
+        )}
+        {(mode === 'register' || captchaRequired) && (
+          <TurnstileWidget
+            action={mode}
+            resetKey={captchaResetKey}
+            onToken={onCaptchaTokenChange}
+          />
         )}
         {error && <div className="auth-error">{error}</div>}
         {success && <div className="auth-success">{success}</div>}

@@ -132,6 +132,45 @@
   color: var(--ss-color-text);
 }
 
+.sample-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.testcase-time-limit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ss-color-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.testcase-time-limit input {
+  width: 76px;
+  padding: 5px 7px;
+  border: 1px solid var(--ss-color-border);
+  border-radius: 7px;
+  background: var(--ss-bg-input);
+  color: var(--ss-color-text);
+  font: inherit;
+  text-align: right;
+}
+
+.testcase-time-limit input:focus {
+  outline: none;
+  border-color: var(--ss-accent-border);
+  box-shadow: var(--ss-focus-ring);
+}
+
+.testcase-time-follow {
+  color: var(--ss-color-text-subtle);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .problem-editor-v2 .file-input {
   width: 100%;
   border-color: var(--ss-color-border);

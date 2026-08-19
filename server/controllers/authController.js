@@ -4,17 +4,22 @@ import { getDb } from '../db.js'
 import { getAuthToken, getUserByToken, requireUser } from '../middleware/auth.js'
 import { serializeUser } from '../utils/userHelpers.js'
 import { recalculateUserRating } from '../stats.js'
-import { checkLoginLock, recordLoginFailure, clearLoginFailures } from '../utils/loginGuard.js'
+import { checkLoginLock, getLoginFailureCount, recordLoginFailure, clearLoginFailures } from '../utils/loginGuard.js'
+import { verifyTurnstile } from '../utils/turnstile.js'
 
 const createToken = () => randomBytes(24).toString('hex')
 
 export const register = async (req, res) => {
-  const { id, name, password } = req.body || {}
+  const { id, name, password, turnstileToken } = req.body || {}
   if (!id || !name || !password) {
     return res.status(400).json({ message: '请填写完整信息' })
   }
   if (password.length < 6) {
     return res.status(400).json({ message: '密码至少 6 位' })
+  }
+  const captcha = await verifyTurnstile({ token: turnstileToken, req, action: 'register' })
+  if (!captcha.ok) {
+    return res.status(403).json({ message: '请完成安全验证后再注册', captchaRequired: true })
   }
   const db = await getDb()
   const existing = await db.get(`SELECT id FROM users WHERE id = ?`, id)
@@ -44,12 +49,18 @@ export const login = async (req, res) => {
   if (checkLoginLock(clientIp)) {
     return res.status(429).json({ message: '尝试次数过多，请 10 分钟后再试' })
   }
-  const { id, password } = req.body || {}
+  const { id, password, turnstileToken } = req.body || {}
   if (!id || !password) {
     return res.status(400).json({ message: '请输入 ID 与密码' })
   }
   if (password.length < 6) {
     return res.status(400).json({ message: '密码至少 6 位' })
+  }
+  if (getLoginFailureCount(clientIp) >= 2) {
+    const captcha = await verifyTurnstile({ token: turnstileToken, req, action: 'login' })
+    if (!captcha.ok) {
+      return res.status(403).json({ message: '请完成安全验证后再登录', captchaRequired: true })
+    }
   }
   const db = await getDb()
   const user = await db.get(

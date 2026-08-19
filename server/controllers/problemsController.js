@@ -2,10 +2,33 @@ import { getDb } from '../db.js'
 import { requireUser, getAuthToken, getUserByToken } from '../middleware/auth.js'
 import { sanitizeProblemText, addXp } from '../utils/userHelpers.js'
 import { BoundedCache } from '../utils/boundedCache.js'
+import {
+  DEFAULT_TESTCASE_TIME_LIMIT_MS,
+  parseTestcaseTimeLimit,
+} from '../utils/testcaseLimits.js'
 
 const solutionRateLimits = new BoundedCache(5000, 10000)
 const MAX_TEST_FILE_BYTES = 2 * 1024 * 1024
 const MAX_TEST_DATA_BYTES = 3 * 1024 * 1024
+
+const normalizeSamples = (samples) => {
+  if (!Array.isArray(samples) || samples.length === 0) {
+    return { samples: [], error: '请至少添加一个样例' }
+  }
+
+  const normalized = []
+  for (const [index, sample] of samples.entries()) {
+    const input = String(sample?.input ?? '')
+    const output = String(sample?.output ?? '')
+    if (!input.trim() || !output.trim()) {
+      return { samples: [], error: `样例 ${index + 1} 必须同时填写输入和输出` }
+    }
+    const parsedLimit = parseTestcaseTimeLimit(sample?.timeLimitMs, `样例 ${index + 1}`)
+    if (parsedLimit.error) return { samples: [], error: parsedLimit.error }
+    normalized.push({ input, output, timeLimitMs: parsedLimit.value })
+  }
+  return { samples: normalized, error: null }
+}
 
 const parseTestFilePairs = (testFiles) => {
   if (testFiles === undefined) return { pairs: [], error: null }
@@ -32,6 +55,13 @@ const parseTestFilePairs = (testFiles) => {
 
     const key = match[1].toLowerCase()
     const pair = pairs.get(key) || { baseName: match[1] }
+    const hasTimeLimit = file.timeLimitMs !== undefined && file.timeLimitMs !== null && file.timeLimitMs !== ''
+    const parsedLimit = parseTestcaseTimeLimit(file.timeLimitMs, `测试点 ${match[1]}`)
+    if (parsedLimit.error) return { pairs: [], error: parsedLimit.error }
+    if (hasTimeLimit && pair.timeLimitMs !== undefined && pair.timeLimitMs !== parsedLimit.value) {
+      return { pairs: [], error: `测试点 ${match[1]} 的输入输出限时不一致` }
+    }
+    if (hasTimeLimit) pair.timeLimitMs = parsedLimit.value
     if (pair[type]) return { pairs: [], error: `测试文件 ${name} 重复` }
     pair[type] = { name, content }
     pairs.set(key, pair)
@@ -42,7 +72,13 @@ const parseTestFilePairs = (testFiles) => {
       return { pairs: [], error: `测试数据 ${pair.baseName} 缺少成对的 .in 或 .out 文件` }
     }
   }
-  return { pairs: [...pairs.values()], error: null }
+  return {
+    pairs: [...pairs.values()].map((pair) => ({
+      ...pair,
+      timeLimitMs: pair.timeLimitMs ?? DEFAULT_TESTCASE_TIME_LIMIT_MS,
+    })),
+    error: null,
+  }
 }
 
 export const getDailyProblem = async (req, res) => {
@@ -177,7 +213,7 @@ export const getProblem = async (req, res) => {
   }
 
   const samples = await db.all(
-    `SELECT input, output FROM testcases WHERE problem_id = ? AND is_sample = 1 ORDER BY id ASC`, row.id
+    `SELECT input, output, time_limit_ms FROM testcases WHERE problem_id = ? AND is_sample = 1 ORDER BY id ASC`, row.id
   )
   let storedSamples = []
   try {
@@ -185,7 +221,13 @@ export const getProblem = async (req, res) => {
   } catch {
     storedSamples = []
   }
-  const sampleList = samples.length > 0 ? samples : (Array.isArray(storedSamples) ? storedSamples : [])
+  const sampleList = samples.length > 0
+    ? samples.map((sample) => ({ input: sample.input, output: sample.output, timeLimitMs: sample.time_limit_ms || DEFAULT_TESTCASE_TIME_LIMIT_MS }))
+    : (Array.isArray(storedSamples) ? storedSamples.map((sample) => ({
+      input: String(sample?.input ?? ''),
+      output: String(sample?.output ?? ''),
+      timeLimitMs: Number(sample?.timeLimitMs) || DEFAULT_TESTCASE_TIME_LIMIT_MS,
+    })) : [])
 
   let maxScore = null
   if (user) {
@@ -317,11 +359,12 @@ export const createProblem = async (req, res) => {
   const sanitizedInputDesc = sanitizeProblemText(inputDesc)
   const sanitizedOutputDesc = sanitizeProblemText(outputDesc)
   const sanitizedDataRange = sanitizeProblemText(dataRange)
+  const { samples: normalizedSamples, error: sampleError } = normalizeSamples(samples)
   const { pairs: testFilePairs, error: testFileError } = parseTestFilePairs(testFiles)
 
   if (!title || !title.trim()) return res.status(400).json({ message: '请填写题目标题' })
   if (!sanitizedStatement) return res.status(400).json({ message: '请填写题目描述' })
-  if (!samples || !Array.isArray(samples) || samples.length === 0) return res.status(400).json({ message: '请至少添加一个样例' })
+  if (sampleError) return res.status(400).json({ message: sampleError })
   if (testFileError) return res.status(400).json({ message: testFileError })
 
   const now = new Date().toISOString()
@@ -340,24 +383,22 @@ export const createProblem = async (req, res) => {
       nextId, `p${nextId}`, title.trim(), difficulty || '入门',
       Array.isArray(tags) ? tags.join(',') : (tags || ''),
       sanitizedStatement, sanitizedInputDesc, sanitizedOutputDesc, sanitizedDataRange,
-      JSON.stringify(samples), user.id,
+      JSON.stringify(normalizedSamples), user.id,
       user.is_admin ? (status === 'draft' ? 'draft' : 'published') : 'draft',
       now
     )
 
-    for (const sample of samples) {
-      if (sample.input && sample.output) {
-        await db.run(
-          `INSERT INTO testcases (problem_id, input, output, is_sample, created_at) VALUES (?, ?, ?, 1, ?)`,
-          nextId, sample.input, sample.output, now
-        )
-      }
+    for (const sample of normalizedSamples) {
+      await db.run(
+        `INSERT INTO testcases (problem_id, input, output, is_sample, time_limit_ms, created_at) VALUES (?, ?, ?, 1, ?, ?)`,
+        nextId, sample.input, sample.output, sample.timeLimitMs, now
+      )
     }
 
     for (const pair of testFilePairs) {
       await db.run(
-        `INSERT INTO testcases (problem_id, input, output, is_sample, created_at) VALUES (?, ?, ?, 0, ?)`,
-        nextId, pair.in.content, pair.out.content, now
+        `INSERT INTO testcases (problem_id, input, output, is_sample, time_limit_ms, created_at) VALUES (?, ?, ?, 0, ?, ?)`,
+        nextId, pair.in.content, pair.out.content, pair.timeLimitMs, now
       )
     }
 
@@ -402,13 +443,17 @@ export const getProblemForEdit = async (req, res) => {
   if (problem.creator_id !== user.id && !user.is_admin) return res.status(403).json({ message: '无权限编辑此题目' })
 
   const testcases = await db.all(
-    `SELECT input, output, is_sample FROM testcases WHERE problem_id = ? ORDER BY id ASC`, problemId
+    `SELECT input, output, is_sample, time_limit_ms FROM testcases WHERE problem_id = ? ORDER BY id ASC`, problemId
   )
-  const samples = testcases.filter(tc => tc.is_sample === 1).map(tc => ({ input: tc.input, output: tc.output }))
+  const samples = testcases.filter(tc => tc.is_sample === 1).map(tc => ({
+    input: tc.input,
+    output: tc.output,
+    timeLimitMs: tc.time_limit_ms || DEFAULT_TESTCASE_TIME_LIMIT_MS,
+  }))
   const testData = testcases.filter(tc => tc.is_sample === 0)
   const testFiles = testData.flatMap((testcase, index) => [
-    { name: `${index + 1}.in`, type: 'in', content: testcase.input },
-    { name: `${index + 1}.out`, type: 'out', content: testcase.output },
+    { name: `${index + 1}.in`, type: 'in', content: testcase.input, timeLimitMs: testcase.time_limit_ms || DEFAULT_TESTCASE_TIME_LIMIT_MS },
+    { name: `${index + 1}.out`, type: 'out', content: testcase.output, timeLimitMs: testcase.time_limit_ms || DEFAULT_TESTCASE_TIME_LIMIT_MS },
   ])
 
   return res.json({
@@ -439,11 +484,12 @@ export const updateProblem = async (req, res) => {
   const sanitizedInputDesc = sanitizeProblemText(inputDesc)
   const sanitizedOutputDesc = sanitizeProblemText(outputDesc)
   const sanitizedDataRange = sanitizeProblemText(dataRange)
+  const { samples: normalizedSamples, error: sampleError } = normalizeSamples(samples)
   const { pairs: testFilePairs, error: testFileError } = parseTestFilePairs(testFiles)
 
   if (!title || !title.trim()) return res.status(400).json({ message: '请填写题目标题' })
   if (!sanitizedStatement) return res.status(400).json({ message: '请填写题目描述' })
-  if (!samples || !Array.isArray(samples) || samples.length === 0) return res.status(400).json({ message: '请至少添加一个样例' })
+  if (sampleError) return res.status(400).json({ message: sampleError })
   if (testFileError) return res.status(400).json({ message: testFileError })
 
   const now = new Date().toISOString()
@@ -455,24 +501,22 @@ export const updateProblem = async (req, res) => {
       title.trim(), difficulty || '入门',
       Array.isArray(tags) ? tags.join(',') : (tags || ''),
       sanitizedStatement, sanitizedInputDesc, sanitizedOutputDesc, sanitizedDataRange,
-      JSON.stringify(samples), status || 'published', problemId
+      JSON.stringify(normalizedSamples), status || 'published', problemId
     )
 
     await db.run(`DELETE FROM testcases WHERE problem_id = ?`, problemId)
 
-    for (const sample of samples) {
-      if (sample.input && sample.output) {
-        await db.run(
-          `INSERT INTO testcases (problem_id, input, output, is_sample, created_at) VALUES (?, ?, ?, 1, ?)`,
-          problemId, sample.input, sample.output, now
-        )
-      }
+    for (const sample of normalizedSamples) {
+      await db.run(
+        `INSERT INTO testcases (problem_id, input, output, is_sample, time_limit_ms, created_at) VALUES (?, ?, ?, 1, ?, ?)`,
+        problemId, sample.input, sample.output, sample.timeLimitMs, now
+      )
     }
 
     for (const pair of testFilePairs) {
       await db.run(
-        `INSERT INTO testcases (problem_id, input, output, is_sample, created_at) VALUES (?, ?, ?, 0, ?)`,
-        problemId, pair.in.content, pair.out.content, now
+        `INSERT INTO testcases (problem_id, input, output, is_sample, time_limit_ms, created_at) VALUES (?, ?, ?, 0, ?, ?)`,
+        problemId, pair.in.content, pair.out.content, pair.timeLimitMs, now
       )
     }
 

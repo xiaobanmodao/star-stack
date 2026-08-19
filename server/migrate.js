@@ -20,7 +20,7 @@ const REQUIRED_SCHEMA = {
   sessions: ['token', 'user_id', 'created_at'],
   problems: ['id', 'slug', 'title', 'difficulty', 'tags', 'statement', 'input_desc', 'output_desc', 'data_range', 'samples', 'creator_id', 'status', 'created_at'],
   submissions: ['id', 'problem_id', 'user_id', 'language', 'code', 'status', 'time_ms', 'memory_kb', 'message', 'results_json', 'score', 'created_at'],
-  testcases: ['id', 'problem_id', 'input', 'output', 'is_sample', 'created_at'],
+  testcases: ['id', 'problem_id', 'input', 'output', 'is_sample', 'time_limit_ms', 'created_at'],
   user_stats: ['user_id', 'total_submissions', 'accepted_count', 'tried_problems', 'solved_problems', 'acceptance_rate', 'current_streak', 'max_streak', 'last_submission_date', 'xp', 'rank'],
   daily_activity: ['id', 'user_id', 'activity_date', 'submission_count', 'accepted_count'],
   user_achievements: ['id', 'user_id', 'achievement_type', 'achievement_data', 'unlocked_at'],

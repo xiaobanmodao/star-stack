@@ -33,7 +33,7 @@ export type OjProblemDetail = OjProblemSummary & {
   input: string
   output: string
   dataRange?: string
-  samples: { input: string; output: string }[]
+  samples: { input: string; output: string; timeLimitMs?: number }[]
   creatorId?: string
   creatorName?: string
   maxScore?: number | null
@@ -52,7 +52,7 @@ export type OjSubmission = {
   message?: string
   code?: string | null
   canViewCode?: boolean
-  results?: { index: number; status: string; message?: string; timeMs?: number }[]
+  results?: { index: number; status: string; message?: string; timeMs?: number; timeLimitMs?: number }[]
   score?: number
   createdAt?: string
 }
@@ -126,6 +126,7 @@ export type AuthResponse = {
   token: string
   user: UserRecord
   message?: string
+  captchaRequired?: boolean
 }
 
 export type UserResponse = {
@@ -527,6 +528,9 @@ export type AuthPageProps = {
   error: string
   success: string
   submitting: boolean
+  captchaRequired: boolean
+  captchaResetKey: number
+  onCaptchaTokenChange: (token: string) => void
 }
 
 // Context type for shared app state

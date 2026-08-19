@@ -2,6 +2,7 @@ import { getDb } from '../db.js'
 import { requireUser } from '../middleware/auth.js'
 import { BoundedCache } from '../utils/boundedCache.js'
 import { judgeSubmission, runSample, runSamples } from '../judge.js'
+import { DEFAULT_TESTCASE_TIME_LIMIT_MS } from '../utils/testcaseLimits.js'
 import {
   updateUserStats,
   checkAndUnlockAchievements,
@@ -28,11 +29,72 @@ const ALLOWED_LANGUAGES = ['C++', 'Python', 'Java']
 const MAX_CODE_LENGTH = 100000
 
 const judgeRateLimits = new BoundedCache(2000, 10000)
-let activeJudges = 0
-const MAX_ACTIVE_JUDGES = 4
 const runRateLimits = new BoundedCache(5000, 1000)
-let activeRuns = 0
-const MAX_ACTIVE_RUNS = 8
+
+// 单个 Node 进程内的有界 FIFO 执行队列。
+// 队列只负责调度，不会把用户代码并行塞进同一个工作目录。
+const createExecutionQueue = ({ maxActive, maxQueued }) => {
+  const pending = []
+  let active = 0
+
+  const drain = () => {
+    while (active < maxActive && pending.length > 0) {
+      const task = pending.shift()
+      if (!task || task.cancelled) continue
+
+      task.started = true
+      active += 1
+      Promise.resolve()
+        .then(() => task.onStart?.())
+        .then(() => task.run())
+        .then(task.resolve, task.reject)
+        .finally(() => {
+          active = Math.max(0, active - 1)
+          drain()
+        })
+    }
+  }
+
+  const enqueue = (run, { onStart } = {}) => {
+    let task
+    const promise = new Promise((resolve, reject) => {
+      task = { run, onStart, resolve, reject, started: false, cancelled: false }
+      pending.push(task)
+      drain()
+    })
+
+    return {
+      promise,
+      getPosition: () => {
+        if (!task || task.started || task.cancelled) return null
+        const index = pending.indexOf(task)
+        return index >= 0 ? index + 1 : null
+      },
+      cancel: () => {
+        if (!task || task.started || task.cancelled) return false
+        const index = pending.indexOf(task)
+        if (index < 0) return false
+        pending.splice(index, 1)
+        task.cancelled = true
+        task.reject(new Error('评测请求已取消'))
+        drain()
+        return true
+      },
+    }
+  }
+
+  return {
+    enqueue,
+    isFull: () => pending.length >= maxQueued,
+    get active() { return active },
+    get queued() { return pending.length },
+    maxActive,
+    maxQueued,
+  }
+}
+
+const judgeQueue = createExecutionQueue({ maxActive: 4, maxQueued: 50 })
+const sandboxQueue = createExecutionQueue({ maxActive: 8, maxQueued: 50 })
 
 const beginSandboxRun = (userId, res) => {
   if (runRateLimits.has(userId)) {
@@ -40,13 +102,18 @@ const beginSandboxRun = (userId, res) => {
     res.status(429).json({ message: '测试运行过于频繁，请稍后再试' })
     return false
   }
-  if (activeRuns >= MAX_ACTIVE_RUNS) {
+  if (sandboxQueue.isFull()) {
     res.setHeader('Retry-After', '5')
-    res.status(503).json({ message: '测试运行队列繁忙，请稍后再试', activeRuns, maxActiveRuns: MAX_ACTIVE_RUNS })
+    res.status(503).json({
+      message: '测试运行排队人数已满，请稍后再试',
+      activeRuns: sandboxQueue.active,
+      queuedRuns: sandboxQueue.queued,
+      maxActiveRuns: sandboxQueue.maxActive,
+      maxQueuedRuns: sandboxQueue.maxQueued,
+    })
     return false
   }
   runRateLimits.set(userId, Date.now())
-  activeRuns += 1
   return true
 }
 
@@ -58,10 +125,14 @@ export const getJudgeStatus = async (req, res) => {
   const auth = await requireUser(req, res)
   if (!auth) return
   return res.json({
-    activeJudges,
-    maxActiveJudges: MAX_ACTIVE_JUDGES,
-    activeRuns,
-    maxActiveRuns: MAX_ACTIVE_RUNS,
+    activeJudges: judgeQueue.active,
+    queuedJudges: judgeQueue.queued,
+    maxActiveJudges: judgeQueue.maxActive,
+    maxQueuedJudges: judgeQueue.maxQueued,
+    activeRuns: sandboxQueue.active,
+    queuedRuns: sandboxQueue.queued,
+    maxActiveRuns: sandboxQueue.maxActive,
+    maxQueuedRuns: sandboxQueue.maxQueued,
   })
 }
 
@@ -224,7 +295,7 @@ export const submitSolution = async (req, res) => {
   if (problem.status !== 'published') return res.status(403).json({ message: '题目尚未发布' })
 
   const testcases = await db.all(
-    `SELECT input, output FROM testcases WHERE problem_id = ? ORDER BY id ASC`, Number(problemId)
+    `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? ORDER BY id ASC`, Number(problemId)
   )
   if (testcases.length === 0) return res.status(400).json({ message: '该题暂无测试用例' })
 
@@ -232,19 +303,20 @@ export const submitSolution = async (req, res) => {
     res.setHeader('Retry-After', '10')
     return res.status(429).json({ message: '提交过于频繁，请稍后再试' })
   }
-  if (activeJudges >= MAX_ACTIVE_JUDGES) {
+  if (judgeQueue.isFull()) {
     res.setHeader('Retry-After', '5')
-    return res.status(503).json({ message: '评测队列繁忙，请稍后再试', activeJudges, maxActiveJudges: MAX_ACTIVE_JUDGES })
+    return res.status(503).json({
+      message: '评测排队人数已满，请稍后再试',
+      activeJudges: judgeQueue.active,
+      queuedJudges: judgeQueue.queued,
+      maxActiveJudges: judgeQueue.maxActive,
+      maxQueuedJudges: judgeQueue.maxQueued,
+    })
   }
   judgeRateLimits.set(user.id, Date.now())
 
-  activeJudges += 1
-  let judgeResult
-  try {
-    judgeResult = await judgeSubmission({ language, code: String(code), testcases })
-  } finally {
-    activeJudges = Math.max(0, activeJudges - 1)
-  }
+  const judgeTask = judgeQueue.enqueue(() => judgeSubmission({ language, code: String(code), testcases }))
+  const judgeResult = await judgeTask.promise
 
   const saved = await _saveSubmission(db, { problemId: Number(problemId), userId: user.id, language, code: String(code), judgeResult })
   await _postSubmitHooks(db, user.id, saved.submissionId, Number(problemId), saved.status, saved.createdAt)
@@ -273,7 +345,7 @@ export const streamSubmission = async (req, res) => {
   if (problem.status !== 'published') return res.status(403).json({ message: '题目尚未发布' })
 
   const testcases = await db.all(
-    `SELECT input, output FROM testcases WHERE problem_id = ? ORDER BY id ASC`, Number(problemId)
+    `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? ORDER BY id ASC`, Number(problemId)
   )
   if (testcases.length === 0) return res.status(400).json({ message: '该题暂无测试用例' })
 
@@ -281,12 +353,17 @@ export const streamSubmission = async (req, res) => {
     res.setHeader('Retry-After', '10')
     return res.status(429).json({ message: '提交过于频繁，请稍后再试' })
   }
-  if (activeJudges >= MAX_ACTIVE_JUDGES) {
+  if (judgeQueue.isFull()) {
     res.setHeader('Retry-After', '5')
-    return res.status(503).json({ message: '评测队列繁忙，请稍后再试', activeJudges, maxActiveJudges: MAX_ACTIVE_JUDGES })
+    return res.status(503).json({
+      message: '评测排队人数已满，请稍后再试',
+      activeJudges: judgeQueue.active,
+      queuedJudges: judgeQueue.queued,
+      maxActiveJudges: judgeQueue.maxActive,
+      maxQueuedJudges: judgeQueue.maxQueued,
+    })
   }
   judgeRateLimits.set(user.id, Date.now())
-  activeJudges += 1
 
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
@@ -300,16 +377,37 @@ export const streamSubmission = async (req, res) => {
     if (closed) return
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
   }
-  const heartbeatTimer = setInterval(() => {
-    sendEvent('heartbeat', { activeJudges })
-  }, 15000)
-
+  let judgeTask
+  let heartbeatTimer
   try {
-    sendEvent('start', { totalCases: testcases.length })
-    const judgeResult = await judgeSubmission({
-      language, code: String(code), testcases,
-      onTestCase: (tc) => sendEvent('testcase', tc),
-    })
+    judgeTask = judgeQueue.enqueue(
+      () => judgeSubmission({
+        language, code: String(code), testcases,
+        onTestCase: (tc) => sendEvent('testcase', tc),
+      }),
+      { onStart: () => sendEvent('start', { totalCases: testcases.length }) },
+    )
+
+    const queuePosition = judgeTask.getPosition()
+    if (queuePosition !== null) {
+      sendEvent('queued', {
+        position: queuePosition,
+        totalCases: testcases.length,
+        activeJudges: judgeQueue.active,
+        queuedJudges: judgeQueue.queued,
+      })
+    }
+
+    heartbeatTimer = setInterval(() => {
+      sendEvent('heartbeat', {
+        activeJudges: judgeQueue.active,
+        queuedJudges: judgeQueue.queued,
+        queuePosition: judgeTask?.getPosition() || 0,
+      })
+    }, 15000)
+
+    req.on('close', () => { judgeTask?.cancel() })
+    const judgeResult = await judgeTask.promise
 
     const saved = await _saveSubmission(db, { problemId: Number(problemId), userId: user.id, language, code: String(code), judgeResult })
     await _postSubmitHooks(db, user.id, saved.submissionId, Number(problemId), saved.status, saved.createdAt)
@@ -325,8 +423,7 @@ export const streamSubmission = async (req, res) => {
     console.error('Streaming submission failed:', error)
     sendEvent('error', { message: '评测失败，请稍后重试' })
   } finally {
-    clearInterval(heartbeatTimer)
-    activeJudges = Math.max(0, activeJudges - 1)
+    if (heartbeatTimer) clearInterval(heartbeatTimer)
     if (!res.writableEnded && !res.destroyed) res.end()
   }
 }
@@ -344,7 +441,7 @@ export const runSampleHandler = async (req, res) => {
   if (!problem) return res.status(404).json({ message: '题目不存在' })
 
   const sampleRows = await db.all(
-    `SELECT input, output FROM testcases WHERE problem_id = ? AND is_sample = 1 ORDER BY id ASC`, Number(problemId)
+    `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? AND is_sample = 1 ORDER BY id ASC`, Number(problemId)
   )
   const samples = sampleRows.length ? sampleRows : parseSamples(problem.samples)
   if (!samples || samples.length === 0) return res.status(400).json({ message: '暂无样例' })
@@ -352,8 +449,14 @@ export const runSampleHandler = async (req, res) => {
   const index = Math.min(Math.max(Number(sampleIndex) || 0, 0), samples.length - 1)
   const sample = samples[index]
   if (!beginSandboxRun(user.id, res)) return
+  const runTask = sandboxQueue.enqueue(() => runSample({
+    language,
+    code: String(code),
+    input: String(sample.input ?? ''),
+    timeLimitMs: sample.timeLimitMs || DEFAULT_TESTCASE_TIME_LIMIT_MS,
+  }))
   try {
-    const runResult = await runSample({ language, code: String(code), input: String(sample.input ?? '') })
+    const runResult = await runTask.promise
     const normalize = (text) => String(text ?? '').replace(/\r\n/g, '\n').trim()
 
     let status = runResult.status
@@ -364,8 +467,8 @@ export const runSampleHandler = async (req, res) => {
       message = match ? '样例通过' : '样例未通过'
     }
     return res.json({ output: runResult.output ?? '', expected: String(sample.output ?? ''), status, message, timeMs: runResult.timeMs ?? 0 })
-  } finally {
-    activeRuns = Math.max(0, activeRuns - 1)
+  } catch (error) {
+    return res.status(500).json({ message: error?.message || '测试运行失败' })
   }
 }
 
@@ -380,8 +483,14 @@ export const runCustomHandler = async (req, res) => {
   if (String(input).length > 10000000) return res.status(400).json({ message: '输入数据长度超过限制（最大 10MB）' })
 
   if (!beginSandboxRun(user.id, res)) return
+  const runTask = sandboxQueue.enqueue(() => runSample({
+    language,
+    code: String(code),
+    input: String(input ?? ''),
+    timeLimitMs: DEFAULT_TESTCASE_TIME_LIMIT_MS,
+  }))
   try {
-    const runResult = await runSample({ language, code: String(code), input: String(input ?? '') })
+    const runResult = await runTask.promise
     const normalize = (text) => String(text ?? '').replace(/\r\n/g, '\n').trim()
     let status = runResult.status
     let message = runResult.message
@@ -391,8 +500,8 @@ export const runCustomHandler = async (req, res) => {
       message = match ? '样例通过' : '样例未通过'
     }
     return res.json({ output: runResult.output ?? '', expected: expected ?? '', status, message, timeMs: runResult.timeMs ?? 0 })
-  } finally {
-    activeRuns = Math.max(0, activeRuns - 1)
+  } catch (error) {
+    return res.status(500).json({ message: error?.message || '测试运行失败' })
   }
 }
 
@@ -409,14 +518,22 @@ export const runSamplesHandler = async (req, res) => {
   if (!problem) return res.status(404).json({ message: '题目不存在' })
 
   const sampleRows = await db.all(
-    `SELECT input, output FROM testcases WHERE problem_id = ? AND is_sample = 1 ORDER BY id ASC`, Number(problemId)
+    `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? AND is_sample = 1 ORDER BY id ASC`, Number(problemId)
   )
   const samples = sampleRows.length ? sampleRows : parseSamples(problem.samples)
   if (!samples || samples.length === 0) return res.status(400).json({ message: '暂无样例' })
 
   if (!beginSandboxRun(user.id, res)) return
+  const runTask = sandboxQueue.enqueue(() => runSamples({
+    language,
+    code: String(code),
+    inputs: samples.map((s) => ({
+      input: String(s.input ?? ''),
+      timeLimitMs: s.timeLimitMs || DEFAULT_TESTCASE_TIME_LIMIT_MS,
+    })),
+  }))
   try {
-    const runResult = await runSamples({ language, code: String(code), inputs: samples.map((s) => String(s.input ?? '')) })
+    const runResult = await runTask.promise
     if (runResult.status !== 'OK') {
       return res.json({ status: runResult.status, message: runResult.message, results: [] })
     }
@@ -435,7 +552,7 @@ export const runSamplesHandler = async (req, res) => {
       ? { status: 'Accepted', message: '全部样例通过' }
       : { status: 'Wrong Answer', message: '存在样例未通过' }
     return res.json({ ...overall, results })
-  } finally {
-    activeRuns = Math.max(0, activeRuns - 1)
+  } catch (error) {
+    return res.status(500).json({ message: error?.message || '测试运行失败' })
   }
 }

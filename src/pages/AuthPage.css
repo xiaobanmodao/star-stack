@@ -105,6 +105,22 @@
   font-size: 12px;
 }
 
+.auth-turnstile {
+  min-height: 65px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.auth-captcha-missing {
+  color: var(--ss-color-danger);
+  background: var(--ss-danger-12);
+  border: 1px solid var(--ss-danger-30);
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
 .auth-actions {
   display: flex;
   gap: 10px;

@@ -75,6 +75,9 @@ function App() {
   const [authSubmitting, setAuthSubmitting] = useState(false)
   const [authError, setAuthError] = useState('')
   const [authSuccess, setAuthSuccess] = useState('')
+  const [authCaptchaRequired, setAuthCaptchaRequired] = useState(false)
+  const [authCaptchaToken, setAuthCaptchaToken] = useState('')
+  const [authCaptchaResetKey, setAuthCaptchaResetKey] = useState(0)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -142,6 +145,9 @@ function App() {
     setAuthMode(mode)
     setAuthError('')
     setAuthSuccess('')
+    setAuthCaptchaRequired(mode === 'register')
+    setAuthCaptchaToken('')
+    setAuthCaptchaResetKey((value) => value + 1)
   }, [])
 
   const openAuth = useCallback(
@@ -282,6 +288,10 @@ function App() {
           return
         }
       }
+      if ((authMode === 'register' || authCaptchaRequired) && !authCaptchaToken) {
+        setAuthError('请先完成安全验证')
+        return
+      }
       const payload: Record<string, string> = {
         id: formId.trim(),
         password: formPassword,
@@ -289,6 +299,7 @@ function App() {
       if (authMode === 'register') {
         payload.name = formName.trim()
       }
+      if (authCaptchaToken) payload.turnstileToken = authCaptchaToken
       setAuthSubmitting(true)
       try {
         const { response, data } = await fetchJson<AuthResponse>(`/api/${authMode}`, {
@@ -296,6 +307,11 @@ function App() {
           body: JSON.stringify(payload),
         })
         if (!response.ok || !data?.token || !data?.user) {
+          if (authCaptchaToken) {
+            setAuthCaptchaToken('')
+            setAuthCaptchaResetKey((value) => value + 1)
+          }
+          setAuthCaptchaRequired(authMode === 'register' || Boolean(data?.captchaRequired))
           setAuthError(data?.message || (authMode === 'register' ? '注册失败' : '登录失败'))
           return
         }
@@ -309,7 +325,7 @@ function App() {
         setAuthSubmitting(false)
       }
     },
-    [authFrom, authMode, authSubmitting, formConfirm, formId, formName, formPassword, navigate]
+    [authCaptchaRequired, authCaptchaToken, authFrom, authMode, authSubmitting, formConfirm, formId, formName, formPassword, navigate]
   )
 
   const handleLogout = useCallback(async () => {
@@ -448,6 +464,9 @@ function App() {
                     error={authError}
                     success={authSuccess}
                     submitting={authSubmitting}
+                    captchaRequired={authCaptchaRequired}
+                    captchaResetKey={authCaptchaResetKey}
+                    onCaptchaTokenChange={setAuthCaptchaToken}
                   />
                 }
               />
