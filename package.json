@@ -13,6 +13,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:smoke": "node scripts/api-smoke.mjs",
+    "stress": "node scripts/stress-test.mjs",
     "test:watch": "vitest",
     "preview": "vite preview",
     "audit": "node scripts/audit.mjs",

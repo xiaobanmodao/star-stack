@@ -11,6 +11,9 @@ const TYPE_ICONS: Record<NotificationType, string> = {
   reply: '↩️',
   mention: '@',
   invite: '🔔',
+  'achievement.unlocked': '🏆',
+  'problem.review_requested': '📝',
+  'problem.status_changed': '📣',
 }
 
 const formatNotifTime = (iso: string) => {
@@ -35,6 +38,8 @@ const targetOf = (item: NotificationItem, navigate: ReturnType<typeof useNavigat
     navigate(`/chat/room/${item.targetId}`)
   } else if (item.targetType === 'channel' && item.targetId) {
     navigate(`/chat/c/${item.targetId}`)
+  } else if (item.targetType === 'problem' && item.targetId) {
+    navigate(`/oj/p${item.targetId}`)
   } else {
     navigate(`/user/${item.actor.id}`)
   }

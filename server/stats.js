@@ -1,4 +1,6 @@
 // 站内等级（星空主题，按累计 XP 升级）
+import { createNotification } from './utils/notifications.js'
+
 export const LEVELS = [
   { minXp: 0, title: '星尘', icon: '✦' },
   { minXp: 100, title: '流星', icon: '☄️' },
@@ -345,7 +347,7 @@ async function checkAndUnlockAchievements(db, userId, submission) {
 
   // Insert new achievements
   for (const achievement of newAchievements) {
-    await db.run(
+    const insertResult = await db.run(
       `INSERT OR IGNORE INTO user_achievements (user_id, achievement_type, achievement_data, unlocked_at)
        VALUES (?, ?, ?, ?)`,
       userId,
@@ -353,6 +355,17 @@ async function checkAndUnlockAchievements(db, userId, submission) {
       JSON.stringify(achievement.data),
       now
     )
+    if (insertResult?.changes > 0) {
+      const definition = ACHIEVEMENTS[achievement.type.toUpperCase()]
+      await createNotification(db, {
+        userId,
+        actorId: userId,
+        type: 'achievement.unlocked',
+        targetType: 'achievement',
+        message: `解锁成就「${definition?.name || achievement.type}」`,
+        allowSelf: true,
+      })
+    }
   }
 
   return newAchievements

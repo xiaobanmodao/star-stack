@@ -37,6 +37,8 @@ API 使用相对路径 `/api/...`，后端启用了 CORS，前后端分开启动
 
 生产环境使用 Node.js 22、PM2、Nginx 和 SQLite，完整的首次部署、日常更新、数据库迁移、备份恢复与 HTTPS 流程见 [DEPLOYMENT.md](./DEPLOYMENT.md)。
 
+核心接口烟测：`npm run test:smoke`；本地监控、管理员审核和评测队列压力测试见 [DEPLOYMENT.md](./DEPLOYMENT.md)，压力脚本默认拒绝公网目标。
+
 ## 管理员初始化
 
 首次初始化数据库时，通过 `ADMIN_ID`、`ADMIN_NAME` 和 `ADMIN_PASSWORD` 环境变量创建管理员。生产环境不要在文档或代码中写死密码；请按照 [DEPLOYMENT.md](./DEPLOYMENT.md) 中的流程生成并保存初始密码。

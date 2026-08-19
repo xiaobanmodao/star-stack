@@ -275,6 +275,17 @@ node server/diagnose.js
 
 管理员后台的“站点看板”还会显示进程内存、评测/运行队列、数据库规模和最近备份状态。备份超过 26 小时未更新时会标记为“需检查”。`JUDGE_MEMORY_LIMIT_KB` 可在 65536～524288 之间调整评测内存上限，默认 262144（256MB）；沙箱同时限制虚拟内存、CPU 时间、进程数、文件大小和网络访问。
 
+压力测试只允许对本机服务执行：
+
+```bash
+PORT=5180 NODE_ENV=test node server/index.js
+STRESS_REQUESTS=200 STRESS_CONCURRENCY=20 npm run stress -- health
+STRESS_TOKEN='管理员Token' npm run stress -- admin
+STRESS_ALLOW_JUDGE=YES STRESS_TOKEN='用户Token' STRESS_PROBLEM_ID=1 npm run stress -- judge
+```
+
+`judge` 模式会真实占用测试运行队列，默认拒绝执行；不要把压力脚本指向公网生产域名。
+
 题目编辑会自动保存版本快照和审核状态历史。题目作者及管理员可以在编辑页查看版本并恢复；恢复后的内容仍会按权限进入草稿或对应审核状态。
 
 ## 6. 故障处理

@@ -21,8 +21,8 @@ const sendPushToUser = async (db, userId, { title, body, url }) => {
   }
 }
 
-export const createNotification = async (db, { userId, actorId, type, targetType, targetId, message, push }) => {
-  if (!userId || userId === actorId) return
+export const createNotification = async (db, { userId, actorId, type, targetType, targetId, message, push, allowSelf = false }) => {
+  if (!userId || (userId === actorId && !allowSelf)) return
   try {
     await db.run(
       `INSERT INTO notifications (user_id, actor_id, type, target_type, target_id, message, is_read, created_at)

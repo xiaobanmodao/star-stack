@@ -3,6 +3,7 @@ import cors from 'cors'
 import { getDb, initDb } from './db.js'
 import { getAuthToken, getUserByToken } from './middleware/auth.js'
 import { errorHandler } from './middleware/errorHandler.js'
+import { createRateLimiter } from './middleware/rateLimit.js'
 import { initPush } from './controllers/notificationsController.js'
 import {
   getJudgeQueueSnapshot,
@@ -27,6 +28,15 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
   : null
 
 const app = express()
+app.disable('x-powered-by')
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN')
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none')
+  next()
+})
 
 app.use(cors({
   origin(origin, callback) {
@@ -91,7 +101,7 @@ app.get('/api/stats', async (req, res) => {
 })
 
 // Frontend error reporting
-app.post('/api/client-errors', async (req, res) => {
+app.post('/api/client-errors', createRateLimiter({ windowMs: 60 * 1000, max: 30, message: '错误上报过于频繁' }), async (req, res) => {
   try {
     const db = await getDb()
     const { message, source, line, column, stack, url, userAgent } = req.body || {}

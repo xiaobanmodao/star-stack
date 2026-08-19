@@ -37,3 +37,11 @@ jobs:
           node --check server/controllers/problemsController.js
           node --check server/controllers/adminController.js
           node --check server/judge.js
+
+      - name: Start API for smoke test
+        run: |
+          PORT=5180 NODE_ENV=test node server/index.js > /tmp/starstack-api.log 2>&1 &
+          sleep 2
+
+      - name: API smoke test
+        run: SMOKE_BASE_URL=http://127.0.0.1:5180 npm run test:smoke

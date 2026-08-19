@@ -440,7 +440,7 @@ export type FollowListResponse = {
 
 // ============ 通知中心 ============
 
-export type NotificationType = 'follow' | 'comment' | 'reply' | 'mention' | 'invite'
+export type NotificationType = 'follow' | 'comment' | 'reply' | 'mention' | 'invite' | 'achievement.unlocked' | 'problem.review_requested' | 'problem.status_changed'
 
 export type NotificationItem = {
   id: number
