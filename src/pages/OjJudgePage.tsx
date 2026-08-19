@@ -37,14 +37,14 @@ const getAchievementDescription = (achievement: Achievement) =>
   achievement.description || achievement.desc || ''
 
 const getJudgeStatusMeta = (status: string | undefined, stage: JudgeStage): JudgeStatusMeta => {
-  if (stage === 'running') {
+  if (stage === 'running' || status === 'Queued' || status === 'Judging') {
     return {
-      label: '评测中',
+      label: status === 'Queued' ? '排队中' : '评测中',
       shortLabel: 'RUN',
       tone: 'info',
       kind: 'running',
-      title: '正在运行测试点',
-      description: '系统正在逐个执行测试点，结果会实时出现在下方。',
+      title: status === 'Queued' ? '已进入评测队列' : '正在运行测试点',
+      description: status === 'Queued' ? '服务器会按顺序处理提交，页面会自动刷新状态。' : '系统正在逐个执行测试点，结果会实时出现在下方。',
     }
   }
 
@@ -134,6 +134,7 @@ export default function OjJudgePage() {
   const streamCompletedRef = useRef(false)
   const streamCompletedSubmissionIdRef = useRef<number | null>(null)
   const streamAbortRef = useRef<AbortController | null>(null)
+  const persistedSubmissionIdRef = useRef<number | null>(null)
   const lastPayloadKeyRef = useRef('')
   const previousSubmissionIdRef = useRef(submissionId)
   const [streamResults, setStreamResults] = useState<{
@@ -161,6 +162,14 @@ export default function OjJudgePage() {
       if (data?.submission) {
         streamCompletedRef.current = true
         setSubmission(data.submission)
+        const pending = data.submission.status === 'Queued' || data.submission.status === 'Judging'
+        if (pending) {
+          setQueuePosition(data.submission.queuePosition && data.submission.queuePosition > 0 ? data.submission.queuePosition : null)
+          setStage('running')
+          setShowResults(false)
+          setError('')
+          return
+        }
         const failed = data.submission.status !== 'Accepted'
         if (failed && data.submission.code && data.submission.language) {
           setRetryPayload({
@@ -284,18 +293,21 @@ export default function OjJudgePage() {
             try {
               const payload = JSON.parse(line.slice(6))
               if (eventType === 'queued') {
+                if (Number(payload.submissionId) > 0) persistedSubmissionIdRef.current = Number(payload.submissionId)
                 setQueuePosition(Number(payload.position) > 0 ? Number(payload.position) : null)
                 if (payload.totalCases) setTotalCases(payload.totalCases)
               } else if (eventType === 'heartbeat') {
                 const position = Number(payload.queuePosition) || 0
                 setQueuePosition(position > 0 ? position : null)
               } else if (eventType === 'start') {
+                if (Number(payload.submissionId) > 0) persistedSubmissionIdRef.current = Number(payload.submissionId)
                 setQueuePosition(null)
                 setTotalCases(payload.totalCases)
               } else if (eventType === 'testcase') {
                 setStreamResults(prev => [...prev, payload])
               } else if (eventType === 'done') {
                 setQueuePosition(null)
+                persistedSubmissionIdRef.current = null
                 doneSubmission = payload.submission
               } else if (eventType === 'error') {
                 setQueuePosition(null)
@@ -318,6 +330,13 @@ export default function OjJudgePage() {
 
       if (streamError) return
       if (!doneSubmission) {
+        if (persistedSubmissionIdRef.current) {
+          const pendingId = persistedSubmissionIdRef.current
+          submitRef.current = false
+          navigate(`/oj/judge/${pendingId}`, { replace: true })
+          setError('评测连接已中断，正在通过提交记录继续跟踪状态')
+          return
+        }
         setError('评测连接已中断，请重新提交')
         setStage('fail')
         setShowResults(true)
@@ -426,6 +445,14 @@ export default function OjJudgePage() {
     submissionId,
     submitJudge,
   ])
+
+  useEffect(() => {
+    if (!submissionId || !submission || !['Queued', 'Judging'].includes(submission.status)) return
+    const timer = window.setInterval(() => {
+      void loadSubmission(submissionId)
+    }, 3000)
+    return () => window.clearInterval(timer)
+  }, [loadSubmission, submission, submissionId])
 
   useEffect(() => {
     if (stage !== 'success' || !submission || !currentUser?.id) return

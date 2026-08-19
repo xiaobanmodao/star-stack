@@ -70,6 +70,11 @@ export type OjSubmission = {
   results?: { index: number; status: string; message?: string; timeMs?: number; timeLimitMs?: number }[]
   score?: number
   createdAt?: string
+  queuePosition?: number | null
+  startedAt?: string | null
+  finishedAt?: string | null
+  attempts?: number
+  updatedAt?: string | null
 }
 export type DifficultyStats = {
   solved: number

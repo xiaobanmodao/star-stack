@@ -583,12 +583,14 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
   const updateStatus = async (problem: AdminProblem, nextStatus: string) => {
     const statusText = nextStatus === 'published' ? '发布' : nextStatus === 'hidden' ? '隐藏' : nextStatus === 'pending_review' ? '标记为审核中' : '转为草稿'
     if (!window.confirm(`确认将题目「${problem.title}」${statusText}？`)) return
+    const note = window.prompt('审核备注（可选，最多 500 字）', '')
+    if (note === null) return
     setBusyId(problem.id)
     setError('')
     try {
       const { response, data } = await fetchJson<{ message?: string }>(`/api/admin/problems/${problem.id}/status`, {
         method: 'POST',
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify({ status: nextStatus, note: note.slice(0, 500) }),
       })
       if (!response.ok) {
         setError(data?.message || '更新题目状态失败')

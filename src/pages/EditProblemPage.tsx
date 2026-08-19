@@ -16,6 +16,14 @@ import './CreatorAdminPages.css'
 
 type SampleDraft = { input: string; output: string; timeLimitMs: number }
 type TestFileDraft = { name: string; type: 'in' | 'out'; content: string; timeLimitMs: number }
+type RevisionSummary = {
+  id: number
+  version: number
+  status: string
+  changedByName?: string
+  note?: string
+  createdAt: string
+}
 
 const sortTestFiles = (files: TestFileDraft[]) => [...files].sort((a, b) => {
   const nameResult = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
@@ -74,6 +82,8 @@ export default function EditProblemPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [revisions, setRevisions] = useState<RevisionSummary[]>([])
+  const [restoringRevisionId, setRestoringRevisionId] = useState<number | null>(null)
 
   useEffect(() => {
     if (!currentUser) {
@@ -132,10 +142,34 @@ export default function EditProblemPage() {
         ...file,
         timeLimitMs: file.timeLimitMs || DEFAULT_TESTCASE_TIME_LIMIT_MS,
       }))))
+      const revisionsResult = await fetchJson<{ revisions: RevisionSummary[] }>(`/api/problems/${id}/revisions`)
+      if (revisionsResult.response.ok) setRevisions(revisionsResult.data?.revisions || [])
     } catch {
       setError('网络异常，暂时无法加载题目')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const restoreRevision = async (revision: RevisionSummary) => {
+    if (!window.confirm(`确定恢复到版本 ${revision.version} 吗？恢复后普通作者题目会回到草稿状态。`)) return
+    setRestoringRevisionId(revision.id)
+    setError('')
+    setSuccess('')
+    try {
+      const { response, data } = await fetchJson<ApiResponse>(`/api/problems/${id}/revisions/${revision.id}/restore`, {
+        method: 'POST',
+      })
+      if (!response.ok) {
+        setError(data?.message || '恢复版本失败')
+        return
+      }
+      setSuccess('版本已恢复，正在重新加载题目…')
+      await loadProblem()
+    } catch {
+      setError('网络异常，版本未恢复')
+    } finally {
+      setRestoringRevisionId(null)
     }
   }
 
@@ -327,6 +361,37 @@ export default function EditProblemPage() {
           </Button>
         }
       />
+
+      {revisions.length > 0 && (
+        <Panel className="problem-revision-panel">
+          <div className="problem-editor-card-head">
+            <div>
+              <Badge tone="info">Version History</Badge>
+              <h2>版本历史</h2>
+            </div>
+            <span>恢复旧版本后会重新生成一个版本记录，避免覆盖历史。</span>
+          </div>
+          <div className="problem-revision-list">
+            {revisions.slice(0, 8).map((revision) => (
+              <div className="problem-revision-row" key={revision.id}>
+                <div>
+                  <strong>版本 {revision.version}</strong>
+                  <span>{revision.note || '题目更新'} · {revision.changedByName || '系统'} · {new Date(revision.createdAt).toLocaleString()}</span>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  loading={restoringRevisionId === revision.id}
+                  onClick={() => void restoreRevision(revision)}
+                >
+                  恢复
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
 
       <form className="problem-form problem-editor-form" onSubmit={handleSubmit}>
         <div className="problem-editor-shell">

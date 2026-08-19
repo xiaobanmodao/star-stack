@@ -82,6 +82,17 @@ export const getJudgeStatus = async (req, res) => {
   })
 }
 
+export const getJudgeQueueSnapshot = () => ({
+  activeJudges: judgeQueue.active,
+  queuedJudges: judgeQueue.queued,
+  maxActiveJudges: judgeQueue.maxActive,
+  maxQueuedJudges: judgeQueue.maxQueued,
+  activeRuns: sandboxQueue.active,
+  queuedRuns: sandboxQueue.queued,
+  maxActiveRuns: sandboxQueue.maxActive,
+  maxQueuedRuns: sandboxQueue.maxQueued,
+})
+
 export const listMySubmissions = async (req, res) => {
   const auth = await requireUser(req, res)
   if (!auth) return
@@ -95,6 +106,7 @@ export const listMySubmissions = async (req, res) => {
   }
   const rows = await db.all(
     `SELECT s.id, s.problem_id, s.language, s.status, s.time_ms, s.memory_kb, s.score, s.created_at, s.results_json,
+            s.queue_position, s.started_at, s.finished_at, s.attempts, s.updated_at,
             p.title as problem_title
      FROM submissions s JOIN problems p ON p.id = s.problem_id
      WHERE s.user_id = ?${extra} ORDER BY s.id DESC LIMIT 100`,
@@ -106,6 +118,8 @@ export const listMySubmissions = async (req, res) => {
       language: row.language, status: row.status, timeMs: row.time_ms,
       memoryKb: row.memory_kb, score: row.score ?? 0,
       results: parseResults(row.results_json), createdAt: row.created_at,
+      queuePosition: row.queue_position, startedAt: row.started_at,
+      finishedAt: row.finished_at, attempts: row.attempts || 0, updatedAt: row.updated_at,
     })),
   })
 }
@@ -118,7 +132,8 @@ export const getLatestSubmission = async (req, res) => {
   if (!numericProblemId) return res.status(400).json({ message: '缺少题目编号' })
 
   const row = await db.get(
-    `SELECT id, problem_id, language, status, time_ms, memory_kb, message, code, created_at
+    `SELECT id, problem_id, language, status, time_ms, memory_kb, message, code, created_at,
+            queue_position, started_at, finished_at, attempts, updated_at, results_json, score
      FROM submissions WHERE user_id = ? AND problem_id = ?
      ORDER BY created_at DESC, id DESC LIMIT 1`,
     user.id, numericProblemId
@@ -128,7 +143,10 @@ export const getLatestSubmission = async (req, res) => {
     submission: {
       id: row.id, problemId: row.problem_id, language: row.language,
       status: row.status, timeMs: row.time_ms, memoryKb: row.memory_kb,
-      message: row.message, code: row.code, createdAt: row.created_at,
+      message: row.message, code: row.code, score: row.score ?? 0,
+      results: parseResults(row.results_json), createdAt: row.created_at,
+      queuePosition: row.queue_position, startedAt: row.started_at,
+      finishedAt: row.finished_at, attempts: row.attempts || 0, updatedAt: row.updated_at,
     },
   })
 }
@@ -147,6 +165,7 @@ export const listAllSubmissions = async (req, res) => {
 
   const rows = await db.all(
     `SELECT s.id, s.problem_id, s.user_id, s.language, s.status, s.time_ms, s.memory_kb, s.score, s.message, s.code, s.created_at, s.results_json,
+            s.queue_position, s.started_at, s.finished_at, s.attempts, s.updated_at,
             u.name as user_name
      FROM submissions s JOIN users u ON u.id = s.user_id
      WHERE s.problem_id = ?${extra} ORDER BY s.created_at DESC, s.id DESC LIMIT 200`,
@@ -161,7 +180,9 @@ export const listAllSubmissions = async (req, res) => {
       code: row.user_id === user.id ? row.code : null,
       canViewCode: row.user_id === user.id,
       results: row.user_id === user.id ? parseResults(row.results_json) : [],
-      createdAt: row.created_at,
+      createdAt: row.created_at, queuePosition: row.queue_position,
+      startedAt: row.started_at, finishedAt: row.finished_at,
+      attempts: row.attempts || 0, updatedAt: row.updated_at,
     })),
   })
 }
@@ -175,6 +196,7 @@ export const getSubmission = async (req, res) => {
 
   const row = await db.get(
     `SELECT s.id, s.problem_id, s.user_id, s.language, s.status, s.time_ms, s.memory_kb, s.score, s.message, s.code, s.created_at, s.results_json,
+            s.queue_position, s.started_at, s.finished_at, s.attempts, s.updated_at,
             p.title as problem_title, u.name as user_name
      FROM submissions s JOIN problems p ON p.id = s.problem_id JOIN users u ON u.id = s.user_id
      WHERE s.id = ? LIMIT 1`,
@@ -191,26 +213,161 @@ export const getSubmission = async (req, res) => {
       message: canViewCode ? row.message : null, score: row.score ?? 0,
       code: canViewCode ? row.code : null, canViewCode,
       results: canViewCode ? parseResults(row.results_json) : [],
-      createdAt: row.created_at,
+      createdAt: row.created_at, queuePosition: row.queue_position,
+      startedAt: row.started_at, finishedAt: row.finished_at,
+      attempts: row.attempts || 0, updatedAt: row.updated_at,
     },
   })
 }
 
-const _saveSubmission = async (db, { problemId, userId, language, code, judgeResult }) => {
+const _createQueuedSubmission = async (db, { problemId, userId, language, code, queuePosition = null }) => {
+  const createdAt = new Date().toISOString()
+  const result = await db.run(
+    `INSERT INTO submissions
+       (problem_id, user_id, language, code, status, time_ms, memory_kb, message, results_json, score,
+        queue_position, started_at, finished_at, attempts, updated_at, created_at)
+     VALUES (?, ?, ?, ?, 'Queued', NULL, NULL, ?, '[]', 0, ?, NULL, NULL, 0, ?, ?)`,
+    problemId, userId, language, code, '等待进入评测队列', queuePosition, createdAt, createdAt,
+  )
+  return { submissionId: result.lastID, createdAt }
+}
+
+const _setSubmissionQueuePosition = async (db, submissionId, queuePosition) => {
+  await db.run(
+    `UPDATE submissions SET queue_position = ?, updated_at = ? WHERE id = ? AND status = 'Queued'`,
+    queuePosition || null, new Date().toISOString(), submissionId,
+  )
+}
+
+const _markSubmissionRunning = async (db, submissionId) => {
+  const now = new Date().toISOString()
+  await db.run(
+    `UPDATE submissions
+     SET status = 'Judging', queue_position = NULL, started_at = ?, attempts = attempts + 1,
+         message = ?, updated_at = ?
+     WHERE id = ?`,
+    now, '正在评测测试点', now, submissionId,
+  )
+}
+
+const _markSubmissionTerminal = async (db, submissionId, status, message) => {
+  const now = new Date().toISOString()
+  await db.run(
+    `UPDATE submissions
+     SET status = ?, queue_position = NULL, finished_at = ?, message = ?, updated_at = ?
+     WHERE id = ?`,
+    status, now, message, now, submissionId,
+  )
+}
+
+const _saveSubmission = async (db, { submissionId, problemId, userId, language, code, judgeResult }) => {
   const status = judgeResult.status
   const message = judgeResult.message
   const timeMs = judgeResult.timeMs ?? null
   const score = judgeResult.score ?? 0
   const results = Array.isArray(judgeResult.results) ? judgeResult.results : []
   const resultsJson = JSON.stringify(results)
-  const createdAt = new Date().toISOString()
+  const finishedAt = new Date().toISOString()
 
-  const result = await db.run(
-    `INSERT INTO submissions (problem_id, user_id, language, code, status, time_ms, memory_kb, message, results_json, score, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
-    problemId, userId, language, code, status, timeMs, message, resultsJson, score, createdAt
+  if (submissionId) {
+    await db.run(
+      `UPDATE submissions
+       SET status = ?, time_ms = ?, memory_kb = NULL, message = ?, results_json = ?, score = ?,
+           queue_position = NULL, finished_at = ?, updated_at = ?
+       WHERE id = ?`,
+      status, timeMs, message, resultsJson, score, finishedAt, finishedAt, submissionId,
+    )
+    const row = await db.get(`SELECT created_at FROM submissions WHERE id = ?`, submissionId)
+    return { submissionId, status, message, timeMs, score, results, createdAt: row?.created_at || finishedAt }
+  }
+
+  // 兼容未来的非队列调用方，正常提交路径都会先创建 Queued 记录。
+  const created = await _createQueuedSubmission(db, { problemId, userId, language, code })
+  return _saveSubmission(db, { submissionId: created.submissionId, problemId, userId, language, code, judgeResult })
+}
+
+const _loadSubmissionTestcases = async (db, problemId) => db.all(
+  `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? ORDER BY id ASC`,
+  problemId,
+)
+
+const _enqueuePersistedSubmission = (db, { submissionId, problemId, userId, language, code, testcases, onStart, onTestCase }) => {
+  const task = judgeQueue.enqueue(
+    async () => {
+      try {
+        const judgeResult = await judgeSubmission({
+          language, code, testcases,
+          onTestCase,
+        })
+        const saved = await _saveSubmission(db, {
+          submissionId, problemId, userId, language, code, judgeResult,
+        })
+        await _postSubmitHooks(db, userId, saved.submissionId, problemId, saved.status, saved.createdAt)
+        return saved
+      } catch (error) {
+        await _markSubmissionTerminal(db, submissionId, 'Failed', '评测服务异常，请稍后重试').catch(() => undefined)
+        throw error
+      }
+    },
+    {
+      key: userId,
+      onStart: async () => {
+        try {
+          await _markSubmissionRunning(db, submissionId)
+          await onStart?.()
+        } catch (error) {
+          await _markSubmissionTerminal(db, submissionId, 'Failed', '评测启动失败，请稍后重试').catch(() => undefined)
+          throw error
+        }
+      },
+    },
   )
-  return { submissionId: result.lastID, status, message, timeMs, score, results, createdAt }
+  return task
+}
+
+export const recoverPendingSubmissions = async () => {
+  const db = await getDb()
+  const rows = await db.all(
+    `SELECT s.id, s.problem_id, s.user_id, s.language, s.code, s.status, p.status AS problem_status
+     FROM submissions s
+     JOIN problems p ON p.id = s.problem_id
+     WHERE s.status IN ('Queued', 'Judging')
+     ORDER BY s.id ASC LIMIT 50`,
+  )
+  let recovered = 0
+  for (const row of rows) {
+    if (row.problem_status !== 'published') {
+      await _markSubmissionTerminal(db, row.id, 'Failed', '题目已下架，未继续评测')
+      continue
+    }
+    const testcases = await _loadSubmissionTestcases(db, row.problem_id)
+    if (testcases.length === 0) {
+      await _markSubmissionTerminal(db, row.id, 'Failed', '该题暂无测试用例')
+      continue
+    }
+    if (judgeQueue.isFullFor(row.user_id)) {
+      await _markSubmissionTerminal(db, row.id, 'Failed', '服务重启后评测队列容量不足，请重新提交')
+      continue
+    }
+    const task = _enqueuePersistedSubmission(db, {
+      submissionId: row.id,
+      problemId: row.problem_id,
+      userId: row.user_id,
+      language: row.language,
+      code: row.code,
+      testcases,
+    })
+    if (!task.accepted) {
+      void task.promise.catch(() => undefined)
+      await _markSubmissionTerminal(db, row.id, 'Failed', '服务重启后评测队列容量不足，请重新提交')
+      continue
+    }
+    await _setSubmissionQueuePosition(db, row.id, task.getPosition())
+    void task.promise.catch((error) => console.error('[judge] recovered submission failed:', row.id, error?.message || error))
+    recovered += 1
+  }
+  if (recovered > 0) console.log(`[judge] recovered ${recovered} pending submission(s)`)
+  return recovered
 }
 
 const _postSubmitHooks = async (db, userId, submissionId, problemId, status, createdAt) => {
@@ -261,14 +418,26 @@ export const submitSolution = async (req, res) => {
   }
   judgeRateLimits.set(user.id, Date.now())
 
-  const judgeTask = judgeQueue.enqueue(
-    () => judgeSubmission({ language, code: String(code), testcases }),
-    { key: user.id },
-  )
-  const judgeResult = await judgeTask.promise
-
-  const saved = await _saveSubmission(db, { problemId: Number(problemId), userId: user.id, language, code: String(code), judgeResult })
-  await _postSubmitHooks(db, user.id, saved.submissionId, Number(problemId), saved.status, saved.createdAt)
+  const queued = await _createQueuedSubmission(db, {
+    problemId: Number(problemId), userId: user.id, language, code: String(code),
+    queuePosition: judgeQueue.queued + 1,
+  })
+  const judgeTask = _enqueuePersistedSubmission(db, {
+    submissionId: queued.submissionId,
+    problemId: Number(problemId),
+    userId: user.id,
+    language,
+    code: String(code),
+    testcases,
+  })
+  if (!judgeTask.accepted) {
+    void judgeTask.promise.catch(() => undefined)
+    await _markSubmissionTerminal(db, queued.submissionId, 'Failed', '评测队列已满，请稍后重试')
+    res.setHeader('Retry-After', '5')
+    return res.status(503).json({ message: '评测队列已满，请稍后重试' })
+  }
+  await _setSubmissionQueuePosition(db, queued.submissionId, judgeTask.getPosition())
+  const saved = await judgeTask.promise
 
   return res.json({
     submission: {
@@ -323,6 +492,7 @@ export const streamSubmission = async (req, res) => {
   let closed = false
   let judgeTask
   let heartbeatTimer
+  let queuedSubmission
   req.on('close', () => {
     closed = true
     // 仅取消还未开始的任务；运行中的评测由沙箱自身超时与回收，避免残留孤儿进程。
@@ -333,23 +503,36 @@ export const streamSubmission = async (req, res) => {
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
   }
   try {
-    judgeTask = judgeQueue.enqueue(
-      () => judgeSubmission({
-        language, code: String(code), testcases,
-        onTestCase: (tc) => sendEvent('testcase', tc),
-      }),
-      { key: user.id, onStart: () => sendEvent('start', { totalCases: testcases.length }) },
-    )
+    queuedSubmission = await _createQueuedSubmission(db, {
+      problemId: Number(problemId), userId: user.id, language, code: String(code),
+      queuePosition: judgeQueue.queued + 1,
+    })
+    judgeTask = _enqueuePersistedSubmission(db, {
+      submissionId: queuedSubmission.submissionId,
+      problemId: Number(problemId),
+      userId: user.id,
+      language,
+      code: String(code),
+      testcases,
+      onStart: () => sendEvent('start', { submissionId: queuedSubmission.submissionId, totalCases: testcases.length }),
+      onTestCase: (tc) => sendEvent('testcase', tc),
+    })
+    if (!judgeTask.accepted) {
+      void judgeTask.promise.catch(() => undefined)
+      await _markSubmissionTerminal(db, queuedSubmission.submissionId, 'Failed', '评测队列已满，请稍后重试')
+      sendEvent('error', { submissionId: queuedSubmission.submissionId, message: '评测队列已满，请稍后重试' })
+      return
+    }
+    await _setSubmissionQueuePosition(db, queuedSubmission.submissionId, judgeTask.getPosition())
 
     const queuePosition = judgeTask.getPosition()
-    if (queuePosition !== null) {
-      sendEvent('queued', {
-        position: queuePosition,
-        totalCases: testcases.length,
-        activeJudges: judgeQueue.active,
-        queuedJudges: judgeQueue.queued,
-      })
-    }
+    sendEvent('queued', {
+      submissionId: queuedSubmission.submissionId,
+      position: queuePosition || 0,
+      totalCases: testcases.length,
+      activeJudges: judgeQueue.active,
+      queuedJudges: judgeQueue.queued,
+    })
 
     heartbeatTimer = setInterval(() => {
       sendEvent('heartbeat', {
@@ -359,10 +542,7 @@ export const streamSubmission = async (req, res) => {
       })
     }, 15000)
 
-    const judgeResult = await judgeTask.promise
-
-    const saved = await _saveSubmission(db, { problemId: Number(problemId), userId: user.id, language, code: String(code), judgeResult })
-    await _postSubmitHooks(db, user.id, saved.submissionId, Number(problemId), saved.status, saved.createdAt)
+    const saved = await judgeTask.promise
 
     sendEvent('done', {
       submission: {
@@ -372,8 +552,11 @@ export const streamSubmission = async (req, res) => {
       },
     })
   } catch (error) {
+    if (queuedSubmission?.submissionId && error?.code === 'QUEUE_CANCELLED') {
+      await _markSubmissionTerminal(db, queuedSubmission.submissionId, 'Cancelled', '评测请求已取消')
+    }
     console.error('Streaming submission failed:', error)
-    sendEvent('error', { message: '评测失败，请稍后重试' })
+    if (!closed) sendEvent('error', { submissionId: queuedSubmission?.submissionId, message: '评测失败，请稍后重试' })
   } finally {
     if (heartbeatTimer) clearInterval(heartbeatTimer)
     if (!res.writableEnded && !res.destroyed) res.end()

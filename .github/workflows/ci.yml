@@ -29,3 +29,11 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Server syntax smoke check
+        run: |
+          node --check server/index.js
+          node --check server/controllers/submissionsController.js
+          node --check server/controllers/problemsController.js
+          node --check server/controllers/adminController.js
+          node --check server/judge.js

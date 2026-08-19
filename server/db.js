@@ -173,6 +173,11 @@ const LEGACY_COLUMN_PATCHES = [
   { table: 'submissions', column: 'message', definition: 'TEXT' },
   { table: 'submissions', column: 'results_json', definition: 'TEXT' },
   { table: 'submissions', column: 'score', definition: 'INTEGER DEFAULT 0' },
+  { table: 'submissions', column: 'queue_position', definition: 'INTEGER' },
+  { table: 'submissions', column: 'started_at', definition: 'TEXT' },
+  { table: 'submissions', column: 'finished_at', definition: 'TEXT' },
+  { table: 'submissions', column: 'attempts', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'submissions', column: 'updated_at', definition: 'TEXT' },
   { table: 'testcases', column: 'is_sample', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'testcases', column: 'time_limit_ms', definition: 'INTEGER NOT NULL DEFAULT 1500' },
   { table: 'reports', column: 'resolved_by', definition: 'TEXT' },
@@ -316,9 +321,38 @@ export const initDb = async () => {
       memory_kb INTEGER,
       message TEXT,
       results_json TEXT,
+      queue_position INTEGER,
+      started_at TEXT,
+      finished_at TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT,
       created_at TEXT NOT NULL,
       FOREIGN KEY (problem_id) REFERENCES problems (id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS problem_revisions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      problem_id INTEGER NOT NULL,
+      version INTEGER NOT NULL,
+      snapshot_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      changed_by TEXT,
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      UNIQUE(problem_id, version),
+      FOREIGN KEY (problem_id) REFERENCES problems(id) ON DELETE CASCADE,
+      FOREIGN KEY (changed_by) REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS problem_status_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      problem_id INTEGER NOT NULL,
+      from_status TEXT,
+      to_status TEXT NOT NULL,
+      changed_by TEXT,
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (problem_id) REFERENCES problems(id) ON DELETE CASCADE,
+      FOREIGN KEY (changed_by) REFERENCES users(id) ON DELETE SET NULL
     );
     CREATE TABLE IF NOT EXISTS testcases (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -334,12 +368,15 @@ export const initDb = async () => {
     CREATE INDEX IF NOT EXISTS idx_email_verifications_expires ON email_verifications (expires_at);
     CREATE INDEX IF NOT EXISTS idx_submissions_user ON submissions (user_id);
     CREATE INDEX IF NOT EXISTS idx_submissions_problem ON submissions (problem_id);
+    CREATE INDEX IF NOT EXISTS idx_problem_revisions_problem ON problem_revisions (problem_id, version DESC);
+    CREATE INDEX IF NOT EXISTS idx_problem_status_history_problem ON problem_status_history (problem_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_testcases_problem ON testcases (problem_id);
   `)
 
   await ensureLegacyColumns(db)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_submissions_problem_status ON submissions (problem_id, status);
+    CREATE INDEX IF NOT EXISTS idx_submissions_status_queue ON submissions (status, queue_position, id);
     CREATE INDEX IF NOT EXISTS idx_submissions_user_created ON submissions (user_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_testcases_problem_sample ON testcases (problem_id, is_sample, id);
     CREATE INDEX IF NOT EXISTS idx_problems_status_difficulty ON problems (status, difficulty, id);

@@ -77,6 +77,12 @@ OJ
 - `GET /api/oj/submissions/latest`（当前用户该题最近提交）
 - `POST /api/oj/run-sample`
 - `POST /api/oj/run-custom`
+- `GET /api/health`（服务与评测队列健康状态）
+- `GET /api/problems/:id/revisions`（题目版本历史）
+- `POST /api/problems/:id/revisions/:revisionId/restore`（恢复题目版本）
+- `POST /api/problems/:id/submit-review`（作者提交审核）
+
+提交评测会先持久化为 `Queued`，随后进入有并发上限的评测队列；服务重启会恢复未完成的评测，前端也会通过提交记录继续轮询状态。
 
 后台（用户管理）
 - `GET /api/admin/users`

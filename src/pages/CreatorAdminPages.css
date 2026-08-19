@@ -17,6 +17,49 @@
   background: none;
 }
 
+.problem-revision-panel {
+  display: grid;
+  gap: 12px;
+  border-radius: var(--ss-radius-xl) !important;
+  background: var(--ss-hover-layer);
+  box-shadow: none !important;
+}
+
+.problem-revision-list {
+  display: grid;
+  gap: 8px;
+}
+
+.problem-revision-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-bg-input);
+}
+
+.problem-revision-row > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.problem-revision-row strong {
+  color: var(--ss-color-text);
+  font-size: 13px;
+}
+
+.problem-revision-row span {
+  overflow: hidden;
+  color: var(--ss-color-text-subtle);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .problem-editor-form {
   max-width: none;
   margin: 0;

@@ -7,11 +7,32 @@ import {
   parseTestcaseTimeLimit,
 } from '../utils/testcaseLimits.js'
 import { recordAdminAction } from '../utils/adminAudit.js'
+import { createNotification } from '../utils/notifications.js'
+import {
+  buildProblemSnapshot,
+  parseRevisionSnapshot,
+  recordProblemRevision,
+  recordProblemStatusChange,
+} from '../utils/problemRevisions.js'
 import {
   getAdminCreateStatus,
   getCreatorUpdateStatus,
   normalizeProblemStatus,
 } from '../utils/problemStatus.js'
+
+const recordProblemChange = async ({ db, problemId, status, changedBy, snapshot, fromStatus, toStatus, note }) => {
+  try {
+    if (snapshot) {
+      await recordProblemRevision(db, { problemId, status, changedBy, snapshot, note })
+    }
+    if (toStatus !== undefined) {
+      await recordProblemStatusChange(db, { problemId, fromStatus, toStatus, changedBy, note })
+    }
+  } catch (error) {
+    // 内容事务已经提交，审计记录失败不能让接口误报“保存失败”。
+    console.error('[problems] failed to record revision/history:', error)
+  }
+}
 
 const solutionRateLimits = new BoundedCache(5000, 10000)
 const MAX_TEST_FILE_BYTES = 2 * 1024 * 1024
@@ -412,6 +433,15 @@ export const createProblem = async (req, res) => {
     }
 
     await db.exec('COMMIT')
+    const snapshot = buildProblemSnapshot({
+      problem: { title, difficulty, tags, statement: sanitizedStatement, inputDesc: sanitizedInputDesc, outputDesc: sanitizedOutputDesc, dataRange: sanitizedDataRange },
+      samples: normalizedSamples,
+      testcases: testFilePairs.map((pair) => ({ input: pair.in.content, output: pair.out.content, is_sample: 0, time_limit_ms: pair.timeLimitMs })),
+    })
+    await recordProblemChange({
+      db, problemId: nextId, status: nextStatus, changedBy: user.id, snapshot,
+      fromStatus: null, toStatus: nextStatus, note: '创建题目',
+    })
     if (user.is_admin) {
       await recordAdminAction(db, {
         adminId: user.id,
@@ -545,6 +575,16 @@ export const updateProblem = async (req, res) => {
     }
 
     await db.exec('COMMIT')
+    const snapshot = buildProblemSnapshot({
+      problem: { title, difficulty, tags, statement: sanitizedStatement, inputDesc: sanitizedInputDesc, outputDesc: sanitizedOutputDesc, dataRange: sanitizedDataRange },
+      samples: normalizedSamples,
+      testcases: testFilePairs.map((pair) => ({ input: pair.in.content, output: pair.out.content, is_sample: 0, time_limit_ms: pair.timeLimitMs })),
+    })
+    await recordProblemChange({
+      db, problemId, status: nextStatus, changedBy: user.id, snapshot,
+      fromStatus: problem.status, toStatus: nextStatus,
+      note: problem.status === 'pending_review' || problem.status === 'published' ? '编辑后重新进入草稿' : '更新题目',
+    })
     if (user.is_admin) {
       await recordAdminAction(db, {
         adminId: user.id,
@@ -555,7 +595,7 @@ export const updateProblem = async (req, res) => {
         detail: { title: title.trim(), status: nextStatus },
       })
     }
-    return res.json({ message: '题目更新成功', problemId })
+    return res.json({ message: '题目更新成功', problemId, status: nextStatus })
   } catch (error) {
     await db.exec('ROLLBACK').catch(() => undefined)
     console.error('更新题目失败:', error)
@@ -621,5 +661,92 @@ export const submitProblemForReview = async (req, res) => {
   }
 
   await db.run(`UPDATE problems SET status = 'pending_review' WHERE id = ?`, problemId)
+  await recordProblemChange({
+    db, problemId, fromStatus: problem.status, toStatus: 'pending_review',
+    changedBy: user.id, note: '作者提交审核',
+  })
+  const admins = await db.all(`SELECT id FROM users WHERE is_admin = 1 AND is_banned = 0`)
+  for (const admin of admins) {
+    await createNotification(db, {
+      userId: admin.id,
+      actorId: user.id,
+      type: 'problem.review_requested',
+      targetType: 'problem',
+      targetId: problemId,
+      message: `题目「${problem.title}」已提交审核`,
+    })
+  }
   return res.json({ message: '题目已提交审核', problemId, status: 'pending_review' })
+}
+
+export const listProblemRevisions = async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  const problemId = Number(req.params.id)
+  const problem = await db.get(`SELECT id, creator_id FROM problems WHERE id = ?`, problemId)
+  if (!problem) return res.status(404).json({ message: '题目不存在' })
+  if (problem.creator_id !== user.id && !user.is_admin) return res.status(403).json({ message: '无权限查看版本历史' })
+  const rows = await db.all(
+    `SELECT r.id, r.version, r.status, r.changed_by, r.note, r.created_at, u.name AS changed_by_name
+     FROM problem_revisions r LEFT JOIN users u ON u.id = r.changed_by
+     WHERE r.problem_id = ? ORDER BY r.version DESC LIMIT 50`,
+    problemId,
+  )
+  return res.json({ revisions: rows.map((row) => ({
+    id: row.id, version: row.version, status: row.status, changedBy: row.changed_by,
+    changedByName: row.changed_by_name, note: row.note, createdAt: row.created_at,
+  })) })
+}
+
+export const restoreProblemRevision = async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const { db, user } = auth
+  const problemId = Number(req.params.id)
+  const revisionId = Number(req.params.revisionId)
+  if (!problemId || !revisionId) return res.status(400).json({ message: '无效的版本编号' })
+  const problem = await db.get(`SELECT * FROM problems WHERE id = ?`, problemId)
+  if (!problem) return res.status(404).json({ message: '题目不存在' })
+  if (problem.creator_id !== user.id && !user.is_admin) return res.status(403).json({ message: '无权限恢复此版本' })
+  const revision = await db.get(`SELECT * FROM problem_revisions WHERE id = ? AND problem_id = ?`, revisionId, problemId)
+  const snapshot = parseRevisionSnapshot(revision?.snapshot_json)
+  if (!revision || !snapshot) return res.status(404).json({ message: '版本不存在或已损坏' })
+  if (!snapshot.title || !snapshot.statement || !snapshot.samples?.length) {
+    return res.status(400).json({ message: '该版本内容不完整，无法恢复' })
+  }
+
+  const nextStatus = user.is_admin ? normalizeProblemStatus(revision.status, problem.status || 'draft') : 'draft'
+  const now = new Date().toISOString()
+  try {
+    await db.exec('BEGIN IMMEDIATE')
+    await db.run(
+      `UPDATE problems SET title = ?, difficulty = ?, tags = ?, statement = ?, input_desc = ?, output_desc = ?, data_range = ?, samples = ?, status = ? WHERE id = ?`,
+      snapshot.title, snapshot.difficulty || '入门', snapshot.tags.join(','), snapshot.statement,
+      snapshot.inputDesc || '', snapshot.outputDesc || '', snapshot.dataRange || '', JSON.stringify(snapshot.samples), nextStatus, problemId,
+    )
+    await db.run(`DELETE FROM testcases WHERE problem_id = ?`, problemId)
+    for (const sample of snapshot.samples) {
+      await db.run(
+        `INSERT INTO testcases (problem_id, input, output, is_sample, time_limit_ms, created_at) VALUES (?, ?, ?, 1, ?, ?)`,
+        problemId, sample.input, sample.output, sample.timeLimitMs || DEFAULT_TESTCASE_TIME_LIMIT_MS, now,
+      )
+    }
+    for (const test of snapshot.testData || []) {
+      await db.run(
+        `INSERT INTO testcases (problem_id, input, output, is_sample, time_limit_ms, created_at) VALUES (?, ?, ?, 0, ?, ?)`,
+        problemId, test.input, test.output, test.timeLimitMs || DEFAULT_TESTCASE_TIME_LIMIT_MS, now,
+      )
+    }
+    await db.exec('COMMIT')
+    await recordProblemChange({
+      db, problemId, status: nextStatus, changedBy: user.id, snapshot,
+      fromStatus: problem.status, toStatus: nextStatus, note: `从版本 ${revision.version} 恢复`,
+    })
+    return res.json({ message: '版本已恢复', problemId, status: nextStatus })
+  } catch (error) {
+    await db.exec('ROLLBACK').catch(() => undefined)
+    console.error('恢复题目版本失败:', error)
+    return res.status(500).json({ message: '恢复题目版本失败' })
+  }
 }

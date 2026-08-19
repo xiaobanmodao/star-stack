@@ -156,15 +156,29 @@ const runCommand = (cmd, args, options = {}) =>
       cwd: options.cwd,
       windowsHide: true,
       env: spawnEnv,
+      // Linux 下让 wrapper 与用户代码处于独立进程组，超时或异常时可以一次性回收所有子进程。
+      detached: !IS_WIN,
     })
     let stdout = ''
     let stderr = ''
     let finished = false
+    const killProcessGroup = (signal) => {
+      if (!child.pid) return
+      if (IS_WIN) {
+        child.kill(signal)
+        return
+      }
+      try {
+        process.kill(-child.pid, signal)
+      } catch {
+        child.kill(signal)
+      }
+    }
     // 应用层超时（双重保险，沙箱内 timeout 命令也会限制）
     const timer = setTimeout(() => {
       if (finished) return
       finished = true
-      child.kill('SIGKILL')
+      killProcessGroup('SIGKILL')
       resolve({
         stdout,
         stderr,

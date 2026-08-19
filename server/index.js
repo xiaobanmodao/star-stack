@@ -4,7 +4,11 @@ import { getDb, initDb } from './db.js'
 import { getAuthToken, getUserByToken } from './middleware/auth.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { initPush } from './controllers/notificationsController.js'
-import { setLeaderboardSaveCallback } from './controllers/submissionsController.js'
+import {
+  getJudgeQueueSnapshot,
+  recoverPendingSubmissions,
+  setLeaderboardSaveCallback,
+} from './controllers/submissionsController.js'
 
 import authRouter from './routes/auth.js'
 import userRouter from './routes/user.js'
@@ -56,8 +60,17 @@ app.use('/api/admin', adminRouter)
 app.use('/api/leaderboard', leaderboardRouter)
 app.use('/api/problem-plan', problemPlanRouter)
 
-// Health check
-app.get('/api/health', (req, res) => res.json({ ok: true }))
+// Health check：同时报告数据库和评测队列状态，供 Nginx/监控探针使用。
+app.get('/api/health', async (req, res) => {
+  try {
+    const db = await getDb()
+    await db.get('SELECT 1 AS ok')
+    return res.json({ ok: true, service: 'star-stack-api', judge: getJudgeQueueSnapshot() })
+  } catch (error) {
+    console.error('[health] failed:', error?.message || error)
+    return res.status(503).json({ ok: false, message: '服务暂不可用' })
+  }
+})
 
 // Site-wide stats
 app.get('/api/stats', async (req, res) => {
@@ -513,7 +526,8 @@ app.use(errorHandler)
 
 const PORT = Number(process.env.PORT) || 5174
 initDb()
-  .then(() => {
+  .then(async () => {
+    await recoverPendingSubmissions()
     app.listen(PORT, () => {
       console.log(`StarStack API running at http://localhost:${PORT}`)
       initPush()

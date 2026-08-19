@@ -4,6 +4,8 @@ import { requireAdmin } from '../middleware/auth.js'
 import { localDay } from '../utils/dateHelpers.js'
 import { broadcastToScope } from './chatController.js'
 import { recordAdminAction } from '../utils/adminAudit.js'
+import { createNotification } from '../utils/notifications.js'
+import { recordProblemStatusChange } from '../utils/problemRevisions.js'
 
 const parsePositiveInteger = (value) => {
   const parsed = Number.parseInt(String(value ?? ''), 10)
@@ -236,6 +238,7 @@ export const setProblemStatus = async (req, res) => {
   const { db, user } = auth
   const problemId = parsePositiveInteger(req.params.id)
   const status = normalizeSearch(req.body?.status, 20)
+  const note = normalizeSearch(req.body?.note, 500)
   if (!problemId) return res.status(400).json({ message: '无效的题目 ID' })
   if (!['draft', 'pending_review', 'published', 'hidden'].includes(status)) {
     return res.status(400).json({ message: '无效的题目状态' })
@@ -244,13 +247,33 @@ export const setProblemStatus = async (req, res) => {
   if (!problem) return res.status(404).json({ message: '题目不存在' })
   if (problem.status === status) return res.json({ ok: true, status })
   await db.run(`UPDATE problems SET status = ? WHERE id = ?`, status, problemId)
+  try {
+    await recordProblemStatusChange(db, {
+      problemId, fromStatus: problem.status, toStatus: status,
+      changedBy: user.id, note: note || '管理员更新题目状态',
+    })
+  } catch (error) {
+    console.error('[admin] failed to record problem status history:', error)
+  }
+  const creator = await db.get(`SELECT creator_id FROM problems WHERE id = ?`, problemId)
+  if (creator?.creator_id && creator.creator_id !== user.id) {
+    const statusText = status === 'published' ? '已发布' : status === 'hidden' ? '已隐藏' : status === 'draft' ? '已退回草稿' : '审核中'
+    await createNotification(db, {
+      userId: creator.creator_id,
+      actorId: user.id,
+      type: 'problem.status_changed',
+      targetType: 'problem',
+      targetId: problemId,
+      message: `题目「${problem.title}」${statusText}${note ? `：${note}` : ''}`,
+    })
+  }
   await recordAdminAction(db, {
     adminId: user.id,
     adminName: getAdminName(user),
     action: 'problem.status',
     targetType: 'problem',
     targetId: problemId,
-    detail: { title: problem.title, from: problem.status, to: status },
+    detail: { title: problem.title, from: problem.status, to: status, note },
   })
   return res.json({ ok: true, status })
 }

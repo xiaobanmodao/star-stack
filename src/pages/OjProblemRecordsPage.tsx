@@ -21,6 +21,10 @@ const SUBMISSION_STATUS_OPTIONS = [
   { value: 'Compile Error', label: 'Compile Error' },
   { value: 'Time Limit Exceeded', label: 'Time Limit Exceeded' },
   { value: 'Runtime Error', label: 'Runtime Error' },
+  { value: 'Queued', label: '排队中' },
+  { value: 'Judging', label: '评测中' },
+  { value: 'Failed', label: '评测失败' },
+  { value: 'Cancelled', label: '已取消' },
 ]
 
 const LANGUAGE_OPTIONS = [
