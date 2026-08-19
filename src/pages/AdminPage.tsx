@@ -1,12 +1,14 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
-import type { AdminReport, AdminStatsResponse, UserRecord, ApiResponse } from '../types'
+import type { AdminAuditLog, AdminProblem, AdminReport, AdminStatsResponse, UserRecord, ApiResponse } from '../types'
 import './CreatorAdminPages.css'
 
 export default function AdminPage() {
   const { currentUser, openAuth } = useAppContext()
+  const navigate = useNavigate()
   const [adminUsers, setAdminUsers] = useState<UserRecord[]>([])
   const [adminLoading, setAdminLoading] = useState(false)
   const [adminError, setAdminError] = useState('')
@@ -14,9 +16,12 @@ export default function AdminPage() {
   const [adminActionMessage, setAdminActionMessage] = useState('')
   const [adminActionBusy, setAdminActionBusy] = useState(false)
   const [adminCreating, setAdminCreating] = useState(false)
-  const [adminTab, setAdminTab] = useState<'users' | 'reports' | 'stats'>('users')
+  const [adminTab, setAdminTab] = useState<'users' | 'problems' | 'reports' | 'logs' | 'stats'>('users')
   const [adminUsersPage, setAdminUsersPage] = useState(1)
   const [adminUsersPageInput, setAdminUsersPageInput] = useState('1')
+  const [adminUserQuery, setAdminUserQuery] = useState('')
+  const [adminUserStatus, setAdminUserStatus] = useState<'all' | 'normal' | 'banned'>('all')
+  const [adminUserRole, setAdminUserRole] = useState<'all' | 'user' | 'admin'>('all')
   const adminUsersPerPage = 20
 
   const [newUserId, setNewUserId] = useState('')
@@ -131,10 +136,28 @@ export default function AdminPage() {
     }
   }
 
-  const adminUsersTotalPages = Math.ceil(adminUsers.length / adminUsersPerPage)
+  const filteredAdminUsers = useMemo(() => {
+    const query = adminUserQuery.trim().toLowerCase()
+    return adminUsers.filter((user) => {
+      const matchesQuery = !query || [user.id, user.name, user.email || ''].some((value) => value.toLowerCase().includes(query))
+      const matchesStatus = adminUserStatus === 'all'
+        || (adminUserStatus === 'banned' ? user.isBanned : !user.isBanned)
+      const matchesRole = adminUserRole === 'all'
+        || (adminUserRole === 'admin' ? user.isAdmin : !user.isAdmin)
+      return matchesQuery && matchesStatus && matchesRole
+    })
+  }, [adminUserQuery, adminUserRole, adminUserStatus, adminUsers])
+
+  const adminUsersTotalPages = Math.ceil(filteredAdminUsers.length / adminUsersPerPage)
   const adminUsersStartIndex = (adminUsersPage - 1) * adminUsersPerPage
   const adminUsersEndIndex = adminUsersStartIndex + adminUsersPerPage
-  const currentAdminUsers = adminUsers.slice(adminUsersStartIndex, adminUsersEndIndex)
+  const currentAdminUsers = filteredAdminUsers.slice(adminUsersStartIndex, adminUsersEndIndex)
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(filteredAdminUsers.length / adminUsersPerPage))
+    setAdminUsersPage((page) => Math.min(page, totalPages))
+    setAdminUsersPageInput((value) => String(Math.min(Number(value) || 1, totalPages)))
+  }, [filteredAdminUsers.length])
 
   const handleAdminUsersPageChange = (page: number) => {
     if (page >= 1 && page <= adminUsersTotalPages) {
@@ -232,8 +255,14 @@ export default function AdminPage() {
         <button type="button" className={adminTab === 'users' ? 'active' : ''} onClick={() => setAdminTab('users')}>
           用户管理
         </button>
+        <button type="button" className={adminTab === 'problems' ? 'active' : ''} onClick={() => setAdminTab('problems')}>
+          题目管理
+        </button>
         <button type="button" className={adminTab === 'reports' ? 'active' : ''} onClick={() => setAdminTab('reports')}>
           举报处理
+        </button>
+        <button type="button" className={adminTab === 'logs' ? 'active' : ''} onClick={() => setAdminTab('logs')}>
+          操作日志
         </button>
         <button type="button" className={adminTab === 'stats' ? 'active' : ''} onClick={() => setAdminTab('stats')}>
           站点看板
@@ -263,11 +292,53 @@ export default function AdminPage() {
             <Badge tone="info">Users</Badge>
             <strong>用户管理</strong>
           </div>
-          <span>{adminUsers.length} 个账号</span>
+          <span>{filteredAdminUsers.length} / {adminUsers.length} 个账号</span>
         </div>
         {adminError && <ErrorState description={adminError} onRetry={() => void loadAdminUsers()} />}
         {adminActionError && <div className="auth-error">{adminActionError}</div>}
         {adminActionMessage && <div className="auth-success">{adminActionMessage}</div>}
+        <div className="admin-filter-row" aria-label="用户筛选">
+          <input
+            className="auth-input"
+            value={adminUserQuery}
+            onChange={(event) => setAdminUserQuery(event.target.value)}
+            placeholder="搜索 ID、昵称或邮箱"
+            aria-label="搜索用户"
+          />
+          <select
+            className="auth-input"
+            value={adminUserStatus}
+            onChange={(event) => setAdminUserStatus(event.target.value as typeof adminUserStatus)}
+            aria-label="用户状态"
+          >
+            <option value="all">全部状态</option>
+            <option value="normal">正常</option>
+            <option value="banned">已封禁</option>
+          </select>
+          <select
+            className="auth-input"
+            value={adminUserRole}
+            onChange={(event) => setAdminUserRole(event.target.value as typeof adminUserRole)}
+            aria-label="用户角色"
+          >
+            <option value="all">全部角色</option>
+            <option value="user">普通用户</option>
+            <option value="admin">管理员</option>
+          </select>
+          {(adminUserQuery || adminUserStatus !== 'all' || adminUserRole !== 'all') && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setAdminUserQuery('')
+                setAdminUserStatus('all')
+                setAdminUserRole('all')
+              }}
+            >
+              清除筛选
+            </Button>
+          )}
+        </div>
         <div className="admin-form admin-form-v2">
           <label>
             新用户 ID
@@ -388,8 +459,11 @@ export default function AdminPage() {
               </div>
             </div>
           ))}
-          {adminUsers.length === 0 && !adminLoading && (
-            <EmptyState title="暂无用户数据" description="刷新后仍为空时，请检查后端管理接口和数据库初始化状态。" />
+          {filteredAdminUsers.length === 0 && !adminLoading && (
+            <EmptyState
+              title={adminUsers.length === 0 ? '暂无用户数据' : '没有匹配用户'}
+              description={adminUsers.length === 0 ? '刷新后仍为空时，请检查后端管理接口和数据库初始化状态。' : '请调整搜索条件或筛选器。'}
+            />
           )}
         </div>
 
@@ -448,9 +522,217 @@ export default function AdminPage() {
       </>
       )}
 
+      {adminTab === 'problems' && <AdminProblemsSection onEdit={(id) => navigate(`/edit-problem/${id}`)} />}
       {adminTab === 'reports' && <AdminReportsSection />}
+      {adminTab === 'logs' && <AdminAuditLogsSection />}
       {adminTab === 'stats' && <AdminStatsSection />}
     </div>
+  )
+}
+
+// === 题目审核 ===
+
+function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
+  const [status, setStatus] = useState<'all' | 'draft' | 'published' | 'hidden'>('all')
+  const [query, setQuery] = useState('')
+  const [problems, setProblems] = useState<AdminProblem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [busyId, setBusyId] = useState<number | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const params = new URLSearchParams()
+      if (status !== 'all') params.set('status', status)
+      if (query.trim()) params.set('q', query.trim())
+      const { response, data } = await fetchJson<{ problems: AdminProblem[]; message?: string }>(
+        `/api/admin/problems?${params.toString()}`
+      )
+      if (!response.ok) {
+        setError(data?.message || '题目列表加载失败')
+        return
+      }
+      setProblems(data?.problems || [])
+    } catch {
+      setError('网络异常，暂时无法加载题目')
+    } finally {
+      setLoading(false)
+    }
+  }, [query, status])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), query.trim() ? 250 : 0)
+    return () => window.clearTimeout(timer)
+  }, [load, query])
+
+  const updateStatus = async (problem: AdminProblem, nextStatus: string) => {
+    setBusyId(problem.id)
+    setError('')
+    try {
+      const { response, data } = await fetchJson<{ message?: string }>(`/api/admin/problems/${problem.id}/status`, {
+        method: 'POST',
+        body: JSON.stringify({ status: nextStatus }),
+      })
+      if (!response.ok) {
+        setError(data?.message || '更新题目状态失败')
+        return
+      }
+      await load()
+    } catch {
+      setError('网络异常，题目状态未更新')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const deleteProblem = async (problem: AdminProblem) => {
+    if (!window.confirm(`确认删除题目「${problem.title}」？该操作不可恢复。`)) return
+    setBusyId(problem.id)
+    setError('')
+    try {
+      const { response, data } = await fetchJson<{ message?: string }>(`/api/admin/problems/${problem.id}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        setError(data?.message || '删除题目失败')
+        return
+      }
+      await load()
+    } catch {
+      setError('网络异常，题目未删除')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const statusLabel = (value: string) => value === 'draft' ? '草稿' : value === 'hidden' ? '隐藏' : '已发布'
+
+  return (
+    <section className="admin-section admin-users-panel">
+      <div className="admin-list-header">
+        <div>
+          <Badge tone="info">Problems</Badge>
+          <strong>题目审核</strong>
+        </div>
+        <span>{problems.length} 道题目</span>
+      </div>
+      <div className="admin-filter-row" aria-label="题目筛选">
+        <input
+          className="auth-input"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="搜索题号、标题、别名或标签"
+          aria-label="搜索题目"
+        />
+        <select className="auth-input" value={status} onChange={(event) => setStatus(event.target.value as typeof status)} aria-label="题目状态">
+          <option value="all">全部状态</option>
+          <option value="draft">草稿</option>
+          <option value="published">已发布</option>
+          <option value="hidden">已隐藏</option>
+        </select>
+        <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>刷新</Button>
+      </div>
+      {error && <ErrorState description={error} onRetry={() => void load()} />}
+      {loading ? (
+        <div className="oj-loading">加载中...</div>
+      ) : problems.length === 0 ? (
+        <EmptyState title="没有匹配题目" description="调整筛选条件后再试。" />
+      ) : (
+        <div className="admin-table admin-table-v2 admin-problem-table">
+          <div className="admin-row admin-row-head">
+            <div>题目</div>
+            <div>难度</div>
+            <div>状态</div>
+            <div>测试点</div>
+            <div>创建者</div>
+            <div>操作</div>
+          </div>
+          {problems.map((problem) => (
+            <div className="admin-row" key={problem.id}>
+              <div>
+                <strong>{problem.title}</strong>
+                <span className="admin-problem-slug">P{problem.id} · {problem.slug || '-'}</span>
+              </div>
+              <div>{problem.difficulty}</div>
+              <div><Badge tone={problem.status === 'published' ? 'success' : problem.status === 'hidden' ? 'danger' : 'warning'}>{statusLabel(problem.status)}</Badge></div>
+              <div>{problem.testcaseCount || 0}</div>
+              <div>{problem.creatorName || problem.creatorId || '-'}</div>
+              <div className="admin-row-actions">
+                <Button variant="ghost" size="sm" onClick={() => onEdit(problem.id)}>编辑</Button>
+                {problem.status !== 'published' && <Button variant="ghost" size="sm" loading={busyId === problem.id} onClick={() => void updateStatus(problem, 'published')}>发布</Button>}
+                {problem.status === 'published' && <Button variant="ghost" size="sm" loading={busyId === problem.id} onClick={() => void updateStatus(problem, 'hidden')}>隐藏</Button>}
+                {problem.status !== 'draft' && <Button variant="ghost" size="sm" loading={busyId === problem.id} onClick={() => void updateStatus(problem, 'draft')}>转草稿</Button>}
+                <Button variant="danger" size="sm" loading={busyId === problem.id} onClick={() => void deleteProblem(problem)}>删除</Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+// === 管理员操作日志 ===
+
+function AdminAuditLogsSection() {
+  const [logs, setLogs] = useState<AdminAuditLog[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const { response, data } = await fetchJson<{ logs: AdminAuditLog[]; message?: string }>('/api/admin/audit-logs?limit=100')
+      if (!response.ok) {
+        setError(data?.message || '操作日志加载失败')
+        return
+      }
+      setLogs(data?.logs || [])
+    } catch {
+      setError('网络异常，暂时无法加载操作日志')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), 0)
+    return () => window.clearTimeout(timer)
+  }, [load])
+
+  return (
+    <section className="admin-section admin-users-panel">
+      <div className="admin-list-header">
+        <div>
+          <Badge tone="info">Audit</Badge>
+          <strong>管理员操作日志</strong>
+        </div>
+        <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>刷新</Button>
+      </div>
+      {error && <ErrorState description={error} onRetry={() => void load()} />}
+      {loading ? (
+        <div className="oj-loading">加载中...</div>
+      ) : logs.length === 0 ? (
+        <EmptyState title="暂无操作记录" description="管理员执行敏感操作后会在这里留下记录。" />
+      ) : (
+        <div className="admin-audit-list">
+          {logs.map((log) => (
+            <div className="admin-audit-item" key={log.id}>
+              <div>
+                <strong>{log.adminName}</strong>
+                <span className="admin-audit-action">{log.action}</span>
+                <span>目标：{log.targetType}{log.targetId ? ` #${log.targetId}` : ''}</span>
+              </div>
+              <time dateTime={log.createdAt}>{new Date(log.createdAt).toLocaleString('zh-CN')}</time>
+              {log.detail && <code>{log.detail}</code>}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -462,6 +744,7 @@ function AdminReportsSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [reportNotes, setReportNotes] = useState<Record<number, string>>({})
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -490,10 +773,10 @@ function AdminReportsSection() {
     try {
       let ok = false
       if (report.targetType === 'post') {
-        const r = await fetchJson(`/api/discussions/${report.targetId}`, { method: 'DELETE' })
+        const r = await fetchJson(`/api/admin/discussions/posts/${report.targetId}`, { method: 'DELETE' })
         ok = r.response.ok
       } else if (report.targetType === 'comment') {
-        const r = await fetchJson(`/api/discussions/comments/${report.targetId}`, { method: 'DELETE' })
+        const r = await fetchJson(`/api/admin/discussions/comments/${report.targetId}`, { method: 'DELETE' })
         ok = r.response.ok
       } else if (report.targetType === 'message') {
         const r = await fetchJson(`/api/admin/messages/${report.targetId}`, { method: 'DELETE' })
@@ -509,7 +792,14 @@ function AdminReportsSection() {
         setError('删除目标失败，请检查目标是否仍存在')
         return
       }
-      await fetchJson(`/api/admin/reports/${report.id}/resolve`, { method: 'POST' })
+      const resolved = await fetchJson<{ message?: string }>(`/api/admin/reports/${report.id}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ note: reportNotes[report.id] || '' }),
+      })
+      if (!resolved.response.ok) {
+        setError(resolved.data?.message || '目标已处理，但举报状态更新失败')
+        return
+      }
       await load()
     } catch {
       setError('网络异常，举报处理未完成')
@@ -522,7 +812,10 @@ function AdminReportsSection() {
     setBusy(true)
     setError('')
     try {
-      const { response, data } = await fetchJson<{ message?: string }>(`/api/admin/reports/${report.id}/resolve`, { method: 'POST' })
+      const { response, data } = await fetchJson<{ message?: string }>(`/api/admin/reports/${report.id}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify({ note: reportNotes[report.id] || '' }),
+      })
       if (!response.ok) {
         setError(data?.message || '标记举报失败')
         return
@@ -571,14 +864,27 @@ function AdminReportsSection() {
               </div>
               <div className="admin-report-summary">{report.summary}</div>
               <div className="admin-report-reason">原因：{report.reason}</div>
+              {status === 'resolved' && report.resolutionNote && (
+                <div className="admin-report-note-readonly">处理备注：{report.resolutionNote}</div>
+              )}
               {status === 'open' && (
-                <div className="admin-report-actions">
-                  <Button variant="danger" size="sm" loading={busy} onClick={() => void handleDeleteAndResolve(report)}>
-                    删除目标并处理
-                  </Button>
-                  <Button variant="ghost" size="sm" loading={busy} onClick={() => void handleResolveOnly(report)}>
-                    仅标记已处理
-                  </Button>
+                <div className="admin-report-actions admin-report-actions-v2">
+                  <textarea
+                    className="admin-report-note"
+                    value={reportNotes[report.id] || ''}
+                    onChange={(event) => setReportNotes((current) => ({ ...current, [report.id]: event.target.value }))}
+                    placeholder="处理备注（可选）"
+                    maxLength={1000}
+                    rows={2}
+                  />
+                  <div className="admin-report-buttons">
+                    <Button variant="danger" size="sm" loading={busy} onClick={() => void handleDeleteAndResolve(report)}>
+                      删除目标并处理
+                    </Button>
+                    <Button variant="ghost" size="sm" loading={busy} onClick={() => void handleResolveOnly(report)}>
+                      仅标记已处理
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>

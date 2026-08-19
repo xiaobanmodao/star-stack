@@ -16,6 +16,19 @@ export type UserRecord = {
   progress?: number
 }
 
+export type AdminProblem = {
+  id: number
+  slug?: string
+  title: string
+  difficulty: string
+  tags: string[]
+  status: 'draft' | 'published' | 'hidden' | string
+  creatorId?: string | null
+  creatorName?: string
+  testcaseCount?: number
+  createdAt?: string
+}
+
 export type OjProblemSummary = {
   id: number
   slug?: string
@@ -492,10 +505,24 @@ export type AdminReport = {
   reporterId: string
   reporterName: string
   targetType: ReportTargetType
-  targetId: number
+  targetId: number | string
   reason: string
   status: 'open' | 'resolved'
   summary: string
+  resolutionNote?: string
+  resolvedBy?: string | null
+  resolvedAt?: string | null
+  createdAt: string
+}
+
+export type AdminAuditLog = {
+  id: number
+  adminId?: string | null
+  adminName: string
+  action: string
+  targetType: string
+  targetId?: string | null
+  detail?: string | null
   createdAt: string
 }
 

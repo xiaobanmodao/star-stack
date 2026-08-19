@@ -6,6 +6,7 @@ import {
   DEFAULT_TESTCASE_TIME_LIMIT_MS,
   parseTestcaseTimeLimit,
 } from '../utils/testcaseLimits.js'
+import { recordAdminAction } from '../utils/adminAudit.js'
 
 const solutionRateLimits = new BoundedCache(5000, 10000)
 const MAX_TEST_FILE_BYTES = 2 * 1024 * 1024
@@ -367,6 +368,12 @@ export const createProblem = async (req, res) => {
   if (sampleError) return res.status(400).json({ message: sampleError })
   if (testFileError) return res.status(400).json({ message: testFileError })
 
+  // 普通出题者不能通过篡改请求体把草稿直接发布或解除管理员隐藏；
+  // 只有管理员可以改变题目审核状态。
+  const nextStatus = user.is_admin
+    ? (['draft', 'published', 'hidden'].includes(status) ? status : (problem.status || 'draft'))
+    : (problem.status || 'draft')
+
   const now = new Date().toISOString()
   try {
     await db.exec('BEGIN IMMEDIATE')
@@ -403,6 +410,16 @@ export const createProblem = async (req, res) => {
     }
 
     await db.exec('COMMIT')
+    if (user.is_admin) {
+      await recordAdminAction(db, {
+        adminId: user.id,
+        adminName: user.name,
+        action: 'problem.create',
+        targetType: 'problem',
+        targetId: nextId,
+        detail: { title: title.trim(), status: status === 'draft' ? 'draft' : 'published' },
+      })
+    }
     return res.json({ message: '题目创建成功', problemId: nextId, slug: `p${nextId}` })
   } catch (error) {
     await db.exec('ROLLBACK').catch(() => undefined)
@@ -501,7 +518,7 @@ export const updateProblem = async (req, res) => {
       title.trim(), difficulty || '入门',
       Array.isArray(tags) ? tags.join(',') : (tags || ''),
       sanitizedStatement, sanitizedInputDesc, sanitizedOutputDesc, sanitizedDataRange,
-      JSON.stringify(normalizedSamples), status || 'published', problemId
+      JSON.stringify(normalizedSamples), nextStatus, problemId
     )
 
     await db.run(`DELETE FROM testcases WHERE problem_id = ?`, problemId)
@@ -521,6 +538,16 @@ export const updateProblem = async (req, res) => {
     }
 
     await db.exec('COMMIT')
+    if (user.is_admin) {
+      await recordAdminAction(db, {
+        adminId: user.id,
+        adminName: user.name,
+        action: 'problem.update',
+        targetType: 'problem',
+        targetId: problemId,
+        detail: { title: title.trim(), status: nextStatus },
+      })
+    }
     return res.json({ message: '题目更新成功', problemId })
   } catch (error) {
     await db.exec('ROLLBACK').catch(() => undefined)
@@ -544,6 +571,16 @@ export const deleteProblem = async (req, res) => {
   try {
     await db.run(`DELETE FROM problems WHERE id = ?`, problemId)
     await db.run(`DELETE FROM bookmarks WHERE target_type = 'problem' AND target_id = ?`, problemId)
+    if (user.is_admin) {
+      await recordAdminAction(db, {
+        adminId: user.id,
+        adminName: user.name,
+        action: 'problem.delete',
+        targetType: 'problem',
+        targetId: problemId,
+        detail: { title: problem.title },
+      })
+    }
     return res.json({ message: '题目删除成功' })
   } catch (error) {
     console.error('删除题目失败:', error)

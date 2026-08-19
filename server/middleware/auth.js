@@ -28,6 +28,7 @@ export const getUserByToken = async (db, token) => {
 }
 
 export const requireAdmin = async (req, res) => {
+  if (req.adminAuth) return req.adminAuth
   const token = getAuthToken(req)
   if (!token) {
     res.status(401).json({ message: '未登录' })
@@ -44,7 +45,20 @@ export const requireAdmin = async (req, res) => {
     res.status(403).json({ message: '账号已被封禁' })
     return null
   }
-  return { db, user }
+  const auth = { db, user }
+  req.adminAuth = auth
+  return auth
+}
+
+// 管理路由的统一入口防线。控制器仍然可以调用 requireAdmin 获取缓存的身份信息，
+// 这样新增 /api/admin 端点时不会因为忘记在控制器里校验而暴露管理能力。
+export const requireAdminMiddleware = async (req, res, next) => {
+  try {
+    const auth = await requireAdmin(req, res)
+    if (auth) next()
+  } catch (error) {
+    next(error)
+  }
 }
 
 export const requireUser = async (req, res) => {

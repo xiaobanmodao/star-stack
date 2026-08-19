@@ -5,6 +5,7 @@ import { addXp } from '../utils/userHelpers.js'
 import { createNotification, notifyMentions } from '../utils/notifications.js'
 import { bumpChatStat } from '../utils/chatStats.js'
 import { BoundedCache } from '../utils/boundedCache.js'
+import { recordAdminAction } from '../utils/adminAudit.js'
 
 const VALID_MODULES = new Set(['general', 'oj', 'jieya', 'starcode'])
 const postRateLimits = new BoundedCache(5000, 10000)
@@ -254,6 +255,13 @@ export const updateDiscussion = async (req, res) => {
       `UPDATE discussion_posts SET title = ?, content = ?, problem_id = ?, module_key = ?, updated_at = ? WHERE id = ?`,
       title.trim(), sanitizeHtml(content), problemId || null, module, new Date().toISOString(), postId
     )
+    if (user.is_admin && post.user_id !== user.id) {
+      await recordAdminAction(db, {
+        adminId: user.id,
+        adminName: user.name,
+        action: 'discussion.update', targetType: 'post', targetId: postId,
+      })
+    }
     return res.json({ message: '编辑成功' })
   } catch (error) {
     console.error('Failed to edit discussion:', error)
@@ -279,6 +287,14 @@ export const deleteDiscussion = async (req, res) => {
     await db.run(`DELETE FROM notifications WHERE target_type = 'post' AND target_id = ?`, postId)
     await db.run(`DELETE FROM bookmarks WHERE target_type = 'post' AND target_id = ?`, postId)
     await db.run(`DELETE FROM discussion_posts WHERE id = ?`, postId)
+    if (user.is_admin && post.user_id !== user.id) {
+      await recordAdminAction(db, {
+        adminId: user.id,
+        adminName: user.name,
+        action: 'discussion.delete', targetType: 'post', targetId: postId,
+        detail: { title: post.title },
+      })
+    }
     return res.json({ message: '删除成功' })
   } catch (error) {
     console.error('Failed to delete discussion:', error)
@@ -296,6 +312,11 @@ export const pinDiscussion = async (req, res) => {
     const post = await db.get(`SELECT id FROM discussion_posts WHERE id = ?`, postId)
     if (!post) return res.status(404).json({ message: '帖子不存在' })
     await db.run(`UPDATE discussion_posts SET is_pinned = 1, pinned_at = ? WHERE id = ?`, new Date().toISOString(), postId)
+    await recordAdminAction(db, {
+      adminId: auth.user.id,
+      adminName: auth.user.name,
+      action: 'discussion.pin', targetType: 'post', targetId: postId,
+    })
     return res.json({ success: true, isPinned: true })
   } catch (error) {
     console.error('Failed to pin discussion:', error)
@@ -313,6 +334,11 @@ export const unpinDiscussion = async (req, res) => {
     const post = await db.get(`SELECT id FROM discussion_posts WHERE id = ?`, postId)
     if (!post) return res.status(404).json({ message: '帖子不存在' })
     await db.run(`UPDATE discussion_posts SET is_pinned = 0, pinned_at = NULL WHERE id = ?`, postId)
+    await recordAdminAction(db, {
+      adminId: auth.user.id,
+      adminName: auth.user.name,
+      action: 'discussion.unpin', targetType: 'post', targetId: postId,
+    })
     return res.json({ success: true, isPinned: false })
   } catch (error) {
     console.error('Failed to unpin discussion:', error)
@@ -424,6 +450,14 @@ export const deleteComment = async (req, res) => {
     await db.run(`DELETE FROM discussion_comments WHERE parent_id = ?`, commentId)
     await db.run(`DELETE FROM discussion_comments WHERE id = ?`, commentId)
     await db.run(`UPDATE discussion_posts SET comment_count = MAX(0, comment_count - ?) WHERE id = ?`, totalRemoved, comment.post_id)
+    if (user.is_admin && comment.user_id !== user.id) {
+      await recordAdminAction(db, {
+        adminId: user.id,
+        adminName: user.name,
+        action: 'discussion.delete', targetType: 'comment', targetId: commentId,
+        detail: { postId: comment.post_id, removedCount: totalRemoved },
+      })
+    }
     return res.json({ message: '删除成功' })
   } catch (error) {
     console.error('Failed to delete comment:', error)

@@ -66,6 +66,7 @@ export default function EditProblemPage() {
   const [inputDesc, setInputDesc] = useState('')
   const [outputDesc, setOutputDesc] = useState('')
   const [dataRange, setDataRange] = useState('')
+  const [status, setStatus] = useState<'draft' | 'published' | 'hidden'>('draft')
   const [samples, setSamples] = useState<SampleDraft[]>([
     { input: '', output: '', timeLimitMs: DEFAULT_TESTCASE_TIME_LIMIT_MS }
   ])
@@ -97,6 +98,7 @@ export default function EditProblemPage() {
           inputDesc?: string
           outputDesc?: string
           dataRange?: string
+          status?: string
           samples: { input: string; output: string; timeLimitMs?: number }[]
           testFiles?: TestFileDraft[]
         }
@@ -118,6 +120,7 @@ export default function EditProblemPage() {
       setInputDesc(problem.inputDesc || '')
       setOutputDesc(problem.outputDesc || '')
       setDataRange(problem.dataRange || '')
+      setStatus(problem.status === 'published' || problem.status === 'hidden' ? problem.status : 'draft')
       setSamples(problem.samples.length > 0
         ? problem.samples.map((sample) => ({
           input: sample.input,
@@ -267,7 +270,7 @@ export default function EditProblemPage() {
       dataRange: dataRange.trim(),
       samples: validSamples,
       testFiles,
-      status: 'published'
+      status,
     }
 
     try {

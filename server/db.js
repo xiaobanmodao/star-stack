@@ -175,6 +175,9 @@ const LEGACY_COLUMN_PATCHES = [
   { table: 'submissions', column: 'score', definition: 'INTEGER DEFAULT 0' },
   { table: 'testcases', column: 'is_sample', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'testcases', column: 'time_limit_ms', definition: 'INTEGER NOT NULL DEFAULT 1500' },
+  { table: 'reports', column: 'resolved_by', definition: 'TEXT' },
+  { table: 'reports', column: 'resolved_at', definition: 'TEXT' },
+  { table: 'reports', column: 'resolution_note', definition: "TEXT NOT NULL DEFAULT ''" },
 ]
 
 const ensureLegacyColumns = async (db) => {
@@ -813,10 +816,27 @@ export const initDb = async () => {
       target_id INTEGER NOT NULL,
       reason TEXT,
       status TEXT NOT NULL DEFAULT 'open',
+      resolved_by TEXT,
+      resolved_at TEXT,
+      resolution_note TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       FOREIGN KEY (reporter_id) REFERENCES users(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at);
+
+    CREATE TABLE IF NOT EXISTS admin_audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      admin_id TEXT,
+      admin_name TEXT NOT NULL,
+      action TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_id TEXT,
+      detail TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_created ON admin_audit_logs(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_logs_target ON admin_audit_logs(target_type, target_id, created_at DESC);
 
     CREATE TABLE IF NOT EXISTS chat_achievements (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

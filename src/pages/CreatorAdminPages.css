@@ -480,6 +480,147 @@
   }
 }
 
+/* Admin operations: filters, topic review, report notes and audit timeline. */
+.admin-console-v2 .admin-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 0 0 18px;
+}
+
+.admin-console-v2 .admin-filter-row .auth-input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.admin-console-v2 .admin-filter-row select.auth-input {
+  flex: 0 1 150px;
+}
+
+.admin-console-v2 .admin-problem-table .admin-row {
+  grid-template-columns: minmax(250px, 1.7fr) minmax(90px, .65fr) minmax(90px, .7fr) minmax(70px, .5fr) minmax(130px, .9fr) minmax(300px, 1.7fr);
+}
+
+.admin-console-v2 .admin-problem-table .admin-row > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.admin-console-v2 .admin-problem-slug {
+  color: var(--text-muted, #8a91a8);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.admin-console-v2 .admin-report-actions-v2 {
+  display: grid;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.admin-console-v2 .admin-report-note {
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+  border: 1px solid rgba(148, 163, 184, .2);
+  border-radius: 10px;
+  background: rgba(8, 14, 34, .45);
+  color: inherit;
+  padding: 10px 12px;
+  font: inherit;
+  line-height: 1.5;
+}
+
+.admin-console-v2 .admin-report-note:focus {
+  outline: none;
+  border-color: rgba(111, 169, 255, .75);
+  box-shadow: 0 0 0 3px rgba(80, 128, 255, .14);
+}
+
+.admin-console-v2 .admin-report-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-console-v2 .admin-report-note-readonly {
+  color: var(--text-muted, #aab2c9);
+  font-size: 13px;
+  border-left: 3px solid rgba(111, 169, 255, .65);
+  padding-left: 10px;
+}
+
+.admin-console-v2 .admin-audit-list {
+  display: grid;
+  gap: 0;
+  border: 1px solid rgba(148, 163, 184, .14);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.admin-console-v2 .admin-audit-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 18px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, .12);
+  background: rgba(16, 25, 53, .28);
+}
+
+.admin-console-v2 .admin-audit-item:last-child {
+  border-bottom: 0;
+}
+
+.admin-console-v2 .admin-audit-item > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.admin-console-v2 .admin-audit-item time {
+  color: var(--text-muted, #8a91a8);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.admin-console-v2 .admin-audit-action {
+  color: #9fc4ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.admin-console-v2 .admin-audit-item code {
+  grid-column: 1 / -1;
+  color: var(--text-muted, #aab2c9);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 680px) {
+  .admin-console-v2 .admin-filter-row {
+    align-items: stretch;
+  }
+
+  .admin-console-v2 .admin-filter-row .auth-input,
+  .admin-console-v2 .admin-filter-row select.auth-input {
+    flex-basis: 100%;
+  }
+
+  .admin-console-v2 .admin-audit-item {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-console-v2 .admin-audit-item time {
+    white-space: normal;
+  }
+}
+
 /* 管理后台标签页 */
 .admin-tabs {
   display: flex;
@@ -1102,4 +1243,9 @@ button.danger:hover {
   .admin-console-v2 .admin-tabs button {
     flex: 0 0 auto;
   }
+}
+
+/* Keep these operation styles after the legacy admin repair block so they win the grid cascade. */
+.admin-console-v2 .admin-problem-table .admin-row {
+  grid-template-columns: minmax(250px, 1.7fr) minmax(90px, .65fr) minmax(90px, .7fr) minmax(70px, .5fr) minmax(130px, .9fr) minmax(300px, 1.7fr);
 }
