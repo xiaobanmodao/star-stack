@@ -99,7 +99,7 @@ pm2 status
 
 ### 2.5 配置 Nginx
 
-项目中的 [`nginx.conf`](./nginx.conf) 是当前域名的 HTTP 配置模板，已包含安全响应头、SSE 关闭代理缓冲和隐藏文件保护。首次部署时执行：
+项目中的 [`nginx.conf`](./nginx.conf) 是首次部署用的 HTTP 配置模板，已包含安全响应头、SSE 关闭代理缓冲和隐藏文件保护。只有在目标站点还没有有效配置时才执行下面的安装命令：
 
 ```bash
 mkdir -p /var/www/starstack-dist
@@ -107,6 +107,14 @@ install -m 0644 nginx.conf /etc/nginx/sites-available/starstack
 ln -sf /etc/nginx/sites-available/starstack /etc/nginx/sites-enabled/starstack
 nginx -t
 systemctl enable --now nginx
+```
+
+如果服务器已有 1Panel、Certbot 或 HTTPS 站点配置，不要直接覆盖 `/etc/nginx/sites-available/starstack`，否则可能丢失 443 监听和证书路径。先备份现有配置，再将本文件中的应用代理、安全响应头和静态目录配置合并到现有站点，保留证书相关指令：
+
+```bash
+cp -a /etc/nginx/sites-available/starstack \
+  "/etc/nginx/sites-available/starstack.bak.$(date +%Y%m%d_%H%M%S)"
+nginx -t && systemctl reload nginx
 ```
 
 如果 Nginx 已经在运行，使用：
@@ -162,7 +170,8 @@ npm run build
 rsync -a --delete dist/ /var/www/starstack-dist/
 
 # 7. 启动后端并检查 Nginx 配置
-pm2 restart star-stack-api --update-env
+pm2 startOrRestart ecosystem.config.cjs --update-env
+pm2 save
 nginx -t && systemctl reload nginx
 
 # 8. 验证
