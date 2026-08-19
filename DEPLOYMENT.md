@@ -1,433 +1,275 @@
-# StarStack Ubuntu 服务器部署指南
+# StarStack 生产部署与更新
 
-## 系统要求
-- Ubuntu 20.04 LTS 或更高版本
-- 至少 2GB RAM
-- 至少 10GB 可用磁盘空间
-- Root 或 sudo 权限
+本文档是当前项目唯一的生产部署流程，适用于 Ubuntu 服务器、PM2、Nginx、SQLite 和域名 `xingzhan.cc`。
 
-## 一、安装必要的环境
+## 1. 生产结构
 
-### 1. 更新系统
+| 项目 | 当前值 |
+| --- | --- |
+| 项目目录 | `/opt/star-stack` |
+| 后端端口 | `5174` |
+| 前端静态目录 | `/var/www/starstack-dist` |
+| PM2 进程 | `star-stack-api` |
+| Nginx 配置 | `/etc/nginx/sites-available/starstack` |
+| 访问域名 | `https://xingzhan.cc`、`https://www.xingzhan.cc` |
+| 数据库 | `server/data/starstack.sqlite` |
+
+生产服务由 Nginx 提供前端静态文件和 HTTPS，由 Nginx 将 `/api/` 转发到 PM2 管理的 Express 服务。判题依赖 C++17、Python 3 和 Java 17。
+
+## 2. 首次部署
+
+### 2.1 安装服务器依赖
+
 ```bash
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  ca-certificates curl git rsync sqlite3 build-essential python3 openjdk-17-jdk \
+  nginx certbot python3-certbot-nginx
 
-sudo apt update
-sudo apt upgrade -y
+curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+npm install -g pm2
 ```
 
-### 2. 安装 Node.js（推荐 18.x 或 20.x LTS）
-```bash
-# 安装 Node.js 20.x LTS
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
+确认运行环境：
 
-# 验证安装
-node --version
+```bash
+node --version       # Node 22+
 npm --version
-```
-
-### 3. 安装判题所需的编译器和运行环境
-
-#### 安装 C++ 编译器（g++）
-```bash
-sudo apt install -y build-essential g++
-
-# 验证安装
 g++ --version
-```
-
-#### 安装 Python 3
-```bash
-sudo apt install -y python3 python3-pip
-
-# 验证安装
 python3 --version
-```
-
-#### 安装 Java 17
-```bash
-sudo apt install -y openjdk-17-jdk
-
-# 验证安装
 java -version
-javac -version
 ```
 
-### 4. 安装 Git（如果需要从仓库拉取代码）
+### 2.2 获取代码并安装依赖
+
 ```bash
-sudo apt install -y git
+git clone https://github.com/xiaobanmodao/star-stack.git /opt/star-stack
+cd /opt/star-stack
+
+npm ci --no-audit --no-fund
+cd server && npm ci --no-audit --no-fund && cd ..
+mkdir -p logs server/data
 ```
 
-### 5. 安装 PM2（进程管理器，用于后台运行）
+### 2.3 初始化数据库
+
+新服务器必须使用迁移脚本初始化完整数据库。旧服务器更新也使用同一个脚本；它是幂等的，不会删除用户数据。
+
 ```bash
-sudo npm install -g pm2
+cd /opt/star-stack
+export ADMIN_ID=admin
+export ADMIN_NAME=admin
+export ADMIN_PASSWORD="$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 20)"
+printf '请保存初始管理员密码：%s\n' "$ADMIN_PASSWORD"
+node server/migrate.js
+unset ADMIN_PASSWORD
 ```
 
-### 6. 安装 Nginx（可选，用于反向代理）
+初始密码只在初始化时输出一次。首次登录后应立即修改密码。不要删除 `server/data/starstack.sqlite` 来“解决”迁移问题。
+
+### 2.4 构建并启动后端
+
 ```bash
-sudo apt install -y nginx
-```
-
-## 二、部署项目
-
-### 1. 上传项目文件到服务器
-```bash
-# 方式1：使用 scp 上传
-scp -r "C:\Users\胡书源\Desktop\star-stack"
-  root@38.22.234.176:/home/user/
-
-# 方式2：使用 git clone
-cd /home/user
-git clone <your-repo-url> star-stack
-```
-
-### 2. 进入项目目录
-```bash
-cd /home/user/star-stack
-```
-
-### 3. 安装前端依赖
-```bash
-npm install
-```
-
-### 4. 安装后端依赖
-```bash
-cd server
-npm install
-cd ..
-```
-
-### 5. 构建前端生产版本
-```bash
+cd /opt/star-stack
 npm run build
-```
-构建完成后，生产文件会在 `dist` 目录中。
+mkdir -p /var/www/starstack-dist
+rsync -a --delete dist/ /var/www/starstack-dist/
 
-## 三、配置后端
-
-### 1. 修改后端端口（可选）
-编辑 `server/index.js`，找到最后的监听端口部分：
-```javascript
-const PORT = process.env.PORT || 5174
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`)
-})
-```
-
-可以改为：
-```javascript
-const PORT = process.env.PORT || 3000
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`)
-})
-```
-
-### 2. 配置环境变量（可选）
-创建 `.env` 文件（如果需要自定义管理员账号）：
-```bash
-cd /home/user/star-stack
-nano .env
-```
-
-添加以下内容：
-```
-ADMIN_ID=admin
-ADMIN_NAME=管理员
-ADMIN_PASSWORD=your_secure_password
-PORT=3000
-```
-
-### 3. 创建数据目录
-```bash
-mkdir -p server/data
-chmod 755 server/data
-```
-
-## 四、使用 PM2 启动后端服务
-
-### 1. 启动后端
-```bash
-cd /home/user/star-stack
-pm2 start server/index.js --name starstack-backend
-```
-
-### 2. 查看运行状态
-```bash
-pm2 status
-pm2 logs starstack-backend
-```
-
-### 3. 设置开机自启
-```bash
-pm2 startup
+pm2 start ecosystem.config.cjs
 pm2 save
+pm2 startup systemd -u root --hp /root
+# 按 pm2 输出的提示执行启动命令，然后再次保存进程列表：
+pm2 save
+
+# 限制 PM2 日志体积，避免长期运行占满磁盘
+pm2 install pm2-logrotate
+pm2 set pm2-logrotate:max_size 20M
+pm2 set pm2-logrotate:retain 14
+pm2 set pm2-logrotate:compress true
 ```
 
-### 4. 常用 PM2 命令
+验证后端：
+
 ```bash
-pm2 restart starstack-backend  # 重启
-pm2 stop starstack-backend     # 停止
-pm2 delete starstack-backend   # 删除
-pm2 logs starstack-backend     # 查看日志
+curl -fsS http://127.0.0.1:5174/api/health
+# 预期：{"ok":true}
+pm2 status
 ```
 
-## 五、配置 Nginx 反向代理
+### 2.5 配置 Nginx
 
-### 1. 创建 Nginx 配置文件
+项目中的 [`nginx.conf`](./nginx.conf) 是当前域名的 HTTP 配置模板，已包含安全响应头、SSE 关闭代理缓冲和隐藏文件保护。首次部署时执行：
+
 ```bash
-sudo nano /etc/nginx/sites-available/starstack
+mkdir -p /var/www/starstack-dist
+install -m 0644 nginx.conf /etc/nginx/sites-available/starstack
+ln -sf /etc/nginx/sites-available/starstack /etc/nginx/sites-enabled/starstack
+nginx -t
+systemctl enable --now nginx
 ```
 
-### 2. 添加以下配置
-```nginx
-server {
-    listen 80;
-    server_name 38.22.234.176;  # 替换为你的域名或服务器IP
+如果 Nginx 已经在运行，使用：
 
-    # 前端静态文件
-    location / {
-        root /home/user/star-stack/dist;
-        try_files $uri $uri/ /index.html;
-        index index.html;
-    }
-
-    # API 反向代理到后端
-    location /api/ {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    # 静态资源缓存
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        root /home/user/star-stack/dist;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-}
-```
-
-### 3. 启用配置
 ```bash
-sudo ln -s /etc/nginx/sites-available/starstack /etc/nginx/sites-enabled/
-sudo nginx -t  # 测试配置
-sudo systemctl restart nginx
+nginx -t && systemctl reload nginx
 ```
 
-### 4. 配置防火墙
+### 2.6 配置 HTTPS
+
+确认域名的 A 记录已经指向服务器 IP 后执行：
+
 ```bash
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw enable
+certbot --nginx --non-interactive --agree-tos \
+  --redirect \
+  -m your-email@example.com \
+  -d xingzhan.cc \
+  -d www.xingzhan.cc
 ```
 
-## 六、配置 HTTPS（可选但推荐）
+验证自动续期：
 
-### 1. 安装 Certbot
 ```bash
-sudo apt install -y certbot python3-certbot-nginx
+certbot renew --dry-run
 ```
 
-### 2. 获取 SSL 证书
+## 3. 日常更新
+
+以下流程会保留 SQLite 数据，并在更新数据库结构前先备份。不要使用 `git reset --hard`、`git clean -fd` 或直接删除数据库文件。
+
 ```bash
-sudo certbot --nginx -d www.xingzhan.cc
+cd /opt/star-stack
+
+# 1. 停止后端，避免更新期间写入数据库
+pm2 stop star-stack-api
+
+# 2. 备份数据库
+./backup.sh
+
+# 3. 拉取远程 main，要求无本地冲突
+git fetch origin
+git pull --ff-only origin main
+
+# 4. 安装依赖
+npm ci --no-audit --no-fund
+cd server && npm ci --no-audit --no-fund && cd ..
+
+# 5. 补齐旧数据库的新表、字段和索引
+node server/migrate.js
+
+# 6. 构建前端并同步到 Nginx 静态目录
+npm run build
+rsync -a --delete dist/ /var/www/starstack-dist/
+
+# 7. 启动后端并检查 Nginx 配置
+pm2 restart star-stack-api --update-env
+nginx -t && systemctl reload nginx
+
+# 8. 验证
+pm2 status
+curl -fsS https://xingzhan.cc/api/health
 ```
 
-### 3. 自动续期
+如果本次只修改了前端，可以跳过数据库迁移和后端重启，但仍需执行 `npm run build` 和 `rsync`。
+
+## 4. 数据库备份与恢复
+
+### 手动备份
+
 ```bash
-sudo certbot renew --dry-run
+cd /opt/star-stack
+./backup.sh
 ```
 
-## 七、验证部署
+默认备份目录为 `/www/backup/starstack`，默认保留 7 天。可以通过环境变量调整：
 
-### 1. 检查后端是否运行
 ```bash
-curl http://localhost:3000/api/health
-# 应该返回: {"ok":true}
+BACKUP_DIR=/srv/backups/starstack KEEP_DAYS=30 ./backup.sh
 ```
 
-### 2. 检查前端是否可访问
-在浏览器中访问：
-- `http://your-domain.com` 或 `http://your-server-ip`
+### 安装每日备份
 
-### 3. 测试判题功能
-- 登录系统（默认管理员：admin / admin123）
-- 提交一道题目测试 C++/Python/Java 是否正常运行
-
-## 八、目录结构（部署后）
-```
-/home/user/star-stack/
-├── dist/                    # 前端构建产物
-├── server/
-│   ├── data/               # SQLite 数据库文件
-│   │   └── starstack.sqlite
-│   ├── index.js            # 后端主文件
-│   ├── judge.js            # 判题逻辑
-│   ├── db.js               # 数据库初始化
-│   └── stats.js            # 统计功能
-├── src/                    # 前端源码
-├── package.json
-└── .env                    # 环境变量（可选）
-```
-
-## 九、常见问题排查
-
-### 1. 后端无法启动
 ```bash
-# 查看日志
-pm2 logs starstack-backend
-
-# 检查端口占用
-sudo netstat -tulpn | grep 3000
-
-# 检查数据库权限
-ls -la server/data/
+cd /opt/star-stack
+./backup.sh --install-cron
 ```
 
-### 2. 判题失败
+### 恢复备份
+
+恢复前先停止后端，并将时间戳替换为实际备份文件名：
+
 ```bash
-# 检查编译器是否安装
+cd /opt/star-stack
+pm2 stop star-stack-api
+gzip -cd /www/backup/starstack/starstack_YYYYMMDD_HHMMSS.db.gz > server/data/starstack.sqlite
+node server/migrate.js
+pm2 restart star-stack-api
+```
+
+## 5. 常用运维命令
+
+```bash
+# 服务状态和日志
+pm2 status
+pm2 logs star-stack-api --lines 50 --nostream
+
+# 后端健康检查
+curl -fsS http://127.0.0.1:5174/api/health
+curl -fsS https://xingzhan.cc/api/health
+
+# Nginx 检查与重载
+nginx -t
+systemctl reload nginx
+
+# 数据库结构诊断
+node server/diagnose.js
+```
+
+## 6. 故障处理
+
+### 页面打不开
+
+```bash
+pm2 status
+curl -i http://127.0.0.1:5174/api/health
+nginx -t
+systemctl status nginx --no-pager
+```
+
+### 后端离线
+
+```bash
+pm2 logs star-stack-api --lines 100 --nostream
+pm2 restart star-stack-api
+```
+
+### 更新后数据库报错
+
+```bash
+pm2 stop star-stack-api
+./backup.sh
+node server/migrate.js
+pm2 restart star-stack-api
+```
+
+如果仍然失败，先从备份恢复，再分析迁移错误；不要直接删除数据库。
+
+### 评测失败
+
+```bash
 g++ --version
 python3 --version
 java -version
-
-# 检查临时目录权限
-ls -la /tmp/starstack-oj/
+pm2 logs star-stack-api --lines 100 --nostream
 ```
 
-### 3. Nginx 502 错误
-```bash
-# 检查后端是否运行
-pm2 status
+## 7. 发布前检查清单
 
-# 检查 Nginx 配置
-sudo nginx -t
-
-# 查看 Nginx 错误日志
-sudo tail -f /var/log/nginx/error.log
-```
-
-### 4. 前端无法访问 API
-- 检查 Nginx 配置中的 `proxy_pass` 地址是否正确
-- 检查后端端口是否与 Nginx 配置一致
-- 检查防火墙是否开放端口
-
-## 十、性能优化建议
-
-### 1. 启用 Gzip 压缩
-在 Nginx 配置中添加：
-```nginx
-gzip on;
-gzip_vary on;
-gzip_min_length 1024;
-gzip_types text/plain text/css text/xml text/javascript application/javascript application/json;
-```
-
-### 2. 配置 PM2 集群模式（多核 CPU）
-```bash
-pm2 start server/index.js --name starstack-backend -i max
-```
-
-### 3. 定期备份数据库
-```bash
-# 创建备份脚本
-nano /home/user/backup.sh
-```
-
-添加内容：
-```bash
-#!/bin/bash
-BACKUP_DIR="/home/user/backups"
-DATE=$(date +%Y%m%d_%H%M%S)
-mkdir -p $BACKUP_DIR
-cp /home/user/star-stack/server/data/starstack.sqlite $BACKUP_DIR/starstack_$DATE.sqlite
-# 保留最近 7 天的备份
-find $BACKUP_DIR -name "starstack_*.sqlite" -mtime +7 -delete
-```
-
-设置定时任务：
-```bash
-chmod +x /home/user/backup.sh
-crontab -e
-# 添加：每天凌晨 2 点备份
-0 2 * * * /home/user/backup.sh
-```
-
-## 十一、更新部署
-
-### 1. 更新代码
-```bash
-cd /home/user/star-stack
-git pull  # 如果使用 git
-# 或重新上传文件
-```
-
-### 2. 重新构建前端
-```bash
-npm install  # 如果有新依赖
-npm run build
-```
-
-### 3. 更新后端依赖
-```bash
-cd server
-npm install
-cd ..
-```
-
-### 4. 重启后端
-```bash
-pm2 restart starstack-backend
-```
-
-### 5. 重启 Nginx（如果修改了配置）
-```bash
-sudo systemctl restart nginx
-```
-
-## 十二、安全建议
-
-1. **修改默认管理员密码**
-   - 首次登录后立即修改 admin 账号密码
-
-2. **配置防火墙**
-   ```bash
-   sudo ufw allow 22/tcp   # SSH
-   sudo ufw allow 80/tcp   # HTTP
-   sudo ufw allow 443/tcp  # HTTPS
-   sudo ufw enable
-   ```
-
-3. **定期更新系统**
-   ```bash
-   sudo apt update && sudo apt upgrade -y
-   ```
-
-4. **限制数据库文件权限**
-   ```bash
-   chmod 600 server/data/starstack.sqlite
-   ```
-
-5. **使用 HTTPS**
-   - 强烈建议配置 SSL 证书
-
-6. **配置日志轮转**
-   ```bash
-   pm2 install pm2-logrotate
-   pm2 set pm2-logrotate:max_size 10M
-   pm2 set pm2-logrotate:retain 7
-   ```
-
-## 联系与支持
-
-如有问题，请检查：
-1. PM2 日志：`pm2 logs starstack-backend`
-2. Nginx 日志：`sudo tail -f /var/log/nginx/error.log`
-3. 系统日志：`sudo journalctl -xe`
+- [ ] 本地 `npm run build`、`npm run lint`、`npm test -- --run` 全部通过
+- [ ] 已提交并推送到 `main`
+- [ ] 更新前已备份数据库
+- [ ] 已执行 `node server/migrate.js`
+- [ ] `pm2 status` 显示 `star-stack-api` 为 `online`
+- [ ] `nginx -t` 通过
+- [ ] `https://xingzhan.cc/api/health` 返回 `{"ok":true}`
+- [ ] 已在浏览器验证登录、题库、提交评测和管理后台

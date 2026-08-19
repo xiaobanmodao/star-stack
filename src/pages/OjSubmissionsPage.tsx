@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import CustomSelect from '../components/CustomSelect'
 import { fetchJson, formatTime } from '../utils'
 import type { OjSubmission, SubmissionsResponse } from '../types'
@@ -52,16 +52,20 @@ export default function OjSubmissionsPage() {
   const loadSubmissions = useCallback(async () => {
     setLoading(true)
     setError('')
-    const { response, data } = await fetchJson<SubmissionsResponse>('/api/oj/submissions')
-    if (!response.ok) {
-      setError(data?.message || '无法加载提交记录')
+    try {
+      const { response, data } = await fetchJson<SubmissionsResponse>('/api/oj/submissions')
+      if (!response.ok) {
+        setError(data?.message || '无法加载提交记录')
+        return
+      }
+      setSubmissions(data?.submissions || [])
+      setSubmissionsPage(1)
+      setSubmissionsPageInput('1')
+    } catch {
+      setError('网络异常，暂时无法加载提交记录')
+    } finally {
       setLoading(false)
-      return
     }
-    setSubmissions(data?.submissions || [])
-    setSubmissionsPage(1)
-    setSubmissionsPageInput('1')
-    setLoading(false)
   }, [])
 
   useEffect(() => {
@@ -149,9 +153,14 @@ export default function OjSubmissionsPage() {
         title="我的提交"
         description="把每次提交当成一次可复盘的飞行记录，快速回看状态、分数、语言和耗时。"
         actions={
-          <Button variant="ghost" onClick={() => navigate('/oj')}>
-            返回训练台
-          </Button>
+          <>
+            <Button variant="ghost" onClick={() => void loadSubmissions()} disabled={loading}>
+              {loading ? '刷新中...' : '刷新'}
+            </Button>
+            <Button variant="ghost" onClick={() => navigate('/oj')}>
+              返回训练台
+            </Button>
+          </>
         }
       />
 
@@ -174,7 +183,7 @@ export default function OjSubmissionsPage() {
         </Panel>
       </div>
 
-      {error && <div className="auth-error">{error}</div>}
+      {error && <ErrorState description={error} onRetry={() => void loadSubmissions()} />}
 
       <Panel className="ops-list-panel">
         <div className="ops-panel-head">

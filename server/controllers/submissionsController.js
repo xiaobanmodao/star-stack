@@ -16,16 +16,54 @@ const parseResults = (raw) => {
   } catch { return [] }
 }
 
+const parseSamples = (raw) => {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch { return [] }
+}
+
 const ALLOWED_LANGUAGES = ['C++', 'Python', 'Java']
 const MAX_CODE_LENGTH = 100000
 
 const judgeRateLimits = new BoundedCache(2000, 10000)
 let activeJudges = 0
 const MAX_ACTIVE_JUDGES = 4
+const runRateLimits = new BoundedCache(5000, 1000)
+let activeRuns = 0
+const MAX_ACTIVE_RUNS = 8
+
+const beginSandboxRun = (userId, res) => {
+  if (runRateLimits.has(userId)) {
+    res.setHeader('Retry-After', '1')
+    res.status(429).json({ message: '测试运行过于频繁，请稍后再试' })
+    return false
+  }
+  if (activeRuns >= MAX_ACTIVE_RUNS) {
+    res.setHeader('Retry-After', '5')
+    res.status(503).json({ message: '测试运行队列繁忙，请稍后再试', activeRuns, maxActiveRuns: MAX_ACTIVE_RUNS })
+    return false
+  }
+  runRateLimits.set(userId, Date.now())
+  activeRuns += 1
+  return true
+}
 
 // Circular reference resolved by lazy import in the submissions controller
 let _queueLeaderboardHistorySave = null
 export const setLeaderboardSaveCallback = (fn) => { _queueLeaderboardHistorySave = fn }
+
+export const getJudgeStatus = async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  return res.json({
+    activeJudges,
+    maxActiveJudges: MAX_ACTIVE_JUDGES,
+    activeRuns,
+    maxActiveRuns: MAX_ACTIVE_RUNS,
+  })
+}
 
 export const listMySubmissions = async (req, res) => {
   const auth = await requireUser(req, res)
@@ -176,15 +214,6 @@ export const submitSolution = async (req, res) => {
   if (!auth) return
   const { db, user } = auth
 
-  if (judgeRateLimits.has(user.id)) {
-    return res.status(429).json({ message: '提交过于频繁，请稍后再试' })
-  }
-  judgeRateLimits.set(user.id, Date.now())
-
-  if (activeJudges >= MAX_ACTIVE_JUDGES) {
-    return res.status(503).json({ message: '评测队列繁忙，请稍后再试' })
-  }
-
   const { problemId, language, code } = req.body || {}
   if (!problemId || !language || !code) return res.status(400).json({ message: '请填写完整信息' })
   if (!ALLOWED_LANGUAGES.includes(language)) return res.status(400).json({ message: '不支持的编程语言' })
@@ -198,6 +227,16 @@ export const submitSolution = async (req, res) => {
     `SELECT input, output FROM testcases WHERE problem_id = ? ORDER BY id ASC`, Number(problemId)
   )
   if (testcases.length === 0) return res.status(400).json({ message: '该题暂无测试用例' })
+
+  if (judgeRateLimits.has(user.id)) {
+    res.setHeader('Retry-After', '10')
+    return res.status(429).json({ message: '提交过于频繁，请稍后再试' })
+  }
+  if (activeJudges >= MAX_ACTIVE_JUDGES) {
+    res.setHeader('Retry-After', '5')
+    return res.status(503).json({ message: '评测队列繁忙，请稍后再试', activeJudges, maxActiveJudges: MAX_ACTIVE_JUDGES })
+  }
+  judgeRateLimits.set(user.id, Date.now())
 
   activeJudges += 1
   let judgeResult
@@ -238,6 +277,17 @@ export const streamSubmission = async (req, res) => {
   )
   if (testcases.length === 0) return res.status(400).json({ message: '该题暂无测试用例' })
 
+  if (judgeRateLimits.has(user.id)) {
+    res.setHeader('Retry-After', '10')
+    return res.status(429).json({ message: '提交过于频繁，请稍后再试' })
+  }
+  if (activeJudges >= MAX_ACTIVE_JUDGES) {
+    res.setHeader('Retry-After', '5')
+    return res.status(503).json({ message: '评测队列繁忙，请稍后再试', activeJudges, maxActiveJudges: MAX_ACTIVE_JUDGES })
+  }
+  judgeRateLimits.set(user.id, Date.now())
+  activeJudges += 1
+
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
@@ -250,30 +300,41 @@ export const streamSubmission = async (req, res) => {
     if (closed) return
     res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
   }
+  const heartbeatTimer = setInterval(() => {
+    sendEvent('heartbeat', { activeJudges })
+  }, 15000)
 
-  sendEvent('start', { totalCases: testcases.length })
-  const judgeResult = await judgeSubmission({
-    language, code: String(code), testcases,
-    onTestCase: (tc) => sendEvent('testcase', tc),
-  })
+  try {
+    sendEvent('start', { totalCases: testcases.length })
+    const judgeResult = await judgeSubmission({
+      language, code: String(code), testcases,
+      onTestCase: (tc) => sendEvent('testcase', tc),
+    })
 
-  const saved = await _saveSubmission(db, { problemId: Number(problemId), userId: user.id, language, code: String(code), judgeResult })
-  await _postSubmitHooks(db, user.id, saved.submissionId, Number(problemId), saved.status, saved.createdAt)
+    const saved = await _saveSubmission(db, { problemId: Number(problemId), userId: user.id, language, code: String(code), judgeResult })
+    await _postSubmitHooks(db, user.id, saved.submissionId, Number(problemId), saved.status, saved.createdAt)
 
-  sendEvent('done', {
-    submission: {
-      id: saved.submissionId, problemId: Number(problemId), language,
-      status: saved.status, timeMs: saved.timeMs, memoryKb: null,
-      message: saved.message, results: saved.results, score: saved.score, createdAt: saved.createdAt,
-    },
-  })
-  res.end()
+    sendEvent('done', {
+      submission: {
+        id: saved.submissionId, problemId: Number(problemId), language,
+        status: saved.status, timeMs: saved.timeMs, memoryKb: null,
+        message: saved.message, results: saved.results, score: saved.score, createdAt: saved.createdAt,
+      },
+    })
+  } catch (error) {
+    console.error('Streaming submission failed:', error)
+    sendEvent('error', { message: '评测失败，请稍后重试' })
+  } finally {
+    clearInterval(heartbeatTimer)
+    activeJudges = Math.max(0, activeJudges - 1)
+    if (!res.writableEnded && !res.destroyed) res.end()
+  }
 }
 
 export const runSampleHandler = async (req, res) => {
   const auth = await requireUser(req, res)
   if (!auth) return
-  const { db } = auth
+  const { db, user } = auth
   const { problemId, language, code, sampleIndex = 0 } = req.body || {}
   if (!problemId || !language || !code) return res.status(400).json({ message: '请填写完整信息' })
   if (!ALLOWED_LANGUAGES.includes(language)) return res.status(400).json({ message: '不支持的编程语言' })
@@ -285,49 +346,60 @@ export const runSampleHandler = async (req, res) => {
   const sampleRows = await db.all(
     `SELECT input, output FROM testcases WHERE problem_id = ? AND is_sample = 1 ORDER BY id ASC`, Number(problemId)
   )
-  const samples = sampleRows.length ? sampleRows : JSON.parse(problem.samples || '[]')
+  const samples = sampleRows.length ? sampleRows : parseSamples(problem.samples)
   if (!samples || samples.length === 0) return res.status(400).json({ message: '暂无样例' })
 
   const index = Math.min(Math.max(Number(sampleIndex) || 0, 0), samples.length - 1)
   const sample = samples[index]
-  const runResult = await runSample({ language, code: String(code), input: String(sample.input ?? '') })
-  const normalize = (text) => String(text ?? '').replace(/\r\n/g, '\n').trim()
+  if (!beginSandboxRun(user.id, res)) return
+  try {
+    const runResult = await runSample({ language, code: String(code), input: String(sample.input ?? '') })
+    const normalize = (text) => String(text ?? '').replace(/\r\n/g, '\n').trim()
 
-  let status = runResult.status
-  let message = runResult.message
-  if (runResult.status === 'OK') {
-    const match = normalize(runResult.output) === normalize(sample.output)
-    status = match ? 'Accepted' : 'Wrong Answer'
-    message = match ? '样例通过' : '样例未通过'
+    let status = runResult.status
+    let message = runResult.message
+    if (runResult.status === 'OK') {
+      const match = normalize(runResult.output) === normalize(sample.output)
+      status = match ? 'Accepted' : 'Wrong Answer'
+      message = match ? '样例通过' : '样例未通过'
+    }
+    return res.json({ output: runResult.output ?? '', expected: String(sample.output ?? ''), status, message, timeMs: runResult.timeMs ?? 0 })
+  } finally {
+    activeRuns = Math.max(0, activeRuns - 1)
   }
-  return res.json({ output: runResult.output ?? '', expected: String(sample.output ?? ''), status, message, timeMs: runResult.timeMs ?? 0 })
 }
 
 export const runCustomHandler = async (req, res) => {
   const auth = await requireUser(req, res)
   if (!auth) return
+  const { user } = auth
   const { language, code, input, expected } = req.body || {}
   if (!language || !code || input === undefined) return res.status(400).json({ message: '请填写完整信息' })
   if (!ALLOWED_LANGUAGES.includes(language)) return res.status(400).json({ message: '不支持的编程语言' })
   if (code.length > MAX_CODE_LENGTH) return res.status(400).json({ message: '代码长度超过限制（最大 100KB）' })
   if (String(input).length > 10000000) return res.status(400).json({ message: '输入数据长度超过限制（最大 10MB）' })
 
-  const runResult = await runSample({ language, code: String(code), input: String(input ?? '') })
-  const normalize = (text) => String(text ?? '').replace(/\r\n/g, '\n').trim()
-  let status = runResult.status
-  let message = runResult.message
-  if (expected !== undefined && runResult.status === 'OK') {
-    const match = normalize(runResult.output) === normalize(expected)
-    status = match ? 'Accepted' : 'Wrong Answer'
-    message = match ? '样例通过' : '样例未通过'
+  if (!beginSandboxRun(user.id, res)) return
+  try {
+    const runResult = await runSample({ language, code: String(code), input: String(input ?? '') })
+    const normalize = (text) => String(text ?? '').replace(/\r\n/g, '\n').trim()
+    let status = runResult.status
+    let message = runResult.message
+    if (expected !== undefined && runResult.status === 'OK') {
+      const match = normalize(runResult.output) === normalize(expected)
+      status = match ? 'Accepted' : 'Wrong Answer'
+      message = match ? '样例通过' : '样例未通过'
+    }
+    return res.json({ output: runResult.output ?? '', expected: expected ?? '', status, message, timeMs: runResult.timeMs ?? 0 })
+  } finally {
+    activeRuns = Math.max(0, activeRuns - 1)
   }
-  return res.json({ output: runResult.output ?? '', expected: expected ?? '', status, message, timeMs: runResult.timeMs ?? 0 })
 }
 
 export const runSamplesHandler = async (req, res) => {
   const auth = await requireUser(req, res)
   if (!auth) return
-  const { db } = auth
+  const { db, user } = auth
   const { problemId, language, code } = req.body || {}
   if (!problemId || !language || !code) return res.status(400).json({ message: '请填写完整信息' })
   if (!ALLOWED_LANGUAGES.includes(language)) return res.status(400).json({ message: '不支持的编程语言' })
@@ -339,26 +411,31 @@ export const runSamplesHandler = async (req, res) => {
   const sampleRows = await db.all(
     `SELECT input, output FROM testcases WHERE problem_id = ? AND is_sample = 1 ORDER BY id ASC`, Number(problemId)
   )
-  const samples = sampleRows.length ? sampleRows : JSON.parse(problem.samples || '[]')
+  const samples = sampleRows.length ? sampleRows : parseSamples(problem.samples)
   if (!samples || samples.length === 0) return res.status(400).json({ message: '暂无样例' })
 
-  const runResult = await runSamples({ language, code: String(code), inputs: samples.map((s) => String(s.input ?? '')) })
-  if (runResult.status !== 'OK') {
-    return res.json({ status: runResult.status, message: runResult.message, results: [] })
-  }
-
-  const normalize = (text) => String(text ?? '').replace(/\r\n/g, '\n').trim()
-  const results = runResult.results.map((item, index) => {
-    const expected = String(samples[index]?.output ?? '')
-    const output = String(item.output ?? '')
-    if (item.status !== 'OK') {
-      return { index, output, expected, status: item.status, message: item.message, timeMs: item.timeMs ?? 0 }
+  if (!beginSandboxRun(user.id, res)) return
+  try {
+    const runResult = await runSamples({ language, code: String(code), inputs: samples.map((s) => String(s.input ?? '')) })
+    if (runResult.status !== 'OK') {
+      return res.json({ status: runResult.status, message: runResult.message, results: [] })
     }
-    const match = normalize(output) === normalize(expected)
-    return { index, output, expected, status: match ? 'Accepted' : 'Wrong Answer', message: match ? '样例通过' : '样例未通过', timeMs: item.timeMs ?? 0 }
-  })
-  const overall = results.every((r) => r.status === 'Accepted')
-    ? { status: 'Accepted', message: '全部样例通过' }
-    : { status: 'Wrong Answer', message: '存在样例未通过' }
-  return res.json({ ...overall, results })
+
+    const normalize = (text) => String(text ?? '').replace(/\r\n/g, '\n').trim()
+    const results = runResult.results.map((item, index) => {
+      const expected = String(samples[index]?.output ?? '')
+      const output = String(item.output ?? '')
+      if (item.status !== 'OK') {
+        return { index, output, expected, status: item.status, message: item.message, timeMs: item.timeMs ?? 0 }
+      }
+      const match = normalize(output) === normalize(expected)
+      return { index, output, expected, status: match ? 'Accepted' : 'Wrong Answer', message: match ? '样例通过' : '样例未通过', timeMs: item.timeMs ?? 0 }
+    })
+    const overall = results.every((r) => r.status === 'Accepted')
+      ? { status: 'Accepted', message: '全部样例通过' }
+      : { status: 'Wrong Answer', message: '存在样例未通过' }
+    return res.json({ ...overall, results })
+  } finally {
+    activeRuns = Math.max(0, activeRuns - 1)
+  }
 }

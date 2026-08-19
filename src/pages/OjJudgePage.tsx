@@ -17,6 +17,13 @@ type JudgeCelebrationStats = {
 
 type JudgeStage = 'idle' | 'running' | 'success' | 'fail'
 
+type SubmissionPayload = {
+  problemId: number
+  problemTitle?: string
+  language: string
+  code: string
+}
+
 type JudgeStatusMeta = {
   label: string
   shortLabel: string
@@ -106,47 +113,6 @@ const getJudgeStatusMeta = (status: string | undefined, stage: JudgeStage): Judg
   }
 }
 
-const getJudgeAdvice = (submission: OjSubmission | null): string[] => {
-  if (!submission) return ['从题目页重新提交代码，或打开一条历史提交记录查看详情。']
-
-  if (submission.status === 'Accepted') {
-    return [
-      '回到题目页复盘关键思路，把容易错的边界写进笔记。',
-      '如果这题有讨论，可以看看其他做法，补充自己的算法工具箱。',
-    ]
-  }
-
-  if (submission.status === 'Compile Error') {
-    return [
-      '先读编译信息的第一行和第一个行号，通常那里才是根因。',
-      '确认选择的语言和代码模板一致，例如 C++17、Python 3、Java 17。',
-      '检查头文件、类名、main 函数和分号这类低成本问题。',
-    ]
-  }
-
-  if (submission.status === 'Time Limit Exceeded') {
-    return [
-      '估算最坏数据范围下的时间复杂度，先看是否存在 O(n^2) 或指数级分支。',
-      '检查循环是否可能不收敛，递归是否缺少剪枝或记忆化。',
-      '用自定义输入构造大数据，观察耗时集中在哪一段逻辑。',
-    ]
-  }
-
-  if (submission.status === 'Runtime Error') {
-    return [
-      '检查数组下标、字符串访问、空容器取值、除零和递归深度。',
-      '确认输入读取数量和题目格式一致，避免读空或错位。',
-      '把边界样例单独运行，例如 n=0、n=1、最大值和重复值。',
-    ]
-  }
-
-  return [
-    '先用样例和最小反例复现，再扩大到边界数据。',
-    '确认输出格式是否多空格、少换行或精度不满足要求。',
-    '如果算法思路没问题，优先检查初始化、排序方向和比较条件。',
-  ]
-}
-
 export default function OjJudgePage() {
   const navigate = useNavigate()
   const { currentUser } = useAppContext()
@@ -163,31 +129,69 @@ export default function OjJudgePage() {
   const [error, setError] = useState('')
   const [stage, setStage] = useState<JudgeStage>('idle')
   const [showResults, setShowResults] = useState(false)
+  const [retryPayload, setRetryPayload] = useState<SubmissionPayload | null>(null)
   const submitRef = useRef(false)
   const streamCompletedRef = useRef(false)
+  const streamCompletedSubmissionIdRef = useRef<number | null>(null)
   const streamAbortRef = useRef<AbortController | null>(null)
+  const lastPayloadKeyRef = useRef('')
+  const previousSubmissionIdRef = useRef(submissionId)
   const [streamResults, setStreamResults] = useState<{ index: number; status: string; message: string; timeMs: number }[]>([])
   const [totalCases, setTotalCases] = useState(0)
   const [celebrationStats, setCelebrationStats] = useState<JudgeCelebrationStats | null>(null)
   const [recentAchievements, setRecentAchievements] = useState<Achievement[]>([])
 
   const loadSubmission = useCallback(async (idValue: number) => {
-    const { response, data } = await fetchJson<SubmissionResponse>(`/api/oj/submissions/${idValue}`)
-    if (!response.ok) {
-      setError(data?.message || '无法加载提交记录')
-      return
-    }
-    if (data?.submission) {
-      setSubmission(data.submission)
-      setStage(data.submission?.status === 'Accepted' ? 'success' : 'fail')
+    setError('')
+    try {
+      const { response, data } = await fetchJson<SubmissionResponse>(`/api/oj/submissions/${idValue}`)
+      if (!response.ok) {
+        setError(data?.message || '无法加载提交记录')
+        setStage('fail')
+        setShowResults(true)
+        return
+      }
+      if (data?.submission) {
+        streamCompletedRef.current = true
+        setSubmission(data.submission)
+        const failed = data.submission.status !== 'Accepted'
+        if (failed && data.submission.code && data.submission.language) {
+          setRetryPayload({
+            problemId: data.submission.problemId,
+            problemTitle: data.submission.problemTitle,
+            language: data.submission.language,
+            code: data.submission.code,
+          })
+        } else {
+          setRetryPayload(null)
+        }
+        setStage(data.submission.status === 'Accepted' ? 'success' : 'fail')
+        setShowResults(true)
+        return
+      }
+      setError('提交记录不存在')
+      setStage('fail')
+      setShowResults(true)
+    } catch {
+      setError('提交记录加载失败，请稍后重试')
+      setStage('fail')
       setShowResults(true)
     }
   }, [])
 
   const submitJudge = useCallback(async () => {
-    const hasSubmitPayload = Boolean(locationState.problemId || locationState.language || locationState.code)
-    if (!hasSubmitPayload) return
-    if (!locationState.problemId || !locationState.language || !locationState.code) {
+    const hasLocationPayload = Boolean(locationState.problemId || locationState.language || locationState.code)
+    const locationPayload = locationState.problemId && locationState.language && locationState.code
+      ? {
+          problemId: locationState.problemId,
+          problemTitle: locationState.problemTitle,
+          language: locationState.language,
+          code: locationState.code,
+        }
+      : null
+    const payload = locationPayload || (!hasLocationPayload ? retryPayload : null)
+    if (!payload) {
+      if (!hasLocationPayload) return
       setError('提交数据不完整，请返回题目页重新提交')
       setStage('fail')
       setShowResults(true)
@@ -195,6 +199,7 @@ export default function OjJudgePage() {
     }
     if (submitRef.current) return
     submitRef.current = true
+    setRetryPayload(payload)
     setStage('running')
     setError('')
     setShowResults(false)
@@ -215,16 +220,26 @@ export default function OjJudgePage() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
-          problemId: locationState.problemId,
-          language: locationState.language,
-          code: locationState.code,
+          problemId: payload.problemId,
+          language: payload.language,
+          code: payload.code,
         }),
         signal: abortController.signal,
       })
 
       if (!resp.ok) {
         const errData = await resp.json().catch(() => null)
-        setError((errData as { message?: string } | null)?.message || '评测失败')
+        const typedError = errData as {
+          message?: string
+          activeJudges?: number
+          maxActiveJudges?: number
+        } | null
+        const queueHint = resp.status === 503 && typedError?.activeJudges !== undefined && typedError.maxActiveJudges !== undefined
+          ? `（当前 ${typedError.activeJudges}/${typedError.maxActiveJudges} 个评测任务运行中）`
+          : ''
+        const retryAfter = resp.headers.get('Retry-After')
+        const retryHint = retryAfter ? `，约 ${retryAfter} 秒后可重试` : ''
+        setError(`${typedError?.message || '评测失败'}${queueHint}${retryHint}`)
         setStage('fail')
         setShowResults(true)
         return
@@ -241,6 +256,7 @@ export default function OjJudgePage() {
       const decoder = new TextDecoder()
       let buffer = ''
       let doneSubmission: OjSubmission | null = null
+      let streamError = false
 
       while (true) {
         const { done, value } = await reader.read()
@@ -263,32 +279,55 @@ export default function OjJudgePage() {
                 setStreamResults(prev => [...prev, payload])
               } else if (eventType === 'done') {
                 doneSubmission = payload.submission
+              } else if (eventType === 'error') {
+                setError(payload.message || '评测失败，请稍后重试')
+                setStage('fail')
+                setShowResults(true)
+                streamError = true
               }
             } catch {
-              return undefined
+              setError('评测返回数据异常，请稍后重试')
+              setStage('fail')
+              setShowResults(true)
+              streamError = true
             }
             eventType = ''
           }
         }
+        if (streamError) break
       }
 
-      if (doneSubmission) {
-        setSubmission(doneSubmission)
-        streamCompletedRef.current = true
-        const accepted = (doneSubmission as OjSubmission).status === 'Accepted'
-        setStage(accepted ? 'success' : 'fail')
-        navigate(`/oj/judge/${(doneSubmission as OjSubmission).id}`, { replace: true })
-        setTimeout(() => { setShowResults(true) }, 1100)
+      if (streamError) return
+      if (!doneSubmission) {
+        setError('评测连接已中断，请重新提交')
+        setStage('fail')
+        setShowResults(true)
+        return
       }
+      setSubmission(doneSubmission)
+      streamCompletedRef.current = true
+      streamCompletedSubmissionIdRef.current = doneSubmission.id
+      const accepted = (doneSubmission as OjSubmission).status === 'Accepted'
+      setStage(accepted ? 'success' : 'fail')
+      navigate(`/oj/judge/${doneSubmission.id}`, { replace: true, state: payload })
+      setTimeout(() => { setShowResults(true) }, 1100)
     } catch {
+      if (abortController.signal.aborted) return
       setError('评测请求失败')
       setStage('fail')
       setShowResults(true)
+    } finally {
+      if (streamAbortRef.current === abortController) {
+        streamAbortRef.current = null
+      }
     }
-  }, [locationState.code, locationState.language, locationState.problemId, navigate])
+  }, [locationState.code, locationState.language, locationState.problemId, locationState.problemTitle, navigate, retryPayload])
 
   const retrySubmission = useCallback(() => {
+    if (!retryPayload) return
     submitRef.current = false
+    streamCompletedRef.current = false
+    streamCompletedSubmissionIdRef.current = null
     setSubmission(null)
     setError('')
     setStage('idle')
@@ -296,7 +335,7 @@ export default function OjJudgePage() {
     setStreamResults([])
     setTotalCases(0)
     void submitJudge()
-  }, [submitJudge])
+  }, [retryPayload, submitJudge])
 
   // 卸载时中止评测流连接
   useEffect(() => {
@@ -307,8 +346,44 @@ export default function OjJudgePage() {
   }, [])
 
   useEffect(() => {
+    if (!locationState.problemId || !locationState.language || !locationState.code) return
+    const payloadKey = `${locationState.problemId}:${locationState.language}:${locationState.code}`
+    if (lastPayloadKeyRef.current && lastPayloadKeyRef.current !== payloadKey) {
+      streamAbortRef.current?.abort()
+      submitRef.current = false
+      streamCompletedRef.current = false
+      streamCompletedSubmissionIdRef.current = null
+      setRetryPayload(null)
+      setSubmission(null)
+      setError('')
+      setStage('idle')
+      setShowResults(false)
+      setStreamResults([])
+      setTotalCases(0)
+    }
+    lastPayloadKeyRef.current = payloadKey
+  }, [locationState.code, locationState.language, locationState.problemId])
+
+  useEffect(() => {
+    if (previousSubmissionIdRef.current === submissionId) return
+    const preservingStreamResult = streamCompletedSubmissionIdRef.current === submissionId
+    previousSubmissionIdRef.current = submissionId
+    if (preservingStreamResult) return
+
+    streamCompletedRef.current = false
+    submitRef.current = false
+    setSubmission(null)
+    setRetryPayload(null)
+    setError('')
+    setStage('idle')
+    setShowResults(false)
+    setStreamResults([])
+    setTotalCases(0)
+  }, [submissionId])
+
+  useEffect(() => {
     // 如果有 submissionId，说明是查看已有提交，直接加载（流式评测完成跳转过来的跳过，避免重复拉取）
-    if (submissionId && !streamCompletedRef.current) {
+    if (submissionId && !streamCompletedRef.current && !submitRef.current) {
       const timer = window.setTimeout(() => {
         void loadSubmission(submissionId)
       }, 0)
@@ -387,17 +462,16 @@ export default function OjJudgePage() {
     []
   )
 
-  const problemId = submission?.problemId || locationState.problemId
-  const problemTitle = submission?.problemTitle || locationState.problemTitle || (problemId ? `P${problemId}` : '提交结果')
+  const problemId = submission?.problemId || locationState.problemId || retryPayload?.problemId
+  const problemTitle = submission?.problemTitle || locationState.problemTitle || retryPayload?.problemTitle || (problemId ? `P${problemId}` : '提交结果')
   const statusMeta = getJudgeStatusMeta(submission?.status, stage)
-  const canRetrySubmission = !submissionId && stage === 'fail' && Boolean(locationState.problemId && locationState.language && locationState.code)
+  const canRetrySubmission = stage === 'fail' && Boolean(retryPayload)
   const passedCases = results.filter((item) => item.status === 'Accepted').length
   const firstFailedCase = results.find((item) => item.status !== 'Accepted')
   const resultCaseCount = results.length || totalCases
   const visibleProgress = resultCaseCount > 0
     ? Math.round(((stage === 'running' ? streamResults.length : passedCases) / resultCaseCount) * 100)
     : 0
-  const adviceItems = getJudgeAdvice(submission)
   const resultSummary = [
     {
       label: '得分',
@@ -408,12 +482,12 @@ export default function OjJudgePage() {
       value: resultCaseCount > 0 ? `${stage === 'running' ? streamResults.length : passedCases} / ${resultCaseCount}` : '--',
     },
     {
-      label: '运行耗时',
+      label: '算法耗时',
       value: submission?.timeMs !== undefined && submission.timeMs !== null ? `${submission.timeMs} ms` : '--',
     },
     {
       label: '语言',
-      value: submission?.language || locationState.language || '--',
+      value: submission?.language || locationState.language || retryPayload?.language || '--',
     },
   ]
 
@@ -422,9 +496,31 @@ export default function OjJudgePage() {
       <PageHeader
         kicker="Judge Result"
         title={problemTitle}
-        description="提交后的状态、测试点和调试线索集中在这里，方便你快速决定下一步。"
+        description="提交后的状态、测试点和源代码集中在这里，方便你快速决定下一步。"
         actions={(
           <>
+            {submissionId && error && (
+              <Button variant="ghost" onClick={() => void loadSubmission(submissionId)}>
+                重新加载
+              </Button>
+            )}
+            {submission?.canViewCode && submission.code && problemId && (
+              <Button
+                variant="ghost"
+                onClick={() => navigate(`/oj/p${problemId}`, {
+                  state: {
+                    restoreSubmission: {
+                      problemId,
+                      problemTitle,
+                      language: submission.language,
+                      code: submission.code,
+                    },
+                  },
+                })}
+              >
+                恢复到 IDE
+              </Button>
+            )}
             {canRetrySubmission && (
               <Button variant="primary" onClick={retrySubmission}>
                 重新提交
@@ -510,27 +606,14 @@ export default function OjJudgePage() {
         </div>
       </Panel>
 
-      {showResults && stage !== 'success' && (
-        <Panel className="judge-debug-panel">
-          <div className="judge-debug-main">
-            <div>
-              <div className="judge-panel-kicker">Debug Guide</div>
-              <h3>建议下一步</h3>
-            </div>
-            <div className="judge-advice-list">
-              {adviceItems.map((item) => (
-                <div key={item} className="judge-advice-item">{item}</div>
-              ))}
-            </div>
+      {showResults && stage !== 'success' && firstFailedCase && (
+        <Panel className="judge-first-fail-panel">
+          <div className="judge-first-fail">
+            <span>第一个失败点</span>
+            <strong>#{firstFailedCase.index + 1} · {firstFailedCase.status}</strong>
+            {firstFailedCase.timeMs !== undefined && <em>{firstFailedCase.timeMs}ms</em>}
+            {firstFailedCase.message && <p>{firstFailedCase.message}</p>}
           </div>
-          {firstFailedCase && (
-            <div className="judge-first-fail">
-              <span>第一个失败点</span>
-              <strong>#{firstFailedCase.index + 1} · {firstFailedCase.status}</strong>
-              {firstFailedCase.timeMs !== undefined && <em>{firstFailedCase.timeMs}ms</em>}
-              {firstFailedCase.message && <p>{firstFailedCase.message}</p>}
-            </div>
-          )}
         </Panel>
       )}
 
@@ -541,7 +624,7 @@ export default function OjJudgePage() {
             <h3>{submission.score === 100 ? '这次提交非常干净，已经稳稳拿下。' : '这次提交通过了，继续保持这个节奏。'}</h3>
             <p>
               {submission.timeMs !== undefined && submission.timeMs !== null
-                ? `本次运行用时 ${submission.timeMs}ms。`
+                ? `本次算法用时 ${submission.timeMs}ms。`
                 : '这次提交已经成功进入通过记录。'}
               {celebrationStats?.currentStreak ? ` 你当前已经连续做题 ${celebrationStats.currentStreak} 天。` : ''}
             </p>

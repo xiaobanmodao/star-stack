@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import CustomSelect from '../components/CustomSelect'
 import { fetchJson, formatTime } from '../utils'
 import type { OjSubmission, SubmissionsResponse } from '../types'
@@ -51,23 +51,30 @@ export default function OjProblemRecordsPage() {
   const recordsPerPage = 20
 
   const loadRecords = useCallback(async () => {
-    if (!id) return
+    if (!id) {
+      setError('题目地址无效')
+      return
+    }
     setLoading(true)
     setError('')
     const params = new URLSearchParams({ problemId: id })
     if (userFilter.trim()) {
       params.set('userId', userFilter.trim())
     }
-    const { response, data } = await fetchJson<SubmissionsResponse>(`/api/oj/submissions/all?${params.toString()}`)
-    if (!response.ok) {
-      setError(data?.message || '无法加载记录')
+    try {
+      const { response, data } = await fetchJson<SubmissionsResponse>(`/api/oj/submissions/all?${params.toString()}`)
+      if (!response.ok) {
+        setError(data?.message || '无法加载记录')
+        return
+      }
+      setRecords(data?.submissions || [])
+      setRecordsPage(1)
+      setRecordsPageInput('1')
+    } catch {
+      setError('网络异常，暂时无法加载记录')
+    } finally {
       setLoading(false)
-      return
     }
-    setRecords(data?.submissions || [])
-    setRecordsPage(1)
-    setRecordsPageInput('1')
-    setLoading(false)
   }, [id, userFilter])
 
   useEffect(() => {
@@ -148,9 +155,14 @@ export default function OjProblemRecordsPage() {
         title="提交记录"
         description={`查看 P${id} 的提交轨迹，可按用户 ID 过滤，快速定位同题调试记录。`}
         actions={
-          <Button variant="ghost" onClick={() => navigate(`/oj/p${id}`)}>
-            返回题目
-          </Button>
+          <>
+            <Button variant="ghost" onClick={() => void loadRecords()} disabled={loading}>
+              {loading ? '刷新中...' : '刷新'}
+            </Button>
+            <Button variant="ghost" onClick={() => navigate(`/oj/p${id}`)}>
+              返回题目
+            </Button>
+          </>
         }
       />
 
@@ -215,7 +227,7 @@ export default function OjProblemRecordsPage() {
         </Button>
       </Panel>
 
-      {error && <div className="auth-error">{error}</div>}
+      {error && <ErrorState description={error} onRetry={() => void loadRecords()} />}
 
       <Panel className="ops-list-panel">
         <div className="ops-panel-head">

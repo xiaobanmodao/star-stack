@@ -23,6 +23,11 @@
   flex-shrink: 0;
 }
 
+.oj-checkin-banner.is-loading .oj-checkin-copy > svg,
+.oj-checkin-banner.is-submitting .oj-checkin-copy > svg {
+  animation: checkin-beacon 1.2s ease-in-out infinite;
+}
+
 .oj-checkin-copy div {
   display: grid;
   gap: 2px;

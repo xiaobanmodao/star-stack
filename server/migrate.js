@@ -55,11 +55,24 @@ const REQUIRED_SCHEMA = {
   daily_checkins: ['id', 'user_id', 'checkin_date', 'created_at'],
 }
 
+const REQUIRED_INDEXES = [
+  'idx_sessions_user',
+  'idx_submissions_user',
+  'idx_submissions_problem',
+  'idx_submissions_problem_status',
+  'idx_submissions_user_created',
+  'idx_testcases_problem',
+  'idx_testcases_problem_sample',
+  'idx_problems_status_difficulty',
+]
+
 const verifySchema = async (db) => {
   const rows = await db.all(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)
   const tables = new Set(rows.map((row) => row.name))
   const missingTables = Object.keys(REQUIRED_SCHEMA).filter((table) => !tables.has(table))
   const missingColumns = []
+  const indexes = new Set((await db.all(`SELECT name FROM sqlite_master WHERE type = 'index'`)).map((row) => row.name))
+  const missingIndexes = REQUIRED_INDEXES.filter((index) => !indexes.has(index))
 
   for (const [table, requiredColumns] of Object.entries(REQUIRED_SCHEMA)) {
     if (!tables.has(table)) continue
@@ -74,8 +87,19 @@ const verifySchema = async (db) => {
     const details = [
       missingTables.length ? `缺少表：${missingTables.join(', ')}` : '',
       missingColumns.length ? `缺少字段：${missingColumns.join(', ')}` : '',
+      missingIndexes.length ? `缺少索引：${missingIndexes.join(', ')}` : '',
     ].filter(Boolean).join('\n')
     throw new Error(`数据库迁移后结构仍不完整\n${details}`)
+  }
+
+  const foreignKeyIssues = await db.all(`PRAGMA foreign_key_check`)
+  if (foreignKeyIssues.length > 0) {
+    console.warn(`数据库外键检查发现 ${foreignKeyIssues.length} 条历史问题，请运行 diagnose.js 进一步检查。`)
+  }
+
+  const integrity = await db.get(`PRAGMA integrity_check`)
+  if (integrity?.integrity_check !== 'ok') {
+    throw new Error(`SQLite 完整性检查失败：${integrity?.integrity_check || '未知错误'}`)
   }
 
   return { tableCount: tables.size }

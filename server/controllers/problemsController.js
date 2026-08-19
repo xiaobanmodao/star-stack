@@ -4,6 +4,46 @@ import { sanitizeProblemText, addXp } from '../utils/userHelpers.js'
 import { BoundedCache } from '../utils/boundedCache.js'
 
 const solutionRateLimits = new BoundedCache(5000, 10000)
+const MAX_TEST_FILE_BYTES = 2 * 1024 * 1024
+const MAX_TEST_DATA_BYTES = 3 * 1024 * 1024
+
+const parseTestFilePairs = (testFiles) => {
+  if (testFiles === undefined) return { pairs: [], error: null }
+  if (!Array.isArray(testFiles)) return { pairs: [], error: '测试数据格式不正确' }
+
+  const pairs = new Map()
+  let totalBytes = 0
+  for (const file of testFiles) {
+    const name = String(file?.name || '').trim()
+    const type = file?.type === 'in' || file?.type === 'out' ? file.type : ''
+    const content = String(file?.content ?? '')
+    const match = name.match(/^(.+)\.(in|out)$/i)
+    if (!match || !type || match[2].toLowerCase() !== type || /[\\/]/.test(match[1])) {
+      return { pairs: [], error: `测试文件 ${name || '未命名'} 格式不正确` }
+    }
+    const contentBytes = Buffer.byteLength(content, 'utf8')
+    if (contentBytes > MAX_TEST_FILE_BYTES) {
+      return { pairs: [], error: `测试文件 ${name} 超过 2MB 限制` }
+    }
+    totalBytes += contentBytes
+    if (totalBytes > MAX_TEST_DATA_BYTES) {
+      return { pairs: [], error: '测试数据总大小不能超过 3MB' }
+    }
+
+    const key = match[1].toLowerCase()
+    const pair = pairs.get(key) || { baseName: match[1] }
+    if (pair[type]) return { pairs: [], error: `测试文件 ${name} 重复` }
+    pair[type] = { name, content }
+    pairs.set(key, pair)
+  }
+
+  for (const pair of pairs.values()) {
+    if (!pair.in || !pair.out) {
+      return { pairs: [], error: `测试数据 ${pair.baseName} 缺少成对的 .in 或 .out 文件` }
+    }
+  }
+  return { pairs: [...pairs.values()], error: null }
+}
 
 export const getDailyProblem = async (req, res) => {
   const db = await getDb()
@@ -63,9 +103,11 @@ export const getDailyProblem = async (req, res) => {
 
 export const listProblems = async (req, res) => {
   const db = await getDb()
-  const { search, tag, difficulty } = req.query || {}
+  const { search, tag, difficulty, solved } = req.query || {}
   const where = ['status = ?']
   const params = ['published']
+  const token = getAuthToken(req)
+  const user = token ? await getUserByToken(db, token) : null
   if (search) {
     const trimmedSearch = search.trim()
     const problemNumberMatch = trimmedSearch.match(/^[pP]?(\d+)$/)
@@ -88,20 +130,29 @@ export const listProblems = async (req, res) => {
     where.push(`difficulty = ?`)
     params.push(difficulty)
   }
+  if (solved === 'solved' || solved === 'unsolved') {
+    if (!user) return res.status(401).json({ message: '登录后才能筛选已解决题目' })
+    const existsSql = `EXISTS (SELECT 1 FROM solved_problems sp_filter WHERE sp_filter.problem_id = problems.id AND sp_filter.user_id = ?)`
+    where.push(solved === 'solved' ? existsSql : `NOT ${existsSql}`)
+    params.push(user.id)
+  }
   const rows = await db.all(
     `SELECT id, slug, title, difficulty, tags, created_at,
        (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id AND status = 'Accepted') as ac_count,
-       (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id) as total_count
+       (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id) as total_count,
+       ${user ? `EXISTS (SELECT 1 FROM solved_problems sp_user WHERE sp_user.problem_id = problems.id AND sp_user.user_id = ?)` : '0'} as solved
      FROM problems WHERE ${where.join(' AND ')} ORDER BY id ASC`,
-    ...params
+    ...(user ? [user.id, ...params] : params)
   )
   return res.json({
+    total: rows.length,
     problems: rows.map((row) => ({
       id: row.id, slug: row.slug, title: row.title, difficulty: row.difficulty,
       tags: row.tags ? row.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
       createdAt: row.created_at,
       acCount: row.ac_count || 0, totalCount: row.total_count || 0,
       passRate: row.total_count > 0 ? Math.round((row.ac_count / row.total_count) * 100) : 0,
+      solved: Boolean(row.solved),
     })),
   })
 }
@@ -115,11 +166,12 @@ export const getProblem = async (req, res) => {
     : await db.get(`SELECT p.*, u.name as creator_name FROM problems p LEFT JOIN users u ON p.creator_id = u.id WHERE p.slug = ?`, identifier)
   if (!row) return res.status(404).json({ message: '题目不存在' })
 
+  const token = getAuthToken(req)
+  const user = token ? await getUserByToken(db, token) : null
+
   if (row.status !== 'published') {
-    const token = req.headers.authorization?.replace('Bearer ', '')
-    const session = token ? await db.get(`SELECT user_id FROM sessions WHERE token = ?`, token) : null
-    const isCreator = session && session.user_id === row.creator_id
-    if (!isCreator && !(session && (await db.get(`SELECT is_admin FROM users WHERE id = ?`, session.user_id))?.is_admin)) {
+    const isCreator = user && user.id === row.creator_id
+    if (!isCreator && !user?.is_admin) {
       return res.status(404).json({ message: '题目不存在' })
     }
   }
@@ -127,20 +179,33 @@ export const getProblem = async (req, res) => {
   const samples = await db.all(
     `SELECT input, output FROM testcases WHERE problem_id = ? AND is_sample = 1 ORDER BY id ASC`, row.id
   )
-  const sampleList = samples.length > 0 ? samples : JSON.parse(row.samples || '[]')
+  let storedSamples = []
+  try {
+    storedSamples = JSON.parse(row.samples || '[]')
+  } catch {
+    storedSamples = []
+  }
+  const sampleList = samples.length > 0 ? samples : (Array.isArray(storedSamples) ? storedSamples : [])
 
   let maxScore = null
-  const token = req.headers.authorization?.replace('Bearer ', '')
-  if (token) {
-    const session = await db.get(`SELECT user_id FROM sessions WHERE token = ?`, token)
-    if (session) {
+  if (user) {
       const scoreResult = await db.get(
         `SELECT MAX(score) as max_score FROM submissions WHERE problem_id = ? AND user_id = ?`,
-        row.id, session.user_id
+        row.id, user.id
       )
       maxScore = scoreResult?.max_score ?? null
-    }
   }
+
+  const problemStats = await db.get(
+    `SELECT
+       (SELECT COUNT(*) FROM submissions WHERE problem_id = ? AND status = 'Accepted') AS ac_count,
+       (SELECT COUNT(*) FROM submissions WHERE problem_id = ?) AS total_count`,
+    row.id,
+    row.id
+  )
+  const solved = user
+    ? Boolean(await db.get(`SELECT 1 FROM solved_problems WHERE user_id = ? AND problem_id = ?`, user.id, row.id))
+    : false
 
   return res.json({
     problem: {
@@ -149,6 +214,12 @@ export const getProblem = async (req, res) => {
       statement: row.statement, input: row.input_desc, output: row.output_desc,
       dataRange: row.data_range || '', samples: sampleList,
       createdAt: row.created_at, creatorId: row.creator_id, creatorName: row.creator_name, maxScore,
+      acCount: problemStats?.ac_count || 0,
+      totalCount: problemStats?.total_count || 0,
+      passRate: problemStats?.total_count > 0
+        ? Math.round((problemStats.ac_count / problemStats.total_count) * 100)
+        : 0,
+      solved,
     },
   })
 }
@@ -246,10 +317,12 @@ export const createProblem = async (req, res) => {
   const sanitizedInputDesc = sanitizeProblemText(inputDesc)
   const sanitizedOutputDesc = sanitizeProblemText(outputDesc)
   const sanitizedDataRange = sanitizeProblemText(dataRange)
+  const { pairs: testFilePairs, error: testFileError } = parseTestFilePairs(testFiles)
 
   if (!title || !title.trim()) return res.status(400).json({ message: '请填写题目标题' })
   if (!sanitizedStatement) return res.status(400).json({ message: '请填写题目描述' })
   if (!samples || !Array.isArray(samples) || samples.length === 0) return res.status(400).json({ message: '请至少添加一个样例' })
+  if (testFileError) return res.status(400).json({ message: testFileError })
 
   const now = new Date().toISOString()
   try {
@@ -281,19 +354,11 @@ export const createProblem = async (req, res) => {
       }
     }
 
-    if (testFiles && Array.isArray(testFiles)) {
-      const inFiles = testFiles.filter(f => f.type === 'in')
-      const outFiles = testFiles.filter(f => f.type === 'out')
-      for (const inFile of inFiles) {
-        const baseName = inFile.name.replace(/\.in$/, '')
-        const outFile = outFiles.find(f => f.name.replace(/\.out$/, '') === baseName)
-        if (outFile) {
-          await db.run(
-            `INSERT INTO testcases (problem_id, input, output, is_sample, created_at) VALUES (?, ?, ?, 0, ?)`,
-            nextId, inFile.content, outFile.content, now
-          )
-        }
-      }
+    for (const pair of testFilePairs) {
+      await db.run(
+        `INSERT INTO testcases (problem_id, input, output, is_sample, created_at) VALUES (?, ?, ?, 0, ?)`,
+        nextId, pair.in.content, pair.out.content, now
+      )
     }
 
     await db.exec('COMMIT')
@@ -374,10 +439,12 @@ export const updateProblem = async (req, res) => {
   const sanitizedInputDesc = sanitizeProblemText(inputDesc)
   const sanitizedOutputDesc = sanitizeProblemText(outputDesc)
   const sanitizedDataRange = sanitizeProblemText(dataRange)
+  const { pairs: testFilePairs, error: testFileError } = parseTestFilePairs(testFiles)
 
   if (!title || !title.trim()) return res.status(400).json({ message: '请填写题目标题' })
   if (!sanitizedStatement) return res.status(400).json({ message: '请填写题目描述' })
   if (!samples || !Array.isArray(samples) || samples.length === 0) return res.status(400).json({ message: '请至少添加一个样例' })
+  if (testFileError) return res.status(400).json({ message: testFileError })
 
   const now = new Date().toISOString()
   try {
@@ -402,19 +469,11 @@ export const updateProblem = async (req, res) => {
       }
     }
 
-    if (testFiles && Array.isArray(testFiles)) {
-      const inFiles = testFiles.filter(f => f.type === 'in')
-      const outFiles = testFiles.filter(f => f.type === 'out')
-      for (const inFile of inFiles) {
-        const baseName = inFile.name.replace(/\.in$/, '')
-        const outFile = outFiles.find(f => f.name.replace(/\.out$/, '') === baseName)
-        if (outFile) {
-          await db.run(
-            `INSERT INTO testcases (problem_id, input, output, is_sample, created_at) VALUES (?, ?, ?, 0, ?)`,
-            problemId, inFile.content, outFile.content, now
-          )
-        }
-      }
+    for (const pair of testFilePairs) {
+      await db.run(
+        `INSERT INTO testcases (problem_id, input, output, is_sample, created_at) VALUES (?, ?, ?, 0, ?)`,
+        problemId, pair.in.content, pair.out.content, now
+      )
     }
 
     await db.exec('COMMIT')

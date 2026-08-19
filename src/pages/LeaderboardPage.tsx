@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import type { LeaderboardEntry, LeaderboardResponse } from '../types'
 import { fetchJson } from '../utils'
 import './OpsPages.css'
@@ -21,12 +21,14 @@ export default function LeaderboardPage() {
   const [leaderboardType, setLeaderboardType] = useState<'total' | 'weekly' | 'monthly'>('total')
   const [leaderboardTotalPages, setLeaderboardTotalPages] = useState(1)
   const [leaderboardTotal, setLeaderboardTotal] = useState(0)
+  const [error, setError] = useState('')
   const [periodStart, setPeriodStart] = useState<string | null>(null)
   const [periodEnd, setPeriodEnd] = useState<string | null>(null)
   const leaderboardPerPage = 20
 
   const loadLeaderboard = useCallback(async () => {
     setLoading(true)
+    setError('')
     try {
       const { response, data } = await fetchJson<{
         leaderboard: LeaderboardResponse
@@ -36,6 +38,7 @@ export default function LeaderboardPage() {
         total?: number
         periodStart?: string
         periodEnd?: string
+        message?: string
       }>(`/api/leaderboard?page=${leaderboardPage}&perPage=${leaderboardPerPage}&type=${leaderboardType}`)
       if (response.ok && data) {
         setLeaderboard(data.leaderboard || [])
@@ -44,9 +47,14 @@ export default function LeaderboardPage() {
         setLeaderboardTotal(data.total || 0)
         setPeriodStart(data.periodStart || null)
         setPeriodEnd(data.periodEnd || null)
+      } else {
+        setLeaderboard([])
+        setError(data?.message || '排行榜暂时无法加载')
       }
-    } catch (error) {
-      console.error('Failed to load leaderboard:', error)
+    } catch (loadError) {
+      console.error('Failed to load leaderboard:', loadError)
+      setLeaderboard([])
+      setError('网络异常，暂时无法加载排行榜')
     } finally {
       setLoading(false)
     }
@@ -141,6 +149,7 @@ export default function LeaderboardPage() {
         kicker="Rank Observatory"
         title="排行榜"
         description="把长期实力、周榜冲刺和月度节奏放在同一个观测台里，用户能更快看到自己和头部选手的距离。"
+        actions={<Button variant="ghost" onClick={() => void loadLeaderboard()} loading={loading}>刷新榜单</Button>}
       />
 
       <div className="leaderboard-hero-grid">
@@ -206,6 +215,8 @@ export default function LeaderboardPage() {
           <div className="ops-skeleton-list">
             {Array.from({ length: 8 }, (_, index) => <div key={index} className="skeleton skeleton-row" />)}
           </div>
+        ) : error ? (
+          <ErrorState description={error} onRetry={() => void loadLeaderboard()} />
         ) : leaderboard.length === 0 ? (
           <EmptyState title="暂无排行数据" description={getEmptyMessage()} />
         ) : (

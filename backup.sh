@@ -16,6 +16,7 @@
 #   LOG_FILE        定时任务日志文件（默认 server/backup.log）
 
 set -e
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
@@ -31,6 +32,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
+
+if [[ ! "$KEEP_DAYS" =~ ^[1-9][0-9]*$ ]]; then
+  echo -e "${RED}错误: KEEP_DAYS 必须是正整数${NC}"
+  exit 1
+fi
 
 show_help() {
   echo "StarStack 数据库备份脚本"
@@ -86,6 +92,7 @@ echo "=========================================="
 
 # 创建备份目录
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 
 # 检查数据库文件
 if [ ! -f "$DB_PATH" ]; then
@@ -116,6 +123,7 @@ BACKUP_FILE="${BACKUP_FILE}.gz"
 
 # 检查备份结果
 if [ -f "$BACKUP_FILE" ]; then
+    chmod 600 "$BACKUP_FILE"
     BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
     echo -e "${GREEN}✓ 备份成功${NC}"
     echo "备份文件: $BACKUP_FILE"
@@ -127,7 +135,7 @@ fi
 
 # 清理旧备份
 echo "清理旧备份文件..."
-find "$BACKUP_DIR" -name "starstack_*.db.gz" -mtime +$KEEP_DAYS -delete
+find "$BACKUP_DIR" -name "starstack_*.db.gz" -mtime "+$KEEP_DAYS" -delete
 REMAINING=$(ls -1 "$BACKUP_DIR" 2>/dev/null | wc -l)
 echo -e "${GREEN}✓ 保留最近 $KEEP_DAYS 天的备份 (共 $REMAINING 个文件)${NC}"
 

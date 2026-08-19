@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import CustomSelect from '../components/CustomSelect'
 import TagSelector from '../components/TagSelector'
-import { Badge, Button, DataList, DataListHead, DataListRow, EmptyState, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, DataList, DataListHead, DataListRow, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import { fetchJson, openInNewTab } from '../utils'
 import { DIFFICULTY_OPTIONS } from '../constants'
 import type { OjProblemSummary, ProblemsResponse } from '../types'
@@ -31,6 +31,7 @@ export default function OjProblemListPage() {
   const { currentUser, addToPlan, problemPlan, removeFromPlan } = useAppContext()
   const [search, setSearch] = useState(() => searchParams.get('search') || '')
   const [difficulty, setDifficulty] = useState(() => searchParams.get('difficulty') || '')
+  const [solvedFilter, setSolvedFilter] = useState(() => searchParams.get('solved') || '')
   const [tag, setTag] = useState<string[]>(() => {
     const tagParam = searchParams.get('tag')
     return tagParam ? tagParam.split(',').map((item) => item.trim()).filter(Boolean) : []
@@ -48,8 +49,9 @@ export default function OjProblemListPage() {
     if (search.trim()) params.set('search', search.trim())
     if (difficulty) params.set('difficulty', difficulty)
     if (tag.length > 0) params.set('tag', tag.join(','))
+    if (currentUser && solvedFilter) params.set('solved', solvedFilter)
     return params
-  }, [difficulty, search, tag])
+  }, [currentUser, difficulty, search, solvedFilter, tag])
 
   const loadProblems = useCallback(async () => {
     setProblemLoading(true)
@@ -93,6 +95,7 @@ export default function OjProblemListPage() {
   const clearFilters = () => {
     setSearch('')
     setDifficulty('')
+    setSolvedFilter('')
     setTag([])
   }
 
@@ -235,6 +238,24 @@ export default function OjProblemListPage() {
           ]}
           placeholder="全部难度"
         />
+        <div className="problem-library-status-filter" role="group" aria-label="完成状态">
+          {[
+            { value: '', label: '全部' },
+            { value: 'unsolved', label: '未解决' },
+            { value: 'solved', label: '已解决' },
+          ].map((option) => (
+            <button
+              key={option.value || 'all'}
+              type="button"
+              className={solvedFilter === option.value ? 'active' : ''}
+              disabled={!currentUser && option.value !== ''}
+              onClick={() => setSolvedFilter(option.value)}
+              title={!currentUser && option.value !== '' ? '登录后使用完成状态筛选' : undefined}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
         <Button variant="primary" onClick={loadProblems} loading={problemLoading}>
           搜索
         </Button>
@@ -248,7 +269,19 @@ export default function OjProblemListPage() {
         <TagSelector selectedTags={tag} onTagsChange={setTag} />
       </Panel>
 
-      {problemError && <div className="auth-error">{problemError}</div>}
+      {problemError && (
+        <ErrorState
+          description={problemError}
+          onRetry={() => void loadProblems()}
+        />
+      )}
+
+      <div className="problem-library-result-meta" aria-live="polite">
+        <span>{problemLoading ? '正在更新题目…' : `筛选后 ${problemList.length} 道题`}</span>
+        {(search || difficulty || tag.length > 0 || solvedFilter) && (
+          <button type="button" onClick={clearFilters}>清除当前筛选</button>
+        )}
+      </div>
 
       <DataList className="oj-library-list problem-library-table">
         <DataListHead columns={LIST_COLUMNS} className="oj-library-head" aria-hidden="true">
@@ -271,6 +304,7 @@ export default function OjProblemListPage() {
             <div className="oj-library-title">
               <span className="oj-code-label">P{problem.id}</span>
               <span>{problem.title}</span>
+              {problem.solved && <Badge tone="success">已通过</Badge>}
             </div>
             <span className={`oj-badge ${problem.difficulty}`}>{problem.difficulty}</span>
             <div className="oj-tags">

@@ -3,11 +3,43 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import CustomSelect from '../components/CustomSelect'
 import TagSelector from '../components/TagSelector'
-import { Badge, Button, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, ErrorState, LoadingState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
 import { DIFFICULTY_OPTIONS } from '../constants'
 import type { ApiResponse } from '../types'
 import './CreatorAdminPages.css'
+
+type TestFileDraft = { name: string; type: 'in' | 'out'; content: string }
+
+const sortTestFiles = (files: TestFileDraft[]) => [...files].sort((a, b) => {
+  const nameResult = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+  return nameResult || a.type.localeCompare(b.type)
+})
+
+const validateTestFiles = (files: TestFileDraft[]) => {
+  const pairs = new Map<string, { input?: TestFileDraft; output?: TestFileDraft }>()
+  for (const file of files) {
+    const name = file.name.trim()
+    const match = name.match(/^(.+)\.(in|out)$/i)
+    if (!match || match[2].toLowerCase() !== file.type) {
+      return `测试文件 ${name || '未命名'} 的扩展名与类型不匹配`
+    }
+    const key = match[1].toLowerCase()
+    const pair = pairs.get(key) || {}
+    if (file.type === 'in') {
+      if (pair.input) return `测试文件 ${name} 重复`
+      pair.input = file
+    } else {
+      if (pair.output) return `测试文件 ${name} 重复`
+      pair.output = file
+    }
+    pairs.set(key, pair)
+  }
+  for (const [key, pair] of pairs) {
+    if (!pair.input || !pair.output) return `测试数据 ${key} 缺少成对的 .in 或 .out 文件`
+  }
+  return ''
+}
 
 export default function EditProblemPage() {
   const navigate = useNavigate()
@@ -24,7 +56,7 @@ export default function EditProblemPage() {
   const [samples, setSamples] = useState<{ input: string; output: string }[]>([
     { input: '', output: '' }
   ])
-  const [testFiles, setTestFiles] = useState<{ name: string; type: 'in' | 'out'; content: string }[]>([])
+  const [testFiles, setTestFiles] = useState<TestFileDraft[]>([])
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -42,45 +74,48 @@ export default function EditProblemPage() {
     if (!id) return
     setLoading(true)
     setError('')
-    const { response, data } = await fetchJson<{
-      problem: {
-        title: string
-        difficulty: string
-        tags: string[]
-        statement: string
-        inputDesc?: string
-        outputDesc?: string
-        dataRange?: string
-        samples: { input: string; output: string }[]
-        testFiles?: { name: string; type: 'in' | 'out'; content: string }[]
+    try {
+      const { response, data } = await fetchJson<{
+        problem: {
+          title: string
+          difficulty: string
+          tags: string[]
+          statement: string
+          inputDesc?: string
+          outputDesc?: string
+          dataRange?: string
+          samples: { input: string; output: string }[]
+          testFiles?: TestFileDraft[]
+        }
+        message?: string
+      }>(`/api/problems/${id}/edit`)
+      if (!response.ok) {
+        setError(data?.message || '无法加载题目')
+        return
       }
-      message?: string
-    }>(`/api/problems/${id}/edit`)
-    if (!response.ok) {
-      setError(data?.message || '无法加载题目')
+      const problem = data?.problem
+      if (!problem) {
+        setError('无法加载题目')
+        return
+      }
+      setTitle(problem.title)
+      setDifficulty(problem.difficulty)
+      setTags(problem.tags || [])
+      setStatement(problem.statement)
+      setInputDesc(problem.inputDesc || '')
+      setOutputDesc(problem.outputDesc || '')
+      setDataRange(problem.dataRange || '')
+      setSamples(problem.samples.length > 0 ? problem.samples : [{ input: '', output: '' }])
+      setTestFiles(sortTestFiles(problem.testFiles || []))
+    } catch {
+      setError('网络异常，暂时无法加载题目')
+    } finally {
       setLoading(false)
-      return
     }
-    const problem = data?.problem
-    if (!problem) {
-      setError('无法加载题目')
-      setLoading(false)
-      return
-    }
-    setTitle(problem.title)
-    setDifficulty(problem.difficulty)
-    setTags(problem.tags || [])
-    setStatement(problem.statement)
-    setInputDesc(problem.inputDesc || '')
-    setOutputDesc(problem.outputDesc || '')
-    setDataRange(problem.dataRange || '')
-    setSamples(problem.samples.length > 0 ? problem.samples : [{ input: '', output: '' }])
-    setTestFiles(problem.testFiles || [])
-    setLoading(false)
   }
 
   const addSample = () => {
-    setSamples([...samples, { input: '', output: '' }])
+    setSamples((prev) => [...prev, { input: '', output: '' }])
   }
 
   const removeSample = (index: number) => {
@@ -88,14 +123,16 @@ export default function EditProblemPage() {
   }
 
   const updateSample = (index: number, field: 'input' | 'output', value: string) => {
-    const newSamples = [...samples]
-    newSamples[index][field] = value
-    setSamples(newSamples)
+    setSamples((prev) => prev.map((sample, sampleIndex) => (
+      sampleIndex === index ? { ...sample, [field]: value } : sample
+    )))
   }
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files
     if (!files) return
+    const input = event.target
+    setError('')
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
@@ -106,18 +143,28 @@ export default function EditProblemPage() {
         setError(`文件 ${fileName} 格式不正确，只支持 .in 和 .out 文件`)
         continue
       }
+      if (file.size > 2 * 1024 * 1024) {
+        setError(`文件 ${fileName} 超过 2MB 限制`)
+        continue
+      }
 
-      const content = await file.text()
-      setTestFiles(prev => [...prev, {
-        name: fileName,
-        type: ext as 'in' | 'out',
-        content
-      }])
+      try {
+        const content = await file.text()
+        setTestFiles((prev) => sortTestFiles([
+          ...prev.filter((item) => item.name !== fileName),
+          { name: fileName, type: ext as 'in' | 'out', content },
+        ]))
+      } catch {
+        setError(`文件 ${fileName} 读取失败`)
+      }
     }
+    input.value = ''
   }
 
   const removeTestFile = (index: number) => {
-    setTestFiles(testFiles.filter((_, i) => i !== index))
+    const file = testFiles[index]
+    if (file && !window.confirm(`确定删除测试文件 ${file.name} 吗？`)) return
+    setTestFiles((prev) => prev.filter((_, i) => i !== index))
   }
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -140,9 +187,25 @@ export default function EditProblemPage() {
       return
     }
 
+    const hasIncompleteSample = samples.some((sample) => {
+      const hasInput = Boolean(sample.input.trim())
+      const hasOutput = Boolean(sample.output.trim())
+      return hasInput !== hasOutput
+    })
+    if (hasIncompleteSample) {
+      setError('每组样例必须同时填写输入和输出')
+      return
+    }
+
     const validSamples = samples.filter(s => s.input.trim() && s.output.trim())
     if (validSamples.length === 0) {
       setError('请至少添加一个样例')
+      return
+    }
+
+    const testFileError = validateTestFiles(testFiles)
+    if (testFileError) {
+      setError(testFileError)
       return
     }
 
@@ -161,22 +224,26 @@ export default function EditProblemPage() {
       status: 'published'
     }
 
-    const { response, data } = await fetchJson<ApiResponse>(`/api/problems/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(payload)
-    })
+    try {
+      const { response, data } = await fetchJson<ApiResponse>(`/api/problems/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      })
 
-    setSubmitting(false)
+      if (!response.ok) {
+        setError(data?.message || '更新题目失败')
+        return
+      }
 
-    if (!response.ok) {
-      setError(data?.message || '更新题目失败')
-      return
+      setSuccess('题目更新成功！')
+      setTimeout(() => {
+        navigate('/my-problems')
+      }, 1500)
+    } catch {
+      setError('网络异常，题目未更新，请稍后重试')
+    } finally {
+      setSubmitting(false)
     }
-
-    setSuccess('题目更新成功！')
-    setTimeout(() => {
-      navigate('/my-problems')
-    }, 1500)
   }
 
   if (!currentUser) {
@@ -184,11 +251,13 @@ export default function EditProblemPage() {
   }
 
   if (loading) {
+    return <LoadingState label="正在加载题目编辑器…" />
+  }
+
+  if (error && !title && !statement) {
     return (
       <div className="oj-page problem-editor-v2">
-        <Panel className="problem-editor-loading">
-          <div className="oj-loading">加载中...</div>
-        </Panel>
+        <ErrorState description={error} onRetry={() => void loadProblem()} />
       </div>
     )
   }

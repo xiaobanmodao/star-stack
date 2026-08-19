@@ -4,6 +4,12 @@ import { requireAdmin } from '../middleware/auth.js'
 import { localDay } from '../utils/dateHelpers.js'
 import { broadcastToScope } from './chatController.js'
 
+const normalizeAdminUserInput = (body = {}) => ({
+  id: typeof body.id === 'string' ? body.id.trim() : '',
+  name: typeof body.name === 'string' ? body.name.trim() : '',
+  password: typeof body.password === 'string' ? body.password : '',
+})
+
 export const listAdminUsers = async (req, res) => {
   const auth = await requireAdmin(req, res)
   if (!auth) return
@@ -26,9 +32,13 @@ export const createAdminUser = async (req, res) => {
   const auth = await requireAdmin(req, res)
   if (!auth) return
   const { db } = auth
-  const { id, name, password, isAdmin } = req.body || {}
+  const { id, name, password } = normalizeAdminUserInput(req.body)
+  const isAdmin = req.body?.isAdmin === true
   if (!id || !name || !password) return res.status(400).json({ message: '请填写完整信息' })
   if (password.length < 6) return res.status(400).json({ message: '密码至少 6 位' })
+  if (id.length > 64) return res.status(400).json({ message: '用户 ID 不能超过 64 个字符' })
+  if (name.length > 80) return res.status(400).json({ message: '用户名称不能超过 80 个字符' })
+  if (password.length > 128) return res.status(400).json({ message: '密码不能超过 128 个字符' })
   const existing = await db.get(`SELECT id FROM users WHERE id = ?`, id)
   if (existing) return res.status(409).json({ message: '该 ID 已被注册' })
   const passwordHash = await bcrypt.hash(password, 10)
@@ -207,6 +217,9 @@ export const resolveReport = async (req, res) => {
   const { db } = auth
   try {
     const reportId = parseInt(req.params.id)
+    if (!Number.isInteger(reportId) || reportId <= 0) return res.status(400).json({ message: '无效的举报 ID' })
+    const report = await db.get(`SELECT id FROM reports WHERE id = ?`, reportId)
+    if (!report) return res.status(404).json({ message: '举报不存在' })
     await db.run(`UPDATE reports SET status = 'resolved' WHERE id = ?`, reportId)
     return res.json({ message: '已处理' })
   } catch (error) {

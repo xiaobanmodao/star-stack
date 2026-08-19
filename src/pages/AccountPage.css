@@ -309,8 +309,13 @@
   box-shadow: none !important;
 }
 
+.profile-v2 .profile-activity-panel {
+  overflow-x: auto;
+}
+
 .profile-v2 .heatmap-grid {
   display: grid;
+  width: max-content;
   max-width: 100%;
   grid-template-columns: repeat(53, 10px);
   grid-auto-rows: 10px;
@@ -505,6 +510,27 @@
 /* 每日签到 */
 .profile-checkin {
   margin-top: 12px;
+}
+
+.profile-checkin .profile-panel-head {
+  position: relative;
+}
+
+.profile-checkin .profile-panel-head::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--ss-color-accent);
+  box-shadow: 0 0 0 4px var(--ss-accent-bg);
+  vertical-align: 0.15em;
+}
+
+.profile-checkin.is-loading .profile-panel-head::before,
+.profile-checkin.is-submitting .profile-panel-head::before {
+  animation: checkin-beacon 1.2s ease-in-out infinite;
 }
 
 .profile-panel-head > .profile-checkin-done {

@@ -100,9 +100,28 @@ const runCommand = (cmd, args, options = {}) =>
       resolve({ stdout: '', stderr: '评测沙箱不可用，请联系管理员', code: -1, timedOut: true })
       return
     }
-    const start = Date.now()
+    const start = process.hrtime.bigint()
     const timeoutMs = options.timeout ?? TIME_LIMIT_MS
     const timeLimitSec = Math.ceil(timeoutMs / 1000) + 1 // 沙箱超时比应用超时多 1 秒
+    const cpuTimeMarker = sandboxAvailable && options.sandbox !== false
+      ? `__STARSTACK_CPU_${crypto.randomBytes(12).toString('hex')}__`
+      : null
+    const elapsedWallTime = () => Math.max(0, Math.round(Number(process.hrtime.bigint() - start) / 1e6))
+    const parseDuration = (rawStderr, fallbackDuration) => {
+      if (!cpuTimeMarker) return { stderr: rawStderr, duration: fallbackDuration }
+      const timingPattern = new RegExp(
+        `${escapeRegExp(cpuTimeMarker)}[ \\t]+([0-9]+(?:\\.[0-9]+)?)[ \\t]+([0-9]+(?:\\.[0-9]+)?)`,
+      )
+      const timingMatch = rawStderr.match(timingPattern)
+      if (!timingMatch) return { stderr: rawStderr, duration: fallbackDuration }
+      const userSeconds = Number(timingMatch[1])
+      const systemSeconds = Number(timingMatch[2])
+      const duration = Math.max(0, Math.round((userSeconds + systemSeconds) * 1000))
+      return {
+        stderr: rawStderr.replace(timingMatch[0], '').replace(/\n$/, ''),
+        duration,
+      }
+    }
 
     let spawnCmd = cmd
     let spawnArgs = args
@@ -116,6 +135,7 @@ const runCommand = (cmd, args, options = {}) =>
         options.cwd || '.',
         String(timeLimitSec),
         String(MEMORY_LIMIT_KB),
+        cpuTimeMarker || '-',
         cmd,
         ...args,
       ]
@@ -146,7 +166,7 @@ const runCommand = (cmd, args, options = {}) =>
         stderr,
         code: -1,
         timedOut: true,
-        duration: Date.now() - start,
+        duration: elapsedWallTime(),
       })
     }, timeoutMs + 2000) // 比沙箱超时多 2 秒余量
 
@@ -170,12 +190,13 @@ const runCommand = (cmd, args, options = {}) =>
       if (finished) return
       finished = true
       clearTimeout(timer)
+      const measured = parseDuration(stderr, elapsedWallTime())
       resolve({
         stdout,
-        stderr: error.message || '执行失败',
+        stderr: error.message || measured.stderr || '执行失败',
         code: -1,
         timedOut: false,
-        duration: Date.now() - start,
+        duration: measured.duration,
       })
     })
     child.on('close', (code) => {
@@ -184,15 +205,20 @@ const runCommand = (cmd, args, options = {}) =>
       clearTimeout(timer)
       // 被 SIGKILL (code 137) 或 timeout 杀死视为超时
       const timedOut = code === 137 || code === 124
+      const measured = parseDuration(stderr, elapsedWallTime())
       resolve({
         stdout,
-        stderr,
+        stderr: measured.stderr,
         code: timedOut ? -1 : code,
         timedOut,
-        duration: Date.now() - start,
+        // 正常结束时统计用户态 + 内核态 CPU 时间，排除进程启动和等待开销。
+        // 超时时间仍使用墙钟时间，确保页面能反映实际的超时长度。
+        duration: timedOut ? elapsedWallTime() : measured.duration,
       })
     })
   })
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const pickCommand = (fallback, candidates) => {
   for (const candidate of candidates) {

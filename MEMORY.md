@@ -11,7 +11,7 @@
 - 前端：React 19 + TypeScript strict + Vite 7 + React Router DOM 7（懒加载路由）。
 - 后端：Node ≥22 + Express 4 + SQLite（WAL 模式），`server/index.js` 单文件约 5900 行、120+ API。
 - 关键依赖：Monaco（代码编辑器）、KaTeX（公式）、highlight.js（代码高亮，github-dark 主题）、lucide-react 1.31（线性图标）、web-push（推送）。
-- 部署：nginx 单域名多路径（`/` 主站 + `/jieya/`）、PM2（`ecosystem.config.js`，端口 5174）、`backup.sh`。
+- 部署：Nginx 单域名主站（`xingzhan.cc`）、PM2（`ecosystem.config.cjs`，端口 5174）、`backup.sh`；完整流程见 `DEPLOYMENT.md`。
 - 文档：`ROADMAP.md`（迭代 0-9 全绿）、`SSO.md`、`nginx.conf`、`DEVELOPING.md`（开发规范，重要）。
 
 ---
@@ -123,7 +123,7 @@ tsc / eslint / build 通过；audit 双主题 0 违规；无硬编码颜色；�
 
 ## 七、测试账号与环境
 
-- 测试用户：astro01~astro12，密码 `12345678`；admin 密码 `admin123456`。
+- 测试用户：astro01~astro12；管理员密码由 `ADMIN_PASSWORD` 初始化，不在项目文件中固定记录。
 - 本地：前端 dev `http://localhost:5173`（Vite），后端 `http://localhost:5174`（Express）。后端日志 `server/server.log`。
 - **后端重启**：`pkill -f "node index.js"` 后 `(cd server && node index.js > server.log 2>&1 &)`。
 - **npm 权限**：`~/.npm` 有 root 文件，构建必须 `npm_config_cache=/tmp/npm-cache-hht npm run build`。

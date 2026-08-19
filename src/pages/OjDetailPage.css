@@ -4,6 +4,11 @@
   margin: 0 auto;
 }
 
+.oj-detail-state {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+}
+
 .oj-detail.split {
   width: min(100%, 1360px) !important;
   max-width: 1360px !important;
@@ -425,6 +430,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .oj-detail-meta {

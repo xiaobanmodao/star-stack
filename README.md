@@ -31,10 +31,13 @@ node server/index.js
 前端默认端口（Vite）：5173
 API 使用相对路径 `/api/...`，后端启用了 CORS，前后端分开启动即可。
 
-## 默认管理员账号
-初始化数据库时会自动创建管理员（如果不存在）：
-- 账号：`admin`
-- 密码：`admin123`
+## 生产部署
+
+生产环境使用 Node.js 22、PM2、Nginx 和 SQLite，完整的首次部署、日常更新、数据库迁移、备份恢复与 HTTPS 流程见 [DEPLOYMENT.md](./DEPLOYMENT.md)。
+
+## 管理员初始化
+
+首次初始化数据库时，通过 `ADMIN_ID`、`ADMIN_NAME` 和 `ADMIN_PASSWORD` 环境变量创建管理员。生产环境不要在文档或代码中写死密码；请按照 [DEPLOYMENT.md](./DEPLOYMENT.md) 中的流程生成并保存初始密码。
 
 ## 主要路由
 - `/` 首页

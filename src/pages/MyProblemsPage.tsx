@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
-import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
 import type { OjProblemSummary, ProblemsResponse, ApiResponse } from '../types'
 import './CreatorAdminPages.css'
@@ -19,14 +19,18 @@ export default function MyProblemsPage() {
   const loadMyProblems = async () => {
     setLoading(true)
     setError('')
-    const { response, data } = await fetchJson<ProblemsResponse>('/api/my-problems')
-    if (!response.ok) {
-      setError(data?.message || '无法加载题目')
+    try {
+      const { response, data } = await fetchJson<ProblemsResponse>('/api/my-problems')
+      if (!response.ok) {
+        setError(data?.message || '无法加载题目')
+        return
+      }
+      setProblems(data?.problems || [])
+    } catch {
+      setError('网络异常，暂时无法加载题目')
+    } finally {
       setLoading(false)
-      return
     }
-    setProblems(data?.problems || [])
-    setLoading(false)
   }
 
   useEffect(() => {
@@ -151,7 +155,7 @@ export default function MyProblemsPage() {
           <div className="oj-loading">加载中...</div>
         </Panel>
       )}
-      {error && <div className="oj-error">{error}</div>}
+      {error && <ErrorState description={error} onRetry={() => void loadMyProblems()} />}
       {!loading && !error && problems.length === 0 && (
         <Panel>
           <EmptyState

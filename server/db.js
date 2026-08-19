@@ -321,6 +321,12 @@ export const initDb = async () => {
   `)
 
   await ensureLegacyColumns(db)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_submissions_problem_status ON submissions (problem_id, status);
+    CREATE INDEX IF NOT EXISTS idx_submissions_user_created ON submissions (user_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_testcases_problem_sample ON testcases (problem_id, is_sample, id);
+    CREATE INDEX IF NOT EXISTS idx_problems_status_difficulty ON problems (status, difficulty, id);
+  `)
 
   const columns = await db.all(`PRAGMA table_info(users)`)
   const columnNames = columns.map((col) => col.name)

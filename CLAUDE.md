@@ -202,7 +202,7 @@ StarStack 是一个全栈竞赛编程在线评测（OJ）平台，采用星空�
 
 **关键文件：**
 - `vite.config.ts` — 前端构建配置
-- `ecosystem.config.js` — PM2 配置
+- `ecosystem.config.cjs` — PM2 配置（项目使用 ES Module）
 - `nginx.conf` — Nginx 配置
 - `backup.sh` — 备份脚本
 - `package.json` — 前端依赖

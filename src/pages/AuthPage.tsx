@@ -16,6 +16,7 @@ const AuthPage = ({
   onFormConfirmChange,
   error,
   success,
+  submitting,
 }: AuthPageProps) => (
   <section className="auth-page">
     <div className="auth-panel">
@@ -24,18 +25,19 @@ const AuthPage = ({
           <div className="auth-title">星栈账号</div>
           <div className="auth-subtitle">登录后解锁完整功能</div>
         </div>
-        <button className="ghost small" type="button" onClick={onBack}>
+        <button className="ghost small" type="button" onClick={onBack} disabled={submitting}>
           返回
         </button>
       </div>
       <div className="auth-tabs">
-        <button className={mode === 'login' ? 'active' : ''} type="button" onClick={() => onModeChange('login')}>
+        <button className={mode === 'login' ? 'active' : ''} type="button" onClick={() => onModeChange('login')} disabled={submitting}>
           登录
         </button>
         <button
           className={mode === 'register' ? 'active' : ''}
           type="button"
           onClick={() => onModeChange('register')}
+          disabled={submitting}
         >
           注册
         </button>
@@ -84,8 +86,9 @@ const AuthPage = ({
         {error && <div className="auth-error">{error}</div>}
         {success && <div className="auth-success">{success}</div>}
         <div className="auth-actions">
-          <button className="primary" type="submit">
-            {mode === 'login' ? '登录' : '注册'}
+          <button className="primary auth-submit-button" type="submit" disabled={submitting} aria-busy={submitting || undefined}>
+            {submitting && <span className="loading-button-icon" aria-hidden="true" />}
+            {submitting ? (mode === 'login' ? '登录中…' : '注册中…') : (mode === 'login' ? '登录' : '注册')}
           </button>
         </div>
       </form>

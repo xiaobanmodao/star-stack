@@ -79,7 +79,6 @@
 }
 
 .judge-overview-main h2,
-.judge-debug-panel h3,
 .judge-panel-head h3 {
   margin: 0;
   color: var(--ss-color-text);
@@ -176,33 +175,10 @@
   color: var(--ss-color-success);
 }
 
-.judge-debug-panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
-  gap: 14px;
+.judge-first-fail-panel {
   padding: 16px !important;
   border-color: var(--ss-danger-border);
   background: var(--ss-star-node-bg);
-}
-
-.judge-debug-main {
-  display: grid;
-  gap: 12px;
-}
-
-.judge-advice-list {
-  display: grid;
-  gap: 8px;
-}
-
-.judge-advice-item {
-  padding: 10px 12px;
-  border-left: 2px solid var(--ss-color-accent);
-  border-radius: 0 var(--ss-radius-sm) var(--ss-radius-sm) 0;
-  background: var(--ss-accent-bg);
-  color: var(--ss-color-text-muted);
-  font-size: 13px;
-  line-height: 1.65;
 }
 
 .judge-first-fail {
@@ -362,8 +338,7 @@
 }
 
 @media (max-width: 900px) {
-  .judge-overview,
-  .judge-debug-panel {
+  .judge-overview {
     grid-template-columns: 1fr;
   }
 
@@ -405,7 +380,7 @@
   background: var(--ss-success-bg);
 }
 
-:root[data-theme='light'] .judge-debug-panel {
+:root[data-theme='light'] .judge-first-fail-panel {
   background: var(--ss-bg-input);
   border-color: var(--ss-danger-border);
 }

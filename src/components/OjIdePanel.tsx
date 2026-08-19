@@ -3,6 +3,7 @@ import Editor, { loader } from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { conf as cppConf, language as baseCppLanguage } from 'monaco-editor/esm/vs/basic-languages/cpp/cpp.js'
 import CustomSelect from './CustomSelect'
+import LoadingState from './ui/LoadingState'
 
 // Pre-configure Monaco loader to start fetching immediately on import
 loader.config({ 'vs/nls': { availableLanguages: { '*': '' } } })
@@ -183,6 +184,7 @@ const OjIdePanel = ({
   const [initialCode] = useState(() => initialDraft?.code || '')
   const [language, setLanguage] = useState(initialDraft?.language || defaultLanguage)
   const [submitError, setSubmitError] = useState('')
+  const [submitBusy, setSubmitBusy] = useState(false)
   const [runBusy, setRunBusy] = useState(false)
   const [runStatus, setRunStatus] = useState('')
   const [runMessage, setRunMessage] = useState('')
@@ -196,6 +198,8 @@ const OjIdePanel = ({
   const monacoRef = useRef<typeof Monaco | null>(null)
   const codeRef = useRef(initialCode)
   const draftSyncTimerRef = useRef<number | null>(null)
+  const pendingSampleRunRef = useRef<number | null>(null)
+  const submitBusyRef = useRef(false)
 
   const flushDraft = useCallback(() => {
     onDraftChange(problem.id, {
@@ -288,7 +292,10 @@ const OjIdePanel = ({
   const handleSubmit = useCallback(() => {
     const currentCode = editorRef.current?.getValue() ?? codeRef.current
     if (!currentUser) { openAuth('login'); return }
+    if (submitBusyRef.current) return
     if (!currentCode.trim()) { setSubmitError('请填写代码'); return }
+    submitBusyRef.current = true
+    setSubmitBusy(true)
     setSubmitError('')
     codeRef.current = currentCode
     flushDraft()
@@ -342,11 +349,22 @@ const OjIdePanel = ({
   }, [handleRunCustom, problem.samples])
 
   useEffect(() => {
-    if (pendingSampleRunIndex === null) return
+    if (pendingSampleRunIndex === null) {
+      pendingSampleRunRef.current = null
+      return
+    }
+    if (pendingSampleRunRef.current === pendingSampleRunIndex) return
+
+    pendingSampleRunRef.current = pendingSampleRunIndex
+    let started = false
     const timer = window.setTimeout(() => {
+      started = true
       void runSample(pendingSampleRunIndex).finally(onPendingSampleRunHandled)
     }, 0)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      if (!started) pendingSampleRunRef.current = null
+    }
   }, [onPendingSampleRunHandled, pendingSampleRunIndex, runSample])
 
   return (
@@ -372,8 +390,15 @@ const OjIdePanel = ({
             />
           </div>
           <div className="ide-header-right">
-            <button className="ide-btn ide-btn-primary" onClick={handleSubmit} title="Ctrl+Enter">
-              提交
+            <button
+              className="ide-btn ide-btn-primary"
+              onClick={handleSubmit}
+              disabled={submitBusy}
+              aria-busy={submitBusy}
+              title="Ctrl+Enter"
+            >
+              {submitBusy && <span className="loading-button-icon" aria-hidden="true" />}
+              {submitBusy ? '提交中...' : '提交'}
             </button>
           </div>
         </div>
@@ -384,6 +409,7 @@ const OjIdePanel = ({
               height="100%"
               language={getLanguageConfig(language).monaco}
               defaultValue={initialCode}
+              loading={<LoadingState variant="ide" label="编辑器启动中…" />}
               onMount={(editor, monaco) => {
                 ensureMonacoEnhancements(monaco)
                 editorRef.current = editor
@@ -399,7 +425,6 @@ const OjIdePanel = ({
                 editor.focus()
               }}
               theme="vs-dark"
-              loading={null}
               saveViewState={false}
               keepCurrentModel={false}
               options={{
@@ -451,6 +476,7 @@ const OjIdePanel = ({
                 disabled={runBusy}
                 aria-busy={runBusy}
               >
+                {runBusy && <span className="loading-button-icon" aria-hidden="true" />}
                 {runBusy ? '运行中...' : '运行'}
               </button>
             </div>
@@ -488,7 +514,7 @@ const OjIdePanel = ({
 
             {(runTime !== null || runExpected) && (
               <div className="ide-run-meta">
-                {runTime !== null && <span>用时: {runTime}ms</span>}
+                {runTime !== null && <span>算法用时: {runTime}ms</span>}
                 {runExpected && <span>期望输出: {runExpected}</span>}
               </div>
             )}

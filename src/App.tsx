@@ -12,6 +12,7 @@ import OnboardingModal from './components/OnboardingModal'
 import SearchOverlay from './components/SearchOverlay'
 import ThemeToggle from './components/ThemeToggle'
 import UserMenu from './components/UserMenu'
+import LoadingState from './components/ui/LoadingState'
 import AuthPage from './pages/AuthPage'
 import { useStarfield } from './hooks/useStarfield'
 import { fetchJson, isPollingPageVisible } from './utils'
@@ -66,8 +67,12 @@ function App() {
   const [homeEnter, setHomeEnter] = useState(false)
   const homeEnteredRef = useRef(false)
   const [lowPerformanceMode, setLowPerformanceMode] = useState(false)
+  const routeSignature = `${location.pathname}${location.search}${location.hash}`
+  const previousRouteSignatureRef = useRef(routeSignature)
+  const [routeSwitching, setRouteSwitching] = useState(false)
 
   const [authMode, setAuthMode] = useState<AuthMode>('login')
+  const [authSubmitting, setAuthSubmitting] = useState(false)
   const [authError, setAuthError] = useState('')
   const [authSuccess, setAuthSuccess] = useState('')
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
@@ -124,6 +129,14 @@ function App() {
     }, 900)
     return () => window.clearTimeout(timer)
   }, [location.pathname])
+
+  useEffect(() => {
+    if (previousRouteSignatureRef.current === routeSignature) return
+    previousRouteSignatureRef.current = routeSignature
+    setRouteSwitching(true)
+    const timer = window.setTimeout(() => setRouteSwitching(false), 360)
+    return () => window.clearTimeout(timer)
+  }, [routeSignature])
 
   const setAuthModeSafe = useCallback((mode: AuthMode) => {
     setAuthMode(mode)
@@ -252,6 +265,7 @@ function App() {
   const handleAuthSubmit = useCallback(
     async (event: React.FormEvent) => {
       event.preventDefault()
+      if (authSubmitting) return
       setAuthError('')
       setAuthSuccess('')
       if (!formId.trim() || formPassword.length < 6) {
@@ -275,20 +289,27 @@ function App() {
       if (authMode === 'register') {
         payload.name = formName.trim()
       }
-      const { response, data } = await fetchJson<AuthResponse>(`/api/${authMode}`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      })
-      if (!response.ok || !data?.token || !data?.user) {
-        setAuthError(data?.message || '登录失败')
-        return
+      setAuthSubmitting(true)
+      try {
+        const { response, data } = await fetchJson<AuthResponse>(`/api/${authMode}`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        })
+        if (!response.ok || !data?.token || !data?.user) {
+          setAuthError(data?.message || (authMode === 'register' ? '注册失败' : '登录失败'))
+          return
+        }
+        localStorage.setItem(TOKEN_KEY, data.token)
+        setCurrentUser(data.user)
+        setAuthSuccess(authMode === 'register' ? '注册成功' : '登录成功')
+        navigate(authFrom || '/')
+      } catch {
+        setAuthError('网络连接失败，请稍后重试')
+      } finally {
+        setAuthSubmitting(false)
       }
-      localStorage.setItem(TOKEN_KEY, data.token)
-      setCurrentUser(data.user)
-      setAuthSuccess('登录成功')
-      navigate(authFrom || '/')
     },
-    [authFrom, authMode, formConfirm, formId, formName, formPassword, navigate]
+    [authFrom, authMode, authSubmitting, formConfirm, formId, formName, formPassword, navigate]
   )
 
   const handleLogout = useCallback(async () => {
@@ -403,6 +424,7 @@ function App() {
   return (
     <>
       <canvas ref={canvasRef} className={`starfield ${isAuthPage ? 'auth-starfield' : ''}`} />
+      {!isAuthPage && <div className={`route-loading-bar ${routeSwitching ? 'active' : ''}`} aria-hidden="true" />}
       {isAuthPage ? (
         <div className="auth-shell quiet-auth">
           <main className="auth-main">
@@ -425,6 +447,7 @@ function App() {
                     onFormConfirmChange={setFormConfirm}
                     error={authError}
                     success={authSuccess}
+                    submitting={authSubmitting}
                   />
                 }
               />
@@ -499,8 +522,8 @@ function App() {
 
           <div className="app-body">
             <div className="content">
-              <main className={`main ${location.pathname === '/' ? 'home' : ''} ${homeEnter ? 'home-enter' : ''}`}>
-                <Suspense fallback={<div className="oj-loading">加载中...</div>}>
+              <main className={`main ${location.pathname === '/' ? 'home' : ''} ${homeEnter ? 'home-enter' : ''} ${routeSwitching ? 'route-switching' : ''}`}>
+                <Suspense fallback={<LoadingState label="正在打开页面…" />}>
                 <Routes>
                   <Route path="/" element={<HomePage />} />
                   <Route path="/account" element={<AccountPage />} />

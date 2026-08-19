@@ -28,7 +28,8 @@ app.use(cors({
     if (!origin) return callback(null, true)
     if (!ALLOWED_ORIGINS) {
       if (process.env.NODE_ENV === 'production') {
-        console.warn('[cors] ALLOWED_ORIGINS 未配置，已放行所有来源。生产环境请设置环境变量！')
+        console.error('[cors] 生产环境未配置 ALLOWED_ORIGINS，拒绝跨域请求。')
+        return callback(new Error('CORS origins are not configured'))
       }
       return callback(null, true)
     }
@@ -521,4 +522,3 @@ initDb()
     console.error('Failed to init database:', error)
     process.exit(1)
   })
-

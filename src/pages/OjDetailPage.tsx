@@ -2,6 +2,8 @@ import 'katex/dist/katex.min.css'
 import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
+import LoadingState from '../components/ui/LoadingState'
+import { Badge, ErrorState } from '../components/ui'
 import { fetchJson, openInNewTab, preloadOjIdeAssets } from '../utils'
 import { renderLatex } from '../latex'
 import { LANGUAGE_OPTIONS, getLanguageConfig } from '../constants'
@@ -46,13 +48,14 @@ export default function OjDetailPage() {
   const navigate = useNavigate()
   const { currentUser, addToPlan, problemPlan, removeFromPlan, openAuth } = useAppContext()
   const params = useParams()
-  const { pathname } = useLocation()
+  const location = useLocation()
+  const { pathname } = location
   const id =
     params.id ??
     params.rawId ??
     (pathname.match(/\/oj\/p\/?(\d+)/)?.[1] ?? '')
   const [problem, setProblem] = useState<OjProblemDetail | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [ideOpen, setIdeOpen] = useState(false)
   const [pendingSampleRunIndex, setPendingSampleRunIndex] = useState<number | null>(null)
@@ -61,6 +64,7 @@ export default function OjDetailPage() {
   const [discussionTotal, setDiscussionTotal] = useState(0)
   const [discussionLoading, setDiscussionLoading] = useState(false)
   const latestIdeSubmissionCacheRef = useRef<{ problemId: number; submission: OjSubmission | null } | null>(null)
+  const restoredSubmissionKeyRef = useRef('')
 
   const preloadOjIde = useCallback(() => {
     void preloadOjIdeAssets().catch(() => undefined)
@@ -90,21 +94,32 @@ export default function OjDetailPage() {
   }, [preloadOjIde, problem])
 
   const loadProblem = useCallback(async () => {
-    if (!id) return
+    if (!id) {
+      setError('题目地址无效')
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setDiscussionLoading(true)
     setError('')
-    const { response, data } = await fetchJson<ProblemResponse>(`/api/oj/problems/${id}`)
-    if (!response.ok) {
-      setError(data?.message || '无法加载题目')
+    try {
+      const { response, data } = await fetchJson<ProblemResponse>(`/api/oj/problems/${id}`)
+      if (!response.ok) {
+        setError(data?.message || '无法加载题目')
+        setLoading(false)
+        setDiscussionLoading(false)
+        return
+      }
+      if (data?.problem) {
+        setProblem(data.problem)
+      } else {
+        setError('题目数据为空，请稍后重试')
+      }
+    } catch {
+      setError('网络异常，暂时无法加载题目')
+    } finally {
       setLoading(false)
-      setDiscussionLoading(false)
-      return
     }
-    if (data?.problem) {
-      setProblem(data.problem)
-    }
-    setLoading(false)
   }, [id])
 
   useEffect(() => {
@@ -190,12 +205,57 @@ export default function OjDetailPage() {
     setPendingSampleRunIndex(index)
   }
 
+  const handleIdeDraftChange = useCallback((problemId: number, draft: IdeDraftCache[number]) => {
+    const persistedDrafts = { ...readIdeDraftCache(), [problemId]: draft }
+    writeIdeDraftCache(persistedDrafts)
+    setIdeDraftCache((prev) => ({ ...prev, [problemId]: draft }))
+  }, [])
+
+  const handlePendingSampleRunHandled = useCallback(() => {
+    setPendingSampleRunIndex(null)
+  }, [])
+
+  useEffect(() => {
+    const restoreSubmission = (location.state as {
+      restoreSubmission?: {
+        problemId?: number
+        problemTitle?: string
+        language?: string
+        code?: string
+      }
+    } | null)?.restoreSubmission
+    if (!problem || !restoreSubmission?.problemId || restoreSubmission.problemId !== problem.id) return
+    if (!restoreSubmission.language || !restoreSubmission.code) return
+
+    const restoreKey = `${restoreSubmission.problemId}:${restoreSubmission.language}:${restoreSubmission.code}`
+    if (restoredSubmissionKeyRef.current === restoreKey) return
+    restoredSubmissionKeyRef.current = restoreKey
+    handleIdeDraftChange(problem.id, {
+      language: restoreSubmission.language,
+      code: restoreSubmission.code,
+      runInput: '',
+      runExpected: '',
+    })
+    setIdeOpen(true)
+    preloadOjIde()
+    try {
+      window.localStorage.setItem(`${IDE_OPEN_STORAGE_PREFIX}${problem.id}`, '1')
+    } catch {
+      // Ignore persistence failures.
+    }
+    navigate(pathname, { replace: true, state: null })
+  }, [handleIdeDraftChange, navigate, pathname, preloadOjIde, problem, location.state])
+
   if (loading) {
-    return <div className="admin-empty">加载中...</div>
+    return <LoadingState label="正在载入题目…" />
   }
 
   if (error) {
-    return <div className="auth-error">{error}</div>
+    return (
+      <div className="oj-detail-state">
+        <ErrorState description={error} onRetry={() => void loadProblem()} />
+      </div>
+    )
   }
 
   if (!problem) {
@@ -209,6 +269,7 @@ export default function OjDetailPage() {
         <div className="oj-detail-title">
           <span className="oj-code-label">p{problem.id}</span>
           {problem.title}
+          {problem.solved && <Badge tone="success">已通过</Badge>}
         </div>
         <div className="oj-detail-meta">
           {problem.tags.map((tagItem) => (
@@ -333,6 +394,12 @@ export default function OjDetailPage() {
                   <span className={`oj-badge ${problem.difficulty}`}>{problem.difficulty}</span>
                 </div>
               </div>
+              <div className="oj-sidebar-item">
+                <div className="oj-sidebar-label">通过率</div>
+                <div className="oj-sidebar-value">
+                  {problem.totalCount ? `${problem.passRate ?? 0}%` : '暂无提交'}
+                </div>
+              </div>
               {problem.maxScore !== null && problem.maxScore !== undefined && (
                 <div className="oj-sidebar-item">
                   <div className="oj-sidebar-label">历史最高分</div>
@@ -417,7 +484,7 @@ export default function OjDetailPage() {
       </div>
 
       {ideOpen && (
-        <Suspense fallback={<div className="oj-loading">IDE 加载中...</div>}>
+        <Suspense fallback={<LoadingState variant="ide" label="正在加载开发环境…" />}>
           <LazyOjIdePanel
             problem={problem}
             currentUser={currentUser}
@@ -428,16 +495,10 @@ export default function OjDetailPage() {
             loadLatestSubmissionForIde={loadLatestSubmissionForIde}
             key={problem.id}
             initialDraft={ideDraftCache[problem.id] ?? null}
-            onDraftChange={(problemId, draft) => {
-              const persistedDrafts = { ...readIdeDraftCache(), [problemId]: draft }
-              writeIdeDraftCache(persistedDrafts)
-              setIdeDraftCache((prev) => {
-                return { ...prev, [problemId]: draft }
-              })
-            }}
+            onDraftChange={handleIdeDraftChange}
             onSubmitJudge={handleSubmitJudge}
             pendingSampleRunIndex={pendingSampleRunIndex}
-            onPendingSampleRunHandled={() => setPendingSampleRunIndex(null)}
+            onPendingSampleRunHandled={handlePendingSampleRunHandled}
           />
         </Suspense>
       )}

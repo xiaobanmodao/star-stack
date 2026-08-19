@@ -25,6 +25,7 @@ export type OjProblemSummary = {
   acCount?: number
   totalCount?: number
   passRate?: number
+  solved?: boolean
 }
 
 export type OjProblemDetail = OjProblemSummary & {
@@ -525,6 +526,7 @@ export type AuthPageProps = {
   onFormConfirmChange: (value: string) => void
   error: string
   success: string
+  submitting: boolean
 }
 
 // Context type for shared app state

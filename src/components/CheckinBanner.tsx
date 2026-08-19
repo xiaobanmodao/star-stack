@@ -43,7 +43,7 @@ export default function CheckinBanner() {
   if (!currentUser) return null
 
   return (
-    <Panel className="oj-checkin-banner">
+    <Panel className={`oj-checkin-banner ${!checkin ? 'is-loading' : ''} ${checkingIn ? 'is-submitting' : ''}`}>
       <div className="oj-checkin-copy">
         <CalendarCheck size={22} strokeWidth={1.8} aria-hidden="true" />
         <div>
@@ -57,21 +57,21 @@ export default function CheckinBanner() {
         <div className="oj-checkin-metric">
           <Flame size={16} strokeWidth={1.8} aria-hidden="true" />
           <div>
-            <strong>{checkin?.currentStreak ?? 0}</strong>
+            <strong>{checkin ? checkin.currentStreak : <span className="checkin-value-loading" aria-label="加载中" />}</strong>
             <span>当前连续</span>
           </div>
         </div>
         <div className="oj-checkin-metric">
           <Trophy size={16} strokeWidth={1.8} aria-hidden="true" />
           <div>
-            <strong>{checkin?.maxStreak ?? 0}</strong>
+            <strong>{checkin ? checkin.maxStreak : <span className="checkin-value-loading" aria-label="加载中" />}</strong>
             <span>最长连续</span>
           </div>
         </div>
         <div className="oj-checkin-metric">
           <CalendarCheck size={16} strokeWidth={1.8} aria-hidden="true" />
           <div>
-            <strong>{checkin?.totalDays ?? 0}</strong>
+            <strong>{checkin ? checkin.totalDays : <span className="checkin-value-loading" aria-label="加载中" />}</strong>
             <span>累计签到</span>
           </div>
         </div>

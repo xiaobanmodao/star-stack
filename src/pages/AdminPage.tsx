@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAppContext } from '../context/AppContext'
-import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
 import type { AdminReport, AdminStatsResponse, UserRecord, ApiResponse } from '../types'
 import './CreatorAdminPages.css'
@@ -12,6 +12,8 @@ export default function AdminPage() {
   const [adminError, setAdminError] = useState('')
   const [adminActionError, setAdminActionError] = useState('')
   const [adminActionMessage, setAdminActionMessage] = useState('')
+  const [adminActionBusy, setAdminActionBusy] = useState(false)
+  const [adminCreating, setAdminCreating] = useState(false)
   const [adminTab, setAdminTab] = useState<'users' | 'reports' | 'stats'>('users')
   const [adminUsersPage, setAdminUsersPage] = useState(1)
   const [adminUsersPageInput, setAdminUsersPageInput] = useState('1')
@@ -26,14 +28,21 @@ export default function AdminPage() {
   const loadAdminUsers = useCallback(async () => {
     setAdminLoading(true)
     setAdminError('')
-    const { response, data } = await fetchJson<{ users: UserRecord[]; message?: string }>('/api/admin/users')
-    if (!response.ok) {
-      setAdminError(data?.message || '无法加载用户')
+    try {
+      const { response, data } = await fetchJson<{ users: UserRecord[]; message?: string }>('/api/admin/users')
+      if (!response.ok) {
+        setAdminError(data?.message || '无法加载用户')
+        return
+      }
+      const users = data?.users || []
+      setAdminUsers(users)
+      setAdminUsersPage((page) => Math.min(page, Math.max(1, Math.ceil(users.length / adminUsersPerPage))))
+      setAdminUsersPageInput((page) => String(Math.min(Number(page) || 1, Math.max(1, Math.ceil(users.length / adminUsersPerPage)))))
+    } catch {
+      setAdminError('网络异常，暂时无法加载用户')
+    } finally {
       setAdminLoading(false)
-      return
     }
-    setAdminUsers(data?.users || [])
-    setAdminLoading(false)
   }, [])
 
   useEffect(() => {
@@ -44,57 +53,82 @@ export default function AdminPage() {
   }, [currentUser?.isAdmin])
 
   const handleCreateUser = async () => {
-    setAdminActionError('')
-    setAdminActionMessage('')
-    const { response, data } = await fetchJson<ApiResponse>('/api/admin/users', {
-      method: 'POST',
-      body: JSON.stringify({
-        id: newUserId.trim(),
-        name: newUserName.trim(),
-        password: newUserPassword,
-        isAdmin: newUserIsAdmin,
-      }),
-    })
-    if (!response.ok) {
-      setAdminActionError(data?.message || '创建失败')
+    if (!newUserId.trim() || !newUserName.trim() || newUserPassword.length < 6) {
+      setAdminActionError('请填写完整信息，密码至少 6 位')
       return
     }
-    setNewUserId('')
-    setNewUserName('')
-    setNewUserPassword('')
-    setNewUserIsAdmin(false)
-    setAdminActionMessage('用户已创建')
-    loadAdminUsers()
+    setAdminActionError('')
+    setAdminActionMessage('')
+    setAdminCreating(true)
+    try {
+      const { response, data } = await fetchJson<ApiResponse>('/api/admin/users', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: newUserId.trim(),
+          name: newUserName.trim(),
+          password: newUserPassword,
+          isAdmin: newUserIsAdmin,
+        }),
+      })
+      if (!response.ok) {
+        setAdminActionError(data?.message || '创建失败')
+        return
+      }
+      setNewUserId('')
+      setNewUserName('')
+      setNewUserPassword('')
+      setNewUserIsAdmin(false)
+      setAdminActionMessage('用户已创建')
+      await loadAdminUsers()
+    } catch {
+      setAdminActionError('网络异常，用户创建未完成')
+    } finally {
+      setAdminCreating(false)
+    }
   }
 
   const handleUserAction = async (url: string, body?: Record<string, unknown>) => {
     setAdminActionError('')
     setAdminActionMessage('')
-    const { response, data } = await fetchJson<ApiResponse>(url, {
-      method: 'POST',
-      body: body ? JSON.stringify(body) : undefined,
-    })
-    if (!response.ok) {
-      setAdminActionError(data?.message || '操作失败')
-      return
+    setAdminActionBusy(true)
+    try {
+      const { response, data } = await fetchJson<ApiResponse>(url, {
+        method: 'POST',
+        body: body ? JSON.stringify(body) : undefined,
+      })
+      if (!response.ok) {
+        setAdminActionError(data?.message || '操作失败')
+        return
+      }
+      setAdminActionMessage('操作已完成')
+      await loadAdminUsers()
+    } catch {
+      setAdminActionError('网络异常，操作未完成')
+    } finally {
+      setAdminActionBusy(false)
     }
-    setAdminActionMessage('操作已完成')
-    loadAdminUsers()
   }
 
   const handleDeleteUser = async (id: string) => {
     if (!window.confirm(`确认删除用户 ${id} ?`)) return
     setAdminActionError('')
     setAdminActionMessage('')
-    const { response, data } = await fetchJson<ApiResponse>(`/api/admin/users/${id}`, {
-      method: 'DELETE',
-    })
-    if (!response.ok) {
-      setAdminActionError(data?.message || '删除失败')
-      return
+    setAdminActionBusy(true)
+    try {
+      const { response, data } = await fetchJson<ApiResponse>(`/api/admin/users/${id}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        setAdminActionError(data?.message || '删除失败')
+        return
+      }
+      setAdminActionMessage('用户已删除')
+      await loadAdminUsers()
+    } catch {
+      setAdminActionError('网络异常，删除未完成')
+    } finally {
+      setAdminActionBusy(false)
     }
-    setAdminActionMessage('用户已删除')
-    loadAdminUsers()
   }
 
   const adminUsersTotalPages = Math.ceil(adminUsers.length / adminUsersPerPage)
@@ -231,7 +265,7 @@ export default function AdminPage() {
           </div>
           <span>{adminUsers.length} 个账号</span>
         </div>
-        {adminError && <div className="auth-error">{adminError}</div>}
+        {adminError && <ErrorState description={adminError} onRetry={() => void loadAdminUsers()} />}
         {adminActionError && <div className="auth-error">{adminActionError}</div>}
         {adminActionMessage && <div className="auth-success">{adminActionMessage}</div>}
         <div className="admin-form admin-form-v2">
@@ -268,7 +302,7 @@ export default function AdminPage() {
             />
             设为管理员
           </label>
-          <Button variant="primary" onClick={handleCreateUser}>
+          <Button variant="primary" onClick={() => void handleCreateUser()} loading={adminCreating}>
             创建用户
           </Button>
         </div>
@@ -282,7 +316,11 @@ export default function AdminPage() {
             <div>创建时间</div>
             <div>操作</div>
           </div>
-          {currentAdminUsers.map((user) => (
+          {adminLoading ? (
+            <div className="ops-skeleton-list admin-table-loading">
+              {Array.from({ length: 5 }, (_, index) => <div key={index} className="skeleton skeleton-row" />)}
+            </div>
+          ) : currentAdminUsers.map((user) => (
             <div key={user.id} className="admin-row">
               <div data-user-id>{user.id}</div>
               <div className="admin-user-name" data-user-name>{user.name}</div>
@@ -302,7 +340,8 @@ export default function AdminPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleUserAction(`/api/admin/users/${user.id}/promote`)}
+                    onClick={() => void handleUserAction(`/api/admin/users/${user.id}/promote`)}
+                    loading={adminActionBusy}
                   >
                     提升管理员
                   </Button>
@@ -311,7 +350,8 @@ export default function AdminPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleUserAction(`/api/admin/users/${user.id}/demote`)}
+                    onClick={() => void handleUserAction(`/api/admin/users/${user.id}/demote`)}
+                    loading={adminActionBusy}
                   >
                     降为普通
                   </Button>
@@ -322,10 +362,11 @@ export default function AdminPage() {
                   onClick={() => {
                     const password = window.prompt('新密码（至少 6 位）')
                     if (!password) return
-                    handleUserAction(`/api/admin/users/${user.id}/reset-password`, {
+                    void handleUserAction(`/api/admin/users/${user.id}/reset-password`, {
                       password,
                     })
                   }}
+                  loading={adminActionBusy}
                 >
                   重置密码
                 </Button>
@@ -333,14 +374,15 @@ export default function AdminPage() {
                   variant="ghost"
                   size="sm"
                   onClick={() =>
-                    handleUserAction(`/api/admin/users/${user.id}/ban`, {
+                    void handleUserAction(`/api/admin/users/${user.id}/ban`, {
                       banned: !user.isBanned,
                     })
                   }
+                  loading={adminActionBusy}
                 >
                   {user.isBanned ? '解除封禁' : '封禁'}
                 </Button>
-                <Button variant="danger" size="sm" onClick={() => handleDeleteUser(user.id)}>
+                <Button variant="danger" size="sm" onClick={() => void handleDeleteUser(user.id)} loading={adminActionBusy}>
                   删除
                 </Button>
               </div>
@@ -457,7 +499,10 @@ function AdminReportsSection() {
         const r = await fetchJson(`/api/admin/messages/${report.targetId}`, { method: 'DELETE' })
         ok = r.response.ok
       } else {
-        const r = await fetchJson(`/api/admin/users/${report.targetId}/ban`, { method: 'POST' })
+        const r = await fetchJson(`/api/admin/users/${report.targetId}/ban`, {
+          method: 'POST',
+          body: JSON.stringify({ banned: true }),
+        })
         ok = r.response.ok
       }
       if (!ok) {
@@ -466,6 +511,8 @@ function AdminReportsSection() {
       }
       await fetchJson(`/api/admin/reports/${report.id}/resolve`, { method: 'POST' })
       await load()
+    } catch {
+      setError('网络异常，举报处理未完成')
     } finally {
       setBusy(false)
     }
@@ -473,9 +520,19 @@ function AdminReportsSection() {
 
   const handleResolveOnly = async (report: AdminReport) => {
     setBusy(true)
-    await fetchJson(`/api/admin/reports/${report.id}/resolve`, { method: 'POST' })
-    await load()
-    setBusy(false)
+    setError('')
+    try {
+      const { response, data } = await fetchJson<{ message?: string }>(`/api/admin/reports/${report.id}/resolve`, { method: 'POST' })
+      if (!response.ok) {
+        setError(data?.message || '标记举报失败')
+        return
+      }
+      await load()
+    } catch {
+      setError('网络异常，举报处理未完成')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -496,7 +553,7 @@ function AdminReportsSection() {
           </button>
         </div>
       </div>
-      {error && <div className="auth-error">{error}</div>}
+      {error && <ErrorState description={error} onRetry={() => void load()} />}
       {loading ? (
         <div className="oj-loading">加载中...</div>
       ) : reports.length === 0 ? (
@@ -537,12 +594,20 @@ function AdminReportsSection() {
 function AdminStatsSection() {
   const [stats, setStats] = useState<AdminStatsResponse['stats'] | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { response, data } = await fetchJson<AdminStatsResponse>('/api/admin/stats')
-    if (response.ok && data) setStats(data.stats)
-    setLoading(false)
+    setError('')
+    try {
+      const { response, data } = await fetchJson<AdminStatsResponse & { message?: string }>('/api/admin/stats')
+      if (response.ok && data) setStats(data.stats)
+      else setError(data?.message || '看板数据加载失败')
+    } catch {
+      setError('网络异常，暂时无法加载看板')
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -574,6 +639,8 @@ function AdminStatsSection() {
       </div>
       {loading ? (
         <div className="oj-loading">加载中...</div>
+      ) : error ? (
+        <ErrorState description={error} onRetry={() => void load()} />
       ) : (
         <div className="admin-summary admin-summary-v2">
           {cards.map((card) => (

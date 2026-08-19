@@ -16,7 +16,7 @@ import type {
 import { fetchJson } from '../utils'
 import { OJ_ENABLED } from '../constants'
 import type { FollowRelations, UserProfileResponse } from '../types'
-import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import './AccountPage.css'
 import './UserProfile.css'
 
@@ -49,6 +49,8 @@ export default function AccountPage() {
   const [heatmapData, setHeatmapData] = useState<HeatmapData[]>([])
   const [achievements, setAchievements] = useState<Achievement[]>([])
   const [loading, setLoading] = useState(true)
+  const [profileError, setProfileError] = useState('')
+  const [profileReloadKey, setProfileReloadKey] = useState(0)
   const [ratingHistory, setRatingHistory] = useState<{ date: string; rating: number }[]>([])
   const [relations, setRelations] = useState<FollowRelations | null>(null)
   const [bookmarks, setBookmarks] = useState<{ id: number; title: string; userName: string; commentCount: number; createdAt: string }[]>([])
@@ -59,6 +61,12 @@ export default function AccountPage() {
   const [exportError, setExportError] = useState('')
   const loadedUserIdRef = useRef<string | null>(null)
   const initial = currentUser?.name?.trim()?.[0] || currentUser?.id?.[0] || '★'
+
+  const retryProfile = () => {
+    loadedUserIdRef.current = null
+    setProfileError('')
+    setProfileReloadKey((value) => value + 1)
+  }
 
   const handleAvatarClick = () => {
     fileInputRef.current?.click()
@@ -154,6 +162,7 @@ export default function AccountPage() {
     if (!currentUser?.id) return
     if (!OJ_ENABLED) {
       setLoading(false)
+      setProfileError('')
       return
     }
     if (loadedUserIdRef.current === currentUser.id) return
@@ -162,6 +171,7 @@ export default function AccountPage() {
 
     const loadProfileData = async () => {
       setLoading(true)
+      setProfileError('')
       try {
         const [statsRes, heatmapRes, achievementsRes, ratingRes] = await Promise.all([
           fetchJson<ProfileStatsResponse>(`/api/user/profile/${currentUser.id}`),
@@ -172,14 +182,21 @@ export default function AccountPage() {
 
         if (!mounted) return
 
+        const failed = [statsRes, heatmapRes, achievementsRes, ratingRes].some((item) => !item.response.ok)
+
         if (statsRes.response.ok && statsRes.data) setProfileStats(statsRes.data)
         if (heatmapRes.response.ok && heatmapRes.data) setHeatmapData(heatmapRes.data.heatmap || [])
         if (achievementsRes.response.ok && achievementsRes.data) setAchievements(achievementsRes.data.achievements || [])
         if (ratingRes.response.ok && ratingRes.data) setRatingHistory(ratingRes.data.history || [])
 
-        loadedUserIdRef.current = currentUser.id
+        if (failed) {
+          setProfileError('部分成长数据加载失败，其他内容仍可正常使用。')
+        } else {
+          loadedUserIdRef.current = currentUser.id
+        }
       } catch (error) {
         console.error('Failed to load profile data:', error)
+        setProfileError('网络异常，暂时无法加载成长数据。')
       } finally {
         if (mounted) setLoading(false)
       }
@@ -190,7 +207,7 @@ export default function AccountPage() {
     return () => {
       mounted = false
     }
-  }, [currentUser, setCurrentUser])
+  }, [currentUser, profileReloadKey, setCurrentUser])
 
   // 加载自己的关注/粉丝数据（与做题功能无关，始终显示）
   useEffect(() => {
@@ -222,6 +239,7 @@ export default function AccountPage() {
     let mounted = true
     void fetchJson<CheckinResponse>('/api/me/checkin').then(({ response, data }) => {
       if (mounted && response.ok && data) setCheckin(data)
+      else if (mounted) setCheckinError(data?.message || '签到状态加载失败，请重试。')
     })
     return () => {
       mounted = false
@@ -374,6 +392,9 @@ export default function AccountPage() {
       </aside>
 
       <main className="profile-right">
+        {profileError && (
+          <ErrorState description={profileError} onRetry={retryProfile} />
+        )}
         {OJ_ENABLED ? (
           <>
             <div className="stats-grid profile-stats-grid">
@@ -503,7 +524,7 @@ export default function AccountPage() {
           </Panel>
         )}
 
-        <Panel className="profile-checkin">
+        <Panel className={`profile-checkin ${!checkin ? 'is-loading' : ''} ${checkingIn ? 'is-submitting' : ''}`}>
           <div className="profile-panel-head">
             <div>
               <div className="profile-kicker">Check-in</div>
@@ -518,21 +539,21 @@ export default function AccountPage() {
               <div className="profile-checkin-metric">
                 <CalendarCheck size={16} aria-hidden="true" />
                 <div>
-                  <strong>{checkin?.currentStreak ?? 0}</strong>
+                  <strong>{checkin ? checkin.currentStreak : <span className="checkin-value-loading" aria-label="加载中" />}</strong>
                   <span>当前连续</span>
                 </div>
               </div>
               <div className="profile-checkin-metric">
                 <Trophy size={16} aria-hidden="true" />
                 <div>
-                  <strong>{checkin?.maxStreak ?? 0}</strong>
+                  <strong>{checkin ? checkin.maxStreak : <span className="checkin-value-loading" aria-label="加载中" />}</strong>
                   <span>最长连续</span>
                 </div>
               </div>
               <div className="profile-checkin-metric">
                 <Flame size={16} aria-hidden="true" />
                 <div>
-                  <strong>{checkin?.totalDays ?? 0}</strong>
+                  <strong>{checkin ? checkin.totalDays : <span className="checkin-value-loading" aria-label="加载中" />}</strong>
                   <span>累计签到</span>
                 </div>
               </div>
