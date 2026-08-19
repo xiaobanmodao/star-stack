@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import { getDb, initDb } from './db.js'
 import { getAuthToken, getUserByToken } from './middleware/auth.js'
+import { errorHandler } from './middleware/errorHandler.js'
 import { initPush } from './controllers/notificationsController.js'
 import { setLeaderboardSaveCallback } from './controllers/submissionsController.js'
 
@@ -34,7 +35,9 @@ app.use(cors({
       return callback(null, true)
     }
     if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true)
-    callback(new Error('CORS not allowed'))
+    const error = new Error('CORS not allowed')
+    error.status = 403
+    callback(error)
   },
   credentials: true,
 }))
@@ -505,6 +508,8 @@ const scheduleMessageCleanup = () => {
   }, delay)
   console.log(`Message retention scheduler initialized (${MESSAGE_RETENTION_DAYS} days)`)
 }
+
+app.use(errorHandler)
 
 const PORT = Number(process.env.PORT) || 5174
 initDb()
