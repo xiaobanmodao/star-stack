@@ -18,7 +18,7 @@
 
 ### Cloudflare Turnstile
 
-注册和异常登录使用 Cloudflare Turnstile。`Site Key` 是前端公开配置，`Secret Key` 只能保存到后端运行环境，不能提交到 Git。
+异常登录使用 Cloudflare Turnstile。`Site Key` 是前端公开配置，`Secret Key` 只能保存到后端运行环境，不能提交到 Git。
 
 首次部署或更新前端时，在项目根目录创建未提交的 `.env.production`：
 

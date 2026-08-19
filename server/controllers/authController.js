@@ -19,15 +19,39 @@ import {
 } from '../utils/emailVerification.js'
 
 const createToken = () => randomBytes(24).toString('hex')
+const emailCodeIpLimits = new Map()
+const EMAIL_CODE_IP_WINDOW_MS = 60 * 60 * 1000
+const EMAIL_CODE_IP_MAX_REQUESTS = 10
+
+const getClientIp = (req) => req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+  || req.socket?.remoteAddress
+  || 'unknown'
+
+const getEmailCodeIpRetryAfter = (ip) => {
+  const now = Date.now()
+  const current = emailCodeIpLimits.get(ip)
+  if (!current || now - current.startedAt >= EMAIL_CODE_IP_WINDOW_MS) {
+    emailCodeIpLimits.set(ip, { startedAt: now, count: 1 })
+    return 0
+  }
+  if (current.count >= EMAIL_CODE_IP_MAX_REQUESTS) {
+    return Math.ceil((EMAIL_CODE_IP_WINDOW_MS - (now - current.startedAt)) / 1000)
+  }
+  current.count += 1
+  return 0
+}
 
 export const sendRegisterEmailCode = async (req, res) => {
   const email = normalizeEmail(req.body?.email)
   if (!isValidEmail(email)) {
     return res.status(400).json({ message: '请输入有效的邮箱地址' })
   }
-  const captcha = await verifyTurnstile({ token: req.body?.turnstileToken, req, action: 'register' })
-  if (!captcha.ok) {
-    return res.status(403).json({ message: '请完成安全验证后再发送验证码', captchaRequired: true })
+  const ipRetryAfter = getEmailCodeIpRetryAfter(getClientIp(req))
+  if (ipRetryAfter > 0) {
+    return res.status(429).json({
+      message: '发送过于频繁，请稍后再试',
+      retryAfter: ipRetryAfter,
+    })
   }
 
   const db = await getDb()
@@ -81,7 +105,7 @@ export const sendRegisterEmailCode = async (req, res) => {
 }
 
 export const register = async (req, res) => {
-  const { id, name, password, emailCode, turnstileToken } = req.body || {}
+  const { id, name, password, emailCode } = req.body || {}
   const email = normalizeEmail(req.body?.email)
   if (!id || !name || !password || !email || !emailCode) {
     return res.status(400).json({ message: '请填写完整信息' })
@@ -94,10 +118,6 @@ export const register = async (req, res) => {
   }
   if (password.length < 6) {
     return res.status(400).json({ message: '密码至少 6 位' })
-  }
-  const captcha = await verifyTurnstile({ token: turnstileToken, req, action: 'register' })
-  if (!captcha.ok) {
-    return res.status(403).json({ message: '请完成安全验证后再注册', captchaRequired: true })
   }
   const db = await getDb()
   const existing = await db.get(`SELECT id FROM users WHERE id = ?`, id)
@@ -149,7 +169,7 @@ export const register = async (req, res) => {
   )
   return res.json({
     token,
-    user: { id, name, isAdmin: false, isBanned: false, avatar: null },
+    user: { id, name, email, isAdmin: false, isBanned: false, avatar: null },
   })
 }
 
@@ -173,7 +193,7 @@ export const login = async (req, res) => {
   }
   const db = await getDb()
   const user = await db.get(
-    `SELECT id, name, password_hash, is_admin, is_banned, avatar, onboarded_at FROM users WHERE id = ?`,
+    `SELECT id, name, password_hash, email, is_admin, is_banned, avatar, onboarded_at FROM users WHERE id = ?`,
     id
   )
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {

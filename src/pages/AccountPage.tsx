@@ -330,6 +330,7 @@ export default function AccountPage() {
           <div className="profile-user-copy">
             <div className="account-name" data-user-name>{currentUser.name}</div>
             <div className="account-id" data-user-id>@{currentUser.id}</div>
+            <div className="account-email" data-user-email>{currentUser.email || '邮箱未绑定'}</div>
             {currentUser.level && (
               <Badge tone="info" className="profile-level-badge">
                 {currentUser.icon || '✦'} Lv.{currentUser.level} {currentUser.title || '星尘'}

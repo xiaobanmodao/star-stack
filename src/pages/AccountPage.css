@@ -82,6 +82,12 @@
   font-size: 12px;
 }
 
+.profile-v2 .account-email {
+  color: var(--ss-color-text-subtle);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .profile-v2 .profile-level-badge {
   justify-content: center;
   width: 100%;

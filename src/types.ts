@@ -1,6 +1,7 @@
 export type UserRecord = {
   id: string
   name: string
+  email?: string | null
   avatar?: string
   isAdmin?: boolean
   isBanned?: boolean

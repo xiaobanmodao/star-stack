@@ -157,7 +157,7 @@ function App() {
     setAuthMode(mode)
     setAuthError('')
     setAuthSuccess('')
-    setAuthCaptchaRequired(mode === 'register')
+    setAuthCaptchaRequired(false)
     setAuthCaptchaToken('')
     setAuthCaptchaResetKey((value) => value + 1)
     setAuthEmailSending(false)
@@ -311,7 +311,7 @@ function App() {
           return
         }
       }
-      if ((authMode === 'register' || authCaptchaRequired) && !authCaptchaToken) {
+      if (authCaptchaRequired && !authCaptchaToken) {
         setAuthError('请先完成安全验证')
         return
       }
@@ -336,7 +336,7 @@ function App() {
             setAuthCaptchaToken('')
             setAuthCaptchaResetKey((value) => value + 1)
           }
-          setAuthCaptchaRequired(authMode === 'register' || Boolean(data?.captchaRequired))
+          setAuthCaptchaRequired(Boolean(data?.captchaRequired))
           setAuthError(data?.message || (authMode === 'register' ? '注册失败' : '登录失败'))
           return
         }
@@ -362,15 +362,11 @@ function App() {
       setAuthError('请输入有效的邮箱地址')
       return
     }
-    if (!authCaptchaToken) {
-      setAuthError('请先完成安全验证')
-      return
-    }
     setAuthEmailSending(true)
     try {
       const { response, data } = await fetchJson<ApiResponse<{ retryAfter?: number }>>('/api/register/email-code', {
         method: 'POST',
-        body: JSON.stringify({ email, turnstileToken: authCaptchaToken }),
+        body: JSON.stringify({ email }),
       })
       if (!response.ok) {
         setAuthError(data?.message || '验证码发送失败')
@@ -379,14 +375,12 @@ function App() {
       }
       setAuthEmailCooldown(60)
       setAuthSuccess('验证码已发送，请检查邮箱')
-      setAuthCaptchaToken('')
-      setAuthCaptchaResetKey((value) => value + 1)
     } catch {
       setAuthError('网络连接失败，请稍后重试')
     } finally {
       setAuthEmailSending(false)
     }
-  }, [authCaptchaToken, authEmailCooldown, authEmailSending, formEmail])
+  }, [authEmailCooldown, authEmailSending, formEmail])
 
   const handleLogout = useCallback(async () => {
     const token = localStorage.getItem(TOKEN_KEY)

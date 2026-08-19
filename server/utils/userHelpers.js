@@ -24,6 +24,7 @@ export const serializeUser = async (db, user) => {
   return {
     id: user.id,
     name: user.name,
+    email: user.email || null,
     avatar: user.avatar,
     isAdmin: Boolean(user.is_admin),
     isBanned: Boolean(user.is_banned),

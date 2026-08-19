@@ -143,19 +143,6 @@ const AuthPage = ({
             />
           </label>
         )}
-        {mode === 'register' && (
-          <label>
-            邮箱
-            <input
-              className="auth-input"
-              type="email"
-              value={formEmail}
-              onChange={(event) => onFormEmailChange(event.target.value)}
-              autoComplete="email"
-              placeholder="用于接收注册验证码"
-            />
-          </label>
-        )}
         <label>
           密码
           <input
@@ -165,17 +152,6 @@ const AuthPage = ({
             onChange={(event) => onFormPasswordChange(event.target.value)}
           />
         </label>
-        {mode === 'register' && (
-          <label>
-            确认密码
-            <input
-              className="auth-input"
-              type="password"
-              value={formConfirm}
-              onChange={(event) => onFormConfirmChange(event.target.value)}
-            />
-          </label>
-        )}
         {mode === 'register' && (
           <label>
             邮箱验证码
@@ -201,7 +177,31 @@ const AuthPage = ({
             </div>
           </label>
         )}
-        {(mode === 'register' || captchaRequired) && (
+        {mode === 'register' && (
+          <label>
+            邮箱
+            <input
+              className="auth-input"
+              type="email"
+              value={formEmail}
+              onChange={(event) => onFormEmailChange(event.target.value)}
+              autoComplete="email"
+              placeholder="用于接收注册验证码"
+            />
+          </label>
+        )}
+        {mode === 'register' && (
+          <label>
+            确认密码
+            <input
+              className="auth-input"
+              type="password"
+              value={formConfirm}
+              onChange={(event) => onFormConfirmChange(event.target.value)}
+            />
+          </label>
+        )}
+        {captchaRequired && (
           <TurnstileWidget
             action={mode}
             resetKey={captchaResetKey}
