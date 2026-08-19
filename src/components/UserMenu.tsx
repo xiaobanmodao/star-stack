@@ -68,6 +68,14 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
         }}>
           我的题目
         </button>
+        {currentUser.isAdmin && (
+          <button className="user-menu-item" type="button" onClick={() => {
+            if (location.pathname !== '/admin') navigate('/admin')
+            setUserMenuOpen(false)
+          }}>
+            管理员面板
+          </button>
+        )}
         {OJ_ENABLED && (
           <button className="user-menu-item" type="button" onClick={() => {
             if (location.pathname !== '/oj/submissions') navigate('/oj/submissions')
