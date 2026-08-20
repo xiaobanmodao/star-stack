@@ -23,12 +23,17 @@ const emailCodeIpLimits = new Map()
 const EMAIL_CODE_IP_WINDOW_MS = 60 * 60 * 1000
 const EMAIL_CODE_IP_MAX_REQUESTS = 10
 
-const getClientIp = (req) => req.headers['x-forwarded-for']?.split(',')[0]?.trim()
-  || req.socket?.remoteAddress
-  || 'unknown'
+const getClientIp = (req) => req.ip || req.socket?.remoteAddress || 'unknown'
 
 const getEmailCodeIpRetryAfter = (ip) => {
   const now = Date.now()
+  for (const [key, entry] of emailCodeIpLimits) {
+    if (now - entry.startedAt >= EMAIL_CODE_IP_WINDOW_MS) emailCodeIpLimits.delete(key)
+  }
+  if (!emailCodeIpLimits.has(ip) && emailCodeIpLimits.size >= 10000) {
+    const oldestKey = emailCodeIpLimits.keys().next().value
+    if (oldestKey !== undefined) emailCodeIpLimits.delete(oldestKey)
+  }
   const current = emailCodeIpLimits.get(ip)
   if (!current || now - current.startedAt >= EMAIL_CODE_IP_WINDOW_MS) {
     emailCodeIpLimits.set(ip, { startedAt: now, count: 1 })

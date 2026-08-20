@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { OJ_ENABLED } from '../constants'
 import type { DiscussionListResponse, OjProblemSummary } from '../types'
 import { fetchJson } from '../utils'
+import { useModalFocus } from '../hooks/useModalFocus'
 import './SearchOverlay.css'
 
 type SearchResults = {
@@ -47,6 +48,7 @@ export default function SearchOverlay({ open, onClose }: { open: boolean; onClos
   const [searching, setSearching] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const timerRef = useRef<number | null>(null)
+  const dialogRef = useModalFocus(open, onClose)
 
   useEffect(() => {
     if (open) {
@@ -111,8 +113,9 @@ export default function SearchOverlay({ open, onClose }: { open: boolean; onClos
   const total = results.problems.length + results.posts.length + results.users.length + results.messages.length
 
   return (
-    <div className="search-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="search-panel" onClick={(event) => event.stopPropagation()}>
+    <div className="search-backdrop" role="dialog" aria-modal="true" aria-labelledby="search-dialog-title" onClick={onClose}>
+      <div ref={dialogRef} className="search-panel" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
+        <h2 id="search-dialog-title" className="sr-only">全局搜索</h2>
         <div className="search-input-row">
           <span className="search-icon" aria-hidden="true">⌕</span>
           <input

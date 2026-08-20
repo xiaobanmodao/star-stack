@@ -34,6 +34,8 @@ pm2 startOrRestart ecosystem.config.cjs --update-env
 pm2 save
 ```
 
+生产环境默认信任 Nginx 到 Node 的一层代理，并使用代理还原后的客户端 IP 做登录、注册和验证码限流。若前面还有其他反向代理，按实际链路设置 `TRUST_PROXY_HOPS`；不要让 Node 端口绕过 Nginx 直接暴露公网。
+
 `TURNSTILE_HOSTNAMES` 已在 `ecosystem.config.cjs` 中限制为 `xingzhan.cc,www.xingzhan.cc`。不要把 Secret Key 写入仓库、前端代码或聊天记录。
 
 ### 注册邮箱验证码
@@ -61,6 +63,7 @@ pm2 save
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
   ca-certificates curl git rsync sqlite3 build-essential python3 openjdk-17-jdk \
+  util-linux coreutils \
   nginx certbot python3-certbot-nginx
 
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
@@ -76,6 +79,9 @@ npm --version
 g++ --version
 python3 --version
 java -version
+command -v unshare
+command -v timeout
+unshare --net --mount --pid --fork --mount-proc --kill-child -- true
 ```
 
 ### 2.2 获取代码并安装依赖
@@ -273,7 +279,7 @@ node server/diagnose.js
 
 健康接口中的 `judge` 字段会返回当前评测 worker、等待队列和运行沙箱数量。提交记录先以 `Queued` 写入数据库，再进入评测；服务重启时会自动恢复仍未结束的已发布题目提交，避免用户刷新页面后丢失状态。
 
-管理员后台的“站点看板”还会显示进程内存、评测/运行队列、数据库规模和最近备份状态。备份超过 26 小时未更新时会标记为“需检查”。`JUDGE_MEMORY_LIMIT_KB` 可在 65536～524288 之间调整评测内存上限，默认 262144（256MB）；沙箱同时限制虚拟内存、CPU 时间、进程数、文件大小和网络访问。
+管理员后台的“站点看板”还会显示进程内存、评测/运行队列、数据库规模和最近备份状态。备份超过 26 小时未更新时会标记为“需检查”。`JUDGE_MEMORY_LIMIT_KB` 可在 65536～524288 之间调整评测内存上限，默认 262144（256MB）；编译和运行均经过沙箱，沙箱同时限制虚拟内存、CPU 时间、进程数、文件大小和网络访问。生产主机若不具备 namespace 能力，服务会拒绝执行用户代码。
 
 压力测试只允许对本机服务执行：
 
@@ -329,6 +335,8 @@ pm2 logs star-stack-api --lines 100 --nostream
 ## 7. 发布前检查清单
 
 - [ ] 本地 `npm run build`、`npm run lint`、`npm test -- --run` 全部通过
+- [ ] 已执行 `npm run audit:deps`；无 Critical，剩余上游未修复条目已记录并确认不影响本次发布
+- [ ] 已执行 `node server/diagnose.js` 和 SQLite `PRAGMA integrity_check`，数据库完整
 - [ ] 已提交并推送到 `main`
 - [ ] 更新前已备份数据库
 - [ ] 已执行 `node server/migrate.js`
@@ -336,3 +344,5 @@ pm2 logs star-stack-api --lines 100 --nostream
 - [ ] `nginx -t` 通过
 - [ ] `https://xingzhan.cc/api/health` 返回 `{"ok":true}`
 - [ ] 已在浏览器验证登录、题库、提交评测和管理后台
+- [ ] Chrome CDP 已完成浅色/深色主题以及 375px、768px、1440px 视口对比度审计
+- [ ] 已用键盘回归顶部菜单、通知、弹窗、登录注册、IDE 和管理员入口

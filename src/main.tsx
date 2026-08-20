@@ -6,6 +6,7 @@ import 'highlight.js/styles/github-dark.css'
 import 'katex/dist/katex.min.css'
 import { applyAccent, applyTheme, readSavedAccent, readSavedTheme } from './utils/theme'
 import App from './App.tsx'
+import AppErrorBoundary from './components/AppErrorBoundary'
 import { ToastProvider } from './components/ui/Toast'
 
 // 渲染前应用主题与强调色，避免闪烁
@@ -59,11 +60,24 @@ window.addEventListener('unhandledrejection', (event) => {
   )
 })
 
+window.addEventListener('starstack:app-error', (event) => {
+  const detail = (event as CustomEvent<{ error?: unknown }>).detail
+  reportClientError(
+    detail?.error instanceof Error ? detail.error.message : 'React 页面渲染异常',
+    '',
+    0,
+    0,
+    detail?.error,
+  )
+})
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ToastProvider>
       <BrowserRouter>
-        <App />
+        <AppErrorBoundary>
+          <App />
+        </AppErrorBoundary>
       </BrowserRouter>
     </ToastProvider>
   </StrictMode>,

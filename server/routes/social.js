@@ -3,7 +3,6 @@ import {
   followUser, unfollowUser,
   blockUser, unblockUser, listBlocks,
   listFriends, listFollowing, listFollowers,
-  exportUserData,
 } from '../controllers/socialController.js'
 import {
   getVapidPublicKey, subscribePush, unsubscribePush,
@@ -20,8 +19,6 @@ router.get('/me/blocks', listBlocks)
 router.get('/me/friends', listFriends)
 router.get('/me/following', listFollowing)
 router.get('/me/followers', listFollowers)
-router.get('/me/export', exportUserData)
-
 router.get('/push/vapid-public-key', getVapidPublicKey)
 router.post('/push/subscribe', subscribePush)
 router.delete('/push/subscribe', unsubscribePush)

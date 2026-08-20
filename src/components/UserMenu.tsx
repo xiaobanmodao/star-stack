@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import './UserMenu.css'
 import { OJ_ENABLED } from '../constants'
@@ -15,6 +15,8 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
   const location = useLocation()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const closeTimerRef = useRef<number | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const avatarRef = useRef<HTMLButtonElement>(null)
 
   const handleMouseEnter = () => {
     if (closeTimerRef.current) {
@@ -30,11 +32,32 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
     }, 300)
   }
 
-  const handleAvatarClick = () => {
-    if (location.pathname !== '/account') {
-      navigate('/account')
+  const toggleMenu = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
     }
+    setUserMenuOpen((open) => !open)
   }
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setUserMenuOpen(false)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !userMenuOpen) return
+      event.preventDefault()
+      setUserMenuOpen(false)
+      avatarRef.current?.focus()
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+      if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current)
+    }
+  }, [userMenuOpen])
 
   return (
     <div
@@ -42,34 +65,49 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      <div className="user-avatar-btn" onClick={handleAvatarClick} style={{ cursor: 'pointer' }}>
+      <button
+        ref={avatarRef}
+        className="user-avatar-btn"
+        type="button"
+        aria-label={`打开用户菜单，当前用户 ${currentUser.name || currentUser.id}`}
+        aria-haspopup="menu"
+        aria-expanded={userMenuOpen}
+        onClick={toggleMenu}
+        onFocus={handleMouseEnter}
+      >
         {currentUser.avatar ? (
           <img src={currentUser.avatar} alt="头像" />
         ) : (
           <span>{initial}</span>
         )}
-      </div>
-      <div className={`user-menu-panel ${userMenuOpen ? 'open' : ''}`} role="menu" aria-label="用户菜单">
+      </button>
+      <div
+        ref={menuRef}
+        className={`user-menu-panel ${userMenuOpen ? 'open' : ''}`}
+        role="menu"
+        aria-label="用户菜单"
+        aria-hidden={!userMenuOpen}
+      >
         <div className="user-menu-level">
           <span aria-hidden="true">{currentUser.icon || '✦'}</span>
           <span>Lv.{currentUser.level ?? 1}</span>
           <strong>{currentUser.title || '星尘'}</strong>
         </div>
         <div className="user-menu-divider" aria-hidden="true" />
-        <button className="user-menu-item" type="button" onClick={() => {
+        <button className="user-menu-item" role="menuitem" type="button" onClick={() => {
           if (location.pathname !== '/account') navigate('/account')
           setUserMenuOpen(false)
         }}>
           个人中心
         </button>
-        <button className="user-menu-item" type="button" onClick={() => {
+        <button className="user-menu-item" role="menuitem" type="button" onClick={() => {
           if (location.pathname !== '/my-problems') navigate('/my-problems')
           setUserMenuOpen(false)
         }}>
           我的题目
         </button>
         {currentUser.isAdmin && (
-          <button className="user-menu-item" type="button" onClick={() => {
+          <button className="user-menu-item" role="menuitem" type="button" onClick={() => {
             if (location.pathname !== '/admin') navigate('/admin')
             setUserMenuOpen(false)
           }}>
@@ -77,7 +115,7 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
           </button>
         )}
         {OJ_ENABLED && (
-          <button className="user-menu-item" type="button" onClick={() => {
+          <button className="user-menu-item" role="menuitem" type="button" onClick={() => {
             if (location.pathname !== '/oj/submissions') navigate('/oj/submissions')
             setUserMenuOpen(false)
           }}>
@@ -85,7 +123,7 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
           </button>
         )}
         <div className="user-menu-divider" aria-hidden="true" />
-        <button className="user-menu-item danger" type="button" onClick={() => {
+        <button className="user-menu-item danger" role="menuitem" type="button" onClick={() => {
           openLogoutConfirm()
           setUserMenuOpen(false)
         }}>

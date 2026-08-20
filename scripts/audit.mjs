@@ -6,6 +6,7 @@
  *   node scripts/audit.mjs                 # 双主题 + 默认页面清单
  *   node scripts/audit.mjs --theme light   # 只审浅色
  *   node scripts/audit.mjs --theme dark    # 只审深色
+ *   node scripts/audit.mjs --viewport mobile # 只审 375px 移动端
  *   node scripts/audit.mjs --url /oj/list  # 追加自定义页面
  *
  * 审计项：对每个可见文字元素，计算其颜色与主题底色的对比度，
@@ -35,13 +36,24 @@ const DEFAULT_PAGES = [
   '/user/astro01',      // 他人主页
   '/oj/records/1001',   // 提交记录
 ]
+const VIEWPORTS = [
+  { name: 'desktop', width: 1440, height: 900, mobile: false },
+  { name: 'tablet', width: 768, height: 900, mobile: false },
+  { name: 'mobile', width: 375, height: 812, mobile: true },
+]
 
 const args = process.argv.slice(2)
 let themes = ['light', 'dark']
 let pages = [...DEFAULT_PAGES]
+let viewports = VIEWPORTS
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--theme') themes = [args[++i]]
   if (args[i] === '--url') pages.push(args[++i])
+  if (args[i] === '--viewport') {
+    const requested = args[++i]
+    viewports = VIEWPORTS.filter((viewport) => viewport.name === requested)
+    if (viewports.length === 0) throw new Error(`未知视口：${requested}，可选 desktop/tablet/mobile`)
+  }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -146,32 +158,39 @@ sock.onmessage = (e) => {
   if (m.id && pending.has(m.id)) { pending.get(m.id).res(m.result); pending.delete(m.id) }
 }
 await send('Page.enable')
-await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false })
 
 const report = []
 let violations = 0
 
 for (const theme of themes) {
   const bg = theme === 'dark' ? [13, 17, 23] : [255, 255, 255]
-  process.stderr.write(`[主题] ${theme}\n`)
+  for (const viewport of viewports) {
+    await send('Emulation.setDeviceMetricsOverride', {
+      width: viewport.width,
+      height: viewport.height,
+      deviceScaleFactor: 1,
+      mobile: viewport.mobile,
+    })
+    process.stderr.write(`[主题] ${theme} [视口] ${viewport.name} ${viewport.width}x${viewport.height}\n`)
 
-  // 设置主题（localStorage 同 origin 保留，后续页面自动应用）
-  await send('Page.navigate', { url: BASE + '/' })
-  await sleep(3500)
-  await send('Runtime.evaluate', {
-    expression: `localStorage.setItem('starstack_theme','${theme}'); window.__AUDIT_BG__=[${bg.join(',')}]; location.reload(); true`,
-  })
-  await sleep(3500)
-
-  for (const path of pages) {
-    process.stderr.write(`  [审] ${path} ... `)
-    await send('Page.navigate', { url: BASE + path })
+    // 设置主题（localStorage 同 origin 保留，后续页面自动应用）
+    await send('Page.navigate', { url: BASE + '/' })
     await sleep(3500)
-    const r = await send('Runtime.evaluate', { expression: AUDIT_JS, returnByValue: true })
-    const issues = (r.result && r.result.value) || []
-    process.stderr.write(`${issues.length} 处违规\n`)
-    violations += issues.length
-    report.push({ path, theme, issues })
+    await send('Runtime.evaluate', {
+      expression: `localStorage.setItem('starstack_theme','${theme}'); window.__AUDIT_BG__=[${bg.join(',')}]; location.reload(); true`,
+    })
+    await sleep(3500)
+
+    for (const path of pages) {
+      process.stderr.write(`  [审] ${path} ... `)
+      await send('Page.navigate', { url: BASE + path })
+      await sleep(3500)
+      const r = await send('Runtime.evaluate', { expression: AUDIT_JS, returnByValue: true })
+      const issues = (r.result && r.result.value) || []
+      process.stderr.write(`${issues.length} 处违规\n`)
+      violations += issues.length
+      report.push({ path, theme, viewport, issues })
+    }
   }
 }
 
@@ -180,10 +199,10 @@ for (const theme of themes) {
 const lines = []
 lines.push('# StarStack 审查报告')
 lines.push(`时间：${new Date().toLocaleString('zh-CN')}`)
-lines.push(`主题：${themes.join(' / ')}    页面：${pages.length}    最小对比度：${MIN_CONTRAST}`)
+lines.push(`主题：${themes.join(' / ')}    页面：${pages.length}    视口：${viewports.map((viewport) => `${viewport.name} ${viewport.width}x${viewport.height}`).join(' / ')}    最小对比度：${MIN_CONTRAST}`)
 lines.push('')
 for (const r of report) {
-  lines.push(`## [${r.theme}] ${r.path} — ${r.issues.length} 处违规`)
+  lines.push(`## [${r.theme} / ${r.viewport.name}] ${r.path} — ${r.issues.length} 处违规`)
   for (const it of r.issues.slice(0, 12)) {
     lines.push(`- 对比度 ${it.contrast}  ${it.color}  <${it.tag} .${it.cls}> "${it.text}"`)
   }
@@ -195,7 +214,7 @@ lines.push(violations === 0 ? '✅ 全部通过' : '❌ 存在违规，请修复
 
 const outDir = resolve(ROOT, '.audit')
 mkdirSync(outDir, { recursive: true })
-const reportFile = resolve(outDir, `audit-${themes.join('-')}.md`)
+const reportFile = resolve(outDir, `audit-${themes.join('-')}-${viewports.map((viewport) => viewport.name).join('-')}.md`)
 writeFileSync(reportFile, lines.join('\n'))
 console.log(lines.join('\n'))
 console.log(`\n报告已保存：${reportFile}`)

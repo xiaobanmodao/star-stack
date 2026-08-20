@@ -5,6 +5,7 @@ import RichTextEditor from '../../components/RichTextEditor'
 import type { DiscussionListResponse, DiscussionPost, ChatModuleKey } from '../../types'
 import { fetchJson, openInNewTab } from '../../utils'
 import { MODULE_KEYS, MODULE_META } from '../../components/chat/chatMeta'
+import { useModalFocus } from '../../hooks/useModalFocus'
 import './ChatHub.css'
 
 const formatPostTime = (iso: string) => {
@@ -34,6 +35,7 @@ function CreatePostModal({ defaultModule, initialProblemId, onClose, onCreated }
   const [problemTitle, setProblemTitle] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const dialogRef = useModalFocus(true, onClose)
 
   // 绑定题目时拉取题目标题
   useEffect(() => {
@@ -78,9 +80,9 @@ function CreatePostModal({ defaultModule, initialProblemId, onClose, onCreated }
   }
 
   return (
-    <div className="confirm-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="confirm-panel chat-post-modal" onClick={(event) => event.stopPropagation()}>
-        <div className="confirm-title">发布帖子</div>
+    <div className="confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="create-post-dialog-title" onClick={onClose}>
+      <div ref={dialogRef} className="confirm-panel chat-post-modal" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
+        <div id="create-post-dialog-title" className="confirm-title">发布帖子</div>
         <label className="chat-modal-field">
           <span>标题</span>
           <input

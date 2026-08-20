@@ -5,6 +5,7 @@ const checks = [
   ['GET', '/api/health', 200],
   ['GET', '/api/oj/problems', 200],
   ['GET', '/api/admin/metrics', 401],
+  ['GET', '/api/me/export', 404],
   ['POST', '/api/oj/submissions/1/cancel', 401],
 ]
 

@@ -482,7 +482,8 @@ export const sendRoomMessage = async (req, res) => {
   }
 }
 
-export const roomStream = (req, res) => { void openChatStream(req, res, `room:${req.params.id}`) }
+// 返回 Promise，让 Express 5 可以统一捕获 SSE 建立阶段的异步错误。
+export const roomStream = (req, res) => openChatStream(req, res, `room:${req.params.id}`)
 
 // ─── Typing / reactions / threads ────────────────────────────────────────────
 

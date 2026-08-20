@@ -5,6 +5,7 @@ import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
 import RichTextEditor from '../components/RichTextEditor'
 import { fetchJson, isPollingPageVisible } from '../utils'
 import { renderRichText } from '../utils/richText'
+import { useModalFocus } from '../hooks/useModalFocus'
 import type { FollowRelations, Message, MessagesResponse, UserProfileResponse } from '../types'
 import './OpsPages.css'
 import './ChatPage.css'
@@ -32,6 +33,7 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null)
+  const deleteDialogRef = useModalFocus(deleteTarget !== null, () => setDeleteTarget(null))
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const pageSize = 30
@@ -456,9 +458,9 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
       </div>
 
       {deleteTarget !== null && (
-        <div className="confirm-backdrop" role="dialog" aria-modal="true" onClick={() => setDeleteTarget(null)}>
-          <div className="confirm-panel" onClick={e => e.stopPropagation()}>
-            <div className="confirm-title">撤回消息</div>
+        <div className="confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="delete-message-dialog-title" onClick={() => setDeleteTarget(null)}>
+          <div ref={deleteDialogRef} className="confirm-panel" tabIndex={-1} onClick={e => e.stopPropagation()}>
+            <div id="delete-message-dialog-title" className="confirm-title">撤回消息</div>
             <div className="confirm-desc">确定要撤回这条消息吗？2 分钟内发送的消息将对双方删除。</div>
             <div className="confirm-actions">
               <Button variant="ghost" type="button" onClick={() => setDeleteTarget(null)}>取消</Button>

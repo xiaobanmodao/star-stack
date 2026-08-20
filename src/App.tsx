@@ -16,6 +16,7 @@ import LoadingState from './components/ui/LoadingState'
 import { useToast } from './components/ui/ToastContext'
 import AuthPage from './pages/AuthPage'
 import { useStarfield } from './hooks/useStarfield'
+import { useModalFocus } from './hooks/useModalFocus'
 import { fetchJson, isPollingPageVisible } from './utils'
 import type {
   UserRecord, ProblemPlan, AuthMode,
@@ -88,6 +89,7 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [currentUser, setCurrentUser] = useState<UserRecord | null>(null)
   const [authFrom, setAuthFrom] = useState('/')
+  const authExpiredFromRef = useRef('')
 
   const [problemPlan, setProblemPlan] = useState<ProblemPlan[]>([])
   const [unreadMessageCount, setUnreadMessageCount] = useState(0)
@@ -170,22 +172,27 @@ function App() {
   const openAuth = useCallback(
     (mode: AuthMode) => {
       setAuthModeSafe(mode)
-      setAuthFrom(location.pathname || '/')
+      setAuthFrom(`${location.pathname}${location.search}${location.hash}` || '/')
       navigate('/auth')
     },
-    [location.pathname, navigate, setAuthModeSafe]
+    [location.hash, location.pathname, location.search, navigate, setAuthModeSafe]
   )
 
   const loadCurrentUser = useCallback(async () => {
     const token = localStorage.getItem(TOKEN_KEY)
     if (!token) return
-    const { response, data } = await fetchJson<UserResponse>('/api/me')
-    if (!response.ok) {
-      localStorage.removeItem(TOKEN_KEY)
+    try {
+      const { response, data } = await fetchJson<UserResponse>('/api/me')
+      if (!response.ok) {
+        localStorage.removeItem(TOKEN_KEY)
+        return
+      }
+      if (data?.user) {
+        setCurrentUser(data.user)
+      }
+    } catch {
+      // 启动阶段的网络异常不应造成未处理 Promise；用户进入页面后可再次触发请求。
       return
-    }
-    if (data?.user) {
-      setCurrentUser(data.user)
     }
   }, [])
 
@@ -197,16 +204,23 @@ function App() {
   }, [loadCurrentUser])
 
   useEffect(() => {
-    let handled = false
-    const handleAuthExpired = () => {
-      if (handled) return
-      handled = true
+    const handleAuthExpired = (event: Event) => {
+      const detail = (event as CustomEvent<{ from?: string }>).detail
+      const currentPath = `${location.pathname}${location.search}${location.hash}` || '/'
+      const requestedFrom = detail?.from || currentPath
+      const from = requestedFrom === '/auth' ? '/' : requestedFrom
+      if (authExpiredFromRef.current === from && location.pathname === '/auth') return
+      authExpiredFromRef.current = from
       setCurrentUser(null)
-      navigate('/auth')
+      setProblemPlan([])
+      setAuthModeSafe('login')
+      setAuthFrom(from)
+      showToast('登录状态已失效，请重新登录', 'warning')
+      if (location.pathname !== '/auth') navigate('/auth', { replace: true })
     }
     window.addEventListener('starstack:auth-expired', handleAuthExpired)
     return () => window.removeEventListener('starstack:auth-expired', handleAuthExpired)
-  }, [navigate])
+  }, [location.hash, location.pathname, location.search, navigate, setAuthModeSafe, showToast])
 
   // Poll unread message count via SSE with polling fallback
   const fetchUnreadCount = useCallback(async () => {
@@ -332,6 +346,7 @@ function App() {
         const { response, data } = await fetchJson<AuthResponse>(`/api/${authMode}`, {
           method: 'POST',
           body: JSON.stringify(payload),
+          skipAuthExpiry: true,
         })
         if (!response.ok || !data?.token || !data?.user) {
           if (authCaptchaToken) {
@@ -371,6 +386,7 @@ function App() {
       const { response, data } = await fetchJson<ApiResponse<{ retryAfter?: number }>>('/api/register/email-code', {
         method: 'POST',
         body: JSON.stringify({ email }),
+        skipAuthExpiry: true,
       })
       if (!response.ok) {
         setAuthError(data?.message || '验证码发送失败')
@@ -459,6 +475,8 @@ function App() {
     setShowLogoutConfirm(false)
   }, [])
 
+  const logoutDialogRef = useModalFocus(showLogoutConfirm, closeLogoutConfirm)
+
   const confirmLogout = useCallback(async () => {
     setShowLogoutConfirm(false)
     await handleLogout()
@@ -493,7 +511,7 @@ function App() {
 
   return (
     <>
-      <canvas ref={canvasRef} className={`starfield ${isAuthPage ? 'auth-starfield' : ''}`} />
+      <canvas ref={canvasRef} className={`starfield ${isAuthPage ? 'auth-starfield' : ''}`} aria-hidden="true" />
       {!isAuthPage && (
         <div
           className={`route-loading-bar ${routeSwitching ? 'active' : ''}`}
@@ -694,9 +712,9 @@ function App() {
             </button>
           </nav>
           {showLogoutConfirm && (
-            <div className="confirm-backdrop" role="dialog" aria-modal="true" onClick={closeLogoutConfirm}>
-              <div className="confirm-panel" onClick={(event) => event.stopPropagation()}>
-                <div className="confirm-title">确认退出账号？</div>
+            <div className="confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="logout-dialog-title" onClick={closeLogoutConfirm}>
+              <div ref={logoutDialogRef} className="confirm-panel" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
+                <div id="logout-dialog-title" className="confirm-title">确认退出账号？</div>
                 <div className="confirm-desc">退出后需要重新登录才能继续使用。</div>
                 <div className="confirm-actions">
                   <button className="ghost" type="button" onClick={closeLogoutConfirm}>

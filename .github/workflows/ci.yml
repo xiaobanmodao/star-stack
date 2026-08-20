@@ -17,9 +17,15 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
 
-      - name: Install dependencies
+      - name: Install frontend dependencies
         run: npm ci
+
+      - name: Install backend dependencies
+        run: npm ci --prefix server
 
       - name: Lint
         run: npm run lint
@@ -29,6 +35,9 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Production dependency audit
+        run: npm run audit:deps
 
       - name: Server syntax smoke check
         run: |

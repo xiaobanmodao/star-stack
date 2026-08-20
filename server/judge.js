@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import crypto from 'crypto'
-import { spawn } from 'child_process'
+import { spawn, spawnSync } from 'child_process'
 import { fileURLToPath } from 'url'
 import {
   DEFAULT_TESTCASE_TIME_LIMIT_MS,
@@ -20,6 +20,7 @@ const MEMORY_LIMIT_KB = Number.isFinite(configuredMemoryLimit) && configuredMemo
   ? Math.min(configuredMemoryLimit, 512 * 1024)
   : 256 * 1024 // 默认 256MB，允许生产环境在 64～512MB 内调整
 const NPROC_LIMIT = 32
+const SANDBOX_UNAVAILABLE_MESSAGE = '评测沙箱不可用，请联系管理员'
 
 // 带容量上限的编译缓存，防止内存泄漏
 class CompileCache {
@@ -83,13 +84,32 @@ const statusMessage = (status) => {
 
 const SANDBOX_SH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'sandbox.sh')
 
-// 检测沙箱是否可用（Linux 且 sandbox.sh 存在）
-const sandboxAvailable = IS_LINUX && fs.existsSync(SANDBOX_SH)
+const hasCommand = (command) => {
+  if (!IS_LINUX) return false
+  const result = spawnSync('command', ['-v', command], { stdio: 'ignore', shell: true })
+  return result.status === 0
+}
+
+// 不仅检查脚本文件，还要在启动时验证 namespace 能力。
+// 生产环境如果当前内核/容器不允许 unshare，必须拒绝执行用户代码。
+const canCreateSandbox = () => {
+  if (!IS_LINUX || !fs.existsSync(SANDBOX_SH)) return false
+  if (!hasCommand('unshare') || !hasCommand('timeout')) return false
+  const probe = spawnSync('unshare', [
+    '--net', '--mount', '--pid', '--fork', '--mount-proc', '--kill-child', '--', 'true',
+  ], {
+    stdio: 'ignore',
+    timeout: 3000,
+  })
+  return probe.status === 0
+}
+
+const sandboxAvailable = canCreateSandbox()
 if (sandboxAvailable) {
   try { fs.chmodSync(SANDBOX_SH, 0o755) } catch {}
-  console.log('Sandbox enabled: sandbox.sh found')
+  console.log('Sandbox enabled: Linux namespaces and resource limits are available')
 } else if (IS_LINUX) {
-  console.warn('Sandbox disabled: sandbox.sh not found at', SANDBOX_SH)
+  console.warn('Sandbox unavailable: refusing production judge execution unless the host supports unshare/timeout')
 }
 
 // 生产环境强制沙箱：Linux 无沙箱或非 Linux 平台一律拒绝评测（防止用户代码无资源限制运行）
@@ -104,7 +124,14 @@ const runCommand = (cmd, args, options = {}) =>
   new Promise((resolve) => {
     // 生产环境无沙箱：拒绝执行
     if (!sandboxAvailable && !allowUnsafeJudge) {
-      resolve({ stdout: '', stderr: '评测沙箱不可用，请联系管理员', code: -1, timedOut: true })
+      resolve({
+        stdout: '',
+        stderr: SANDBOX_UNAVAILABLE_MESSAGE,
+        code: -1,
+        timedOut: false,
+        sandboxUnavailable: true,
+        duration: 0,
+      })
       return
     }
     const start = process.hrtime.bigint()
@@ -232,6 +259,7 @@ const runCommand = (cmd, args, options = {}) =>
         stderr: measured.stderr,
         code: timedOut ? -1 : code,
         timedOut,
+        sandboxUnavailable: code === 125,
         // 正常结束时统计用户态 + 内核态 CPU 时间，排除进程启动和等待开销。
         // 超时时间仍使用墙钟时间，确保页面能反映实际的超时长度。
         duration: timedOut ? elapsedWallTime() : measured.duration,
@@ -386,13 +414,21 @@ const compileSource = async (language, code, workspace) => {
     const compile = await runCommand(
       GPP_CMD,
       [workspace.source, '-O2', '-std=c++17', '-o', workspace.exec],
-      { cwd: workspace.root, timeout: COMPILE_LIMIT_MS, env: WORK_ENV || undefined, sandbox: false }
+      { cwd: workspace.root, timeout: COMPILE_LIMIT_MS, env: WORK_ENV || undefined }
     )
+    if (compile.sandboxUnavailable) {
+      return {
+        ok: false,
+        status: 'Judge Error',
+        message: SANDBOX_UNAVAILABLE_MESSAGE,
+        timeMs: 0,
+      }
+    }
     if (compile.timedOut) {
       return {
         ok: false,
-        status: 'Compile Error',
-        message: '编译超时',
+        status: compile.sandboxUnavailable ? 'Judge Error' : 'Compile Error',
+        message: compile.sandboxUnavailable ? SANDBOX_UNAVAILABLE_MESSAGE : '编译超时',
         timeMs: compile.duration,
       }
     }
@@ -420,13 +456,20 @@ const compileSource = async (language, code, workspace) => {
       cwd: workspace.root,
       timeout: COMPILE_LIMIT_MS,
       env: WORK_ENV || undefined,
-      sandbox: false,
     })
+    if (compile.sandboxUnavailable) {
+      return {
+        ok: false,
+        status: 'Judge Error',
+        message: SANDBOX_UNAVAILABLE_MESSAGE,
+        timeMs: 0,
+      }
+    }
     if (compile.timedOut) {
       return {
         ok: false,
-        status: 'Compile Error',
-        message: '编译超时',
+        status: compile.sandboxUnavailable ? 'Judge Error' : 'Compile Error',
+        message: compile.sandboxUnavailable ? SANDBOX_UNAVAILABLE_MESSAGE : '编译超时',
         timeMs: compile.duration,
       }
     }
@@ -542,7 +585,10 @@ export const judgeSubmission = async ({ language, code, testcases, onTestCase })
 
       let caseStatus = 'Accepted'
       let caseMessage = '通过'
-      if (execResult.timedOut) {
+      if (execResult.sandboxUnavailable) {
+        caseStatus = 'Judge Error'
+        caseMessage = SANDBOX_UNAVAILABLE_MESSAGE
+      } else if (execResult.timedOut) {
         caseStatus = 'Time Limit Exceeded'
         caseMessage = '超时'
       } else if (execResult.code !== 0) {
@@ -684,6 +730,14 @@ export const runSample = async ({ language, code, input, timeLimitMs = TIME_LIMI
       })
     }
 
+    if (execResult.sandboxUnavailable) {
+      return {
+        status: 'Judge Error',
+        message: SANDBOX_UNAVAILABLE_MESSAGE,
+        timeMs: 0,
+        output: '',
+      }
+    }
     if (execResult.timedOut) {
       return {
         status: 'Time Limit Exceeded',
@@ -774,6 +828,17 @@ export const runSamples = async ({ language, code, inputs }) => {
         })
       }
 
+      if (execResult.sandboxUnavailable) {
+        results.push({
+          status: 'Judge Error',
+          message: SANDBOX_UNAVAILABLE_MESSAGE,
+          timeMs: 0,
+          output: '',
+        })
+        overallStatus = 'Judge Error'
+        overallMessage = SANDBOX_UNAVAILABLE_MESSAGE
+        break
+      }
       if (execResult.timedOut) {
         results.push({
           status: 'Time Limit Exceeded',

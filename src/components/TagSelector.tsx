@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { PRESET_TAGS } from '../constants'
+import { useModalFocus } from '../hooks/useModalFocus'
 import './TagSelector.css'
 
 type TagSelectorProps = {
@@ -10,6 +11,7 @@ type TagSelectorProps = {
 export default function TagSelector({ selectedTags, onTagsChange }: TagSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const dialogRef = useModalFocus(isOpen, () => setIsOpen(false))
 
   useEffect(() => {
     if (!isOpen) return
@@ -43,7 +45,20 @@ export default function TagSelector({ selectedTags, onTagsChange }: TagSelectorP
 
   return (
     <div className="tag-selector">
-      <div className="tag-selector-input" onClick={() => setIsOpen(true)}>
+      <div
+        className="tag-selector-input"
+        role="button"
+        tabIndex={0}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen(true)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            setIsOpen(true)
+          }
+        }}
+      >
         <div className="selected-tags">
           {selectedTags.length === 0 ? (
             <span className="tag-placeholder">点击选择标签</span>
@@ -62,16 +77,16 @@ export default function TagSelector({ selectedTags, onTagsChange }: TagSelectorP
             ))
           )}
         </div>
-        <button type="button" className="tag-selector-btn">
+        <button type="button" className="tag-selector-btn" tabIndex={-1} aria-hidden="true">
           选择标签
         </button>
       </div>
 
       {isOpen && (
-        <div className="tag-selector-modal" onClick={() => setIsOpen(false)}>
-          <div className="tag-selector-content" onClick={(event) => event.stopPropagation()}>
+        <div className="tag-selector-modal" role="dialog" aria-modal="true" aria-labelledby="tag-selector-dialog-title" onClick={() => setIsOpen(false)}>
+          <div ref={dialogRef} className="tag-selector-content" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
             <div className="tag-selector-header">
-              <h3>选择标签</h3>
+              <h3 id="tag-selector-dialog-title">选择标签</h3>
               <button
                 className="tag-selector-close"
                 onClick={() => setIsOpen(false)}

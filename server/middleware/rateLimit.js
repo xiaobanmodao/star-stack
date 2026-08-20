@@ -1,8 +1,17 @@
-const getClientKey = (req) => req.headers['x-forwarded-for']?.split(',')[0]?.trim()
-  || req.socket?.remoteAddress
-  || 'unknown'
+const getClientKey = (req) => req.ip || req.socket?.remoteAddress || 'unknown'
+
+const pruneState = (state, now, windowMs, maxKeys, preserveKey) => {
+  for (const [key, entry] of state) {
+    if (now - entry.startedAt >= windowMs) state.delete(key)
+  }
+  if (state.size >= maxKeys && !state.has(preserveKey)) {
+    const oldestKey = state.keys().next().value
+    if (oldestKey !== undefined) state.delete(oldestKey)
+  }
+}
 
 export const consumeRateLimit = (state, key, { now = Date.now(), windowMs, max }) => {
+  pruneState(state, now, windowMs, 10000, key)
   const previous = state.get(key)
   const entry = !previous || now - previous.startedAt >= windowMs
     ? { startedAt: now, count: 0 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { NotificationItem, NotificationType, NotificationsResponse } from '../types'
 import { fetchJson } from '../utils'
+import { useModalFocus } from '../hooks/useModalFocus'
 import { disablePush, enablePush, isPushEnabled } from '../utils/push'
 import './NotificationBell.css'
 
@@ -65,6 +66,7 @@ export default function NotificationBell() {
   const [unreadOnly, setUnreadOnly] = useState(false)
   const [readBusy, setReadBusy] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
+  const dialogRef = useModalFocus(open, () => setOpen(false))
 
   const loadUnread = useCallback(async () => {
     try {
@@ -93,13 +95,19 @@ export default function NotificationBell() {
     if (!open) return
     const timer = window.setTimeout(() => {
       setLoading(true)
-      void fetchJson<NotificationsResponse>('/api/notifications?page=1&pageSize=20').then(({ response, data }) => {
-        if (response.ok && data) {
-          setItems(data.notifications || [])
-          setUnreadCount(data.unreadCount)
+      void (async () => {
+        try {
+          const { response, data } = await fetchJson<NotificationsResponse>('/api/notifications?page=1&pageSize=20')
+          if (response.ok && data) {
+            setItems(data.notifications || [])
+            setUnreadCount(data.unreadCount)
+          }
+        } catch {
+          // 打开通知面板失败时保留已有数据，下一次打开会自动重试。
+        } finally {
+          setLoading(false)
         }
-        setLoading(false)
-      })
+      })()
     }, 0)
     return () => window.clearTimeout(timer)
   }, [open])
@@ -177,6 +185,7 @@ export default function NotificationBell() {
         aria-label="通知"
         aria-expanded={open}
         aria-haspopup="dialog"
+        aria-controls="notification-panel"
       >
         <svg viewBox="0 0 24 24" width="20" height="20">
           <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
@@ -186,9 +195,9 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        <div className="notif-panel">
+        <div ref={dialogRef} id="notification-panel" className="notif-panel" role="dialog" aria-modal="false" aria-labelledby="notification-panel-title" tabIndex={-1}>
           <div className="notif-panel-head">
-            <span>通知</span>
+            <span id="notification-panel-title">通知</span>
             {unreadCount > 0 && <button type="button" onClick={() => void handleReadAll()} disabled={readBusy}>{readBusy ? '处理中…' : '全部已读'}</button>}
           </div>
           <div className="notif-filters" role="tablist" aria-label="通知筛选">

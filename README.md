@@ -73,6 +73,7 @@ OJ
 - `GET /api/oj/problems`
 - `GET /api/oj/problems/:id`
 - `POST /api/oj/submissions`（真实判题）
+- `POST /api/oj/submissions/stream`（SSE 实时评测结果）
 - `POST /api/oj/submissions/:id/cancel`（取消尚未开始的排队提交）
 - `GET /api/oj/submissions`（当前用户提交）
 - `GET /api/oj/submissions/:id`（单条提交）
@@ -88,6 +89,13 @@ OJ
 - `GET /api/admin/problems/:id/review`（管理员审核详情、测试点和版本摘要）
 
 提交评测会先持久化为 `Queued`，随后进入有并发上限的评测队列；服务重启会恢复未完成的评测，前端也会通过提交记录继续轮询状态。
+
+### API 错误与恢复约定
+
+- 认证接口统一使用 `{ message: "..." }` 返回业务错误；未登录或会话失效返回 HTTP `401`。
+- 前端 `fetchJson` 会自动附带 Bearer Token，并将网络失败、超时和取消规范化；收到 `401` 会清理本地会话并回到登录页，同时保留原访问路径。
+- SSE 评测流断开后，页面会切换到提交记录轮询；用户可以取消仍在 `Queued` 阶段的提交，评测服务不可用时会显示可重试的 `Judge Error`。
+- 评测沙箱不可用时不会降级为宿主机直接执行。编译和运行均需通过 Linux namespace、资源限制和 `timeout` 预检。
 
 后台（用户管理）
 - `GET /api/admin/users`
@@ -109,13 +117,30 @@ OJ
 - `POST /api/discussions/like`
 
 ## 目录结构（关键）
-- `src/App.tsx` 核心前端逻辑（页面、路由、IDE、评测页）
+- `src/App.tsx` 应用壳、路由、认证状态和全局导航
+- `src/pages/` 独立页面组件；`src/components/` 可复用 UI、OJ IDE 和聊天模块
+- `src/utils.ts` 统一 API 请求、会话失效和请求超时处理
+- `src/hooks/` 页面交互 hook（星空背景、弹窗焦点管理等）
 - `src/App.css` 全站样式（星空、布局、OJ、动画、后台）
 - `server/index.js` API 主入口
 - `server/judge.js` 判题与运行逻辑（C++/Java/Python，含预热机制）
 - `server/db.js` 数据库初始化
 
-## 更新日志
+## 当前维护重点
+
+- 发布前必须完成 `npm run lint`、`npm test -- --run`、`npm run build`、API Smoke Test、数据库迁移/完整性检查和依赖审计。
+- 页面验收覆盖 375px、768px、1440px，包含登录、题库、题目详情、IDE、提交队列、聊天和管理员面板的键盘操作。
+- `npm run audit` 使用 Chrome CDP 检查浅色/深色主题文字对比度；`npm run stress -- health` 只允许指向本机服务。
+- 依赖审计中暂时没有上游修复版本的条目保留在发布记录中，不通过强制升级破坏当前 React Router、Monaco 或编辑器能力；后续依赖有修复版本时再单独升级验证。
+
+## 近期变更
+
+### 2026-08-20 - 体验与稳定性收口
+
+- 统一处理会话失效、请求超时、网络异常和请求取消；失效登录会保留原访问路径。
+- 增加全局 React 错误边界，评测流断开后通过提交记录继续轮询。
+- 增强用户菜单、弹窗 Esc 关闭、焦点锁定/恢复和移动端键盘可用性。
+- 移除已取消的 `/api/me/export` 接口及控制器。
 
 ### 2026-04-24 - 前端体验修正与 OJ 主页简化
 
@@ -335,17 +360,17 @@ OJ
 **问题：** 用户提交的代码通过 `child_process.spawn` 直接在服务器上执行，无任何隔离。可读取文件系统、发起网络请求、fork bomb。
 
 **修复：** 新增 `server/sandbox.sh`，在 Ubuntu 上通过 Linux 内核特性隔离：
-- `unshare --net --mount`：隔离网络和挂载命名空间，禁止网络访问
+- `unshare --net --mount --pid --mount-proc`：隔离网络、挂载和进程命名空间，禁止网络访问并避免用户代码查看宿主机进程
 - `ulimit -v`：内存限制 256MB
 - `ulimit -u 32`：最大进程数 32
 - `ulimit -f 51200`：最大文件大小 50MB
 - `ulimit -n 64`：最大文件描述符 64
 - `timeout --signal=KILL`：双重超时保险
-- 编译步骤不走沙箱（需要编译器访问），仅执行步骤沙箱化
+- 编译和执行步骤都走沙箱，生产启动时会预检 `unshare` / `timeout` 能力；能力不足时拒绝评测，不回退到无隔离执行
 - stdout/stderr 加大小限制（10MB/1MB），防止内存爆炸
 - Windows 开发环境行为不变
 
-**部署要求：** `sudo setcap cap_sys_admin+ep $(which unshare)` 或以 root 运行
+**部署要求：** Linux 主机需要可用的 `unshare`、`timeout` 和网络/挂载/进程 namespace 权限；部署时应先验证 `unshare --net --mount --pid --fork --mount-proc --kill-child -- true`。生产环境沙箱不可用时服务仍可启动，但会拒绝执行用户代码。
 
 **修改文件：** `server/judge.js`, `server/sandbox.sh`（新增）
 
@@ -386,50 +411,3 @@ ALLOWED_ORIGINS=https://yourdomain.com node server/index.js
 - Linux 可执行文件不再使用 `.exe` 后缀
 
 ---
-
-## 待优化项（前端页面与架构）
-
-### 架构问题
-
-#### A1. 单文件巨石组件（高优先级）
-`src/App.tsx` 共 6391 行，18 个页面组件全部定义为 `App()` 内的闭包。任何顶层状态变化（如未读消息轮询）都会重新创建所有 18 个组件的函数引用。应将页面组件提取到独立文件，使用 React Context 或状态管理库共享全局状态。
-
-#### A2. 无全局错误处理
-`fetchJson` 工具函数存在，但 401（token 过期）在每个调用点手动处理。应添加全局拦截器，token 失效时自动跳转登录页。
-
-#### A3. 重复代码模式
-- 分页逻辑在 4+ 个页面中重复，应提取 `usePagination` hook
-- `CreateProblemPage` 和 `EditProblemPage` 逻辑高度相似，应合并为 `ProblemFormPage`
-- `formatDate` 在多处内联定义
-
-#### A4. 富文本编辑器使用已废弃 API
-`RichTextEditor` 使用 `document.execCommand`（已废弃），应替换为 `Selection/Range` API 或使用成熟库。
-
-### CSS 性能
-
-#### C1. `backdrop-filter: blur()` 性能问题
-全局 12 处使用，其中 `.topbar`（固定定位 + blur）在每次滚动时触发重绘。建议改为半透明纯色背景，或添加 `will-change: transform`。
-
-#### C2. `transition: all` 滥用
-多处使用 `transition: all 0.2s ease`，会过渡所有可动画属性（包括 width/height 等昂贵属性）。应限定为具体属性如 `transition: color 0.2s, background-color 0.2s`。
-
-#### C3. 热力图 371 个单元格各带 hover 动画
-`.heatmap-grid` 的 371 个格子每个都有 `transition: all` + `:hover { transform: scale(1.2) + box-shadow }`，在 profile 页面造成不必要的性能开销。
-
-#### C4. CSS 文件组织
-6777 行单文件，media query 分散在 11 处。建议按功能拆分为独立 CSS 文件（Vite 原生支持零开销导入）。
-
-### 无障碍（Accessibility）
-
-#### ACC1. 缺少焦点样式
-IDE 工具栏按钮、讨论区操作按钮等无 `:focus-visible` 样式，键盘用户无法看到焦点位置。
-
-#### ACC2. 缺少 ARIA 属性
-- 星空 `<canvas>` 缺少 `aria-hidden="true"`
-- `UserMenu` 触发器缺少 `role="button"`, `aria-haspopup`, `aria-expanded`
-- 模态框缺少焦点陷阱（focus trap）
-- `RichTextEditor` 的 `contentEditable` 缺少 `aria-label`
-
-#### ACC3. 颜色对比度不足
-- `.oj-badge.noi` 和 `.difficulty-label.noi`：`color: #555555` 在深色背景上对比度远低于 WCAG AA 标准 4.5:1
-- `prefers-reduced-motion` 仅覆盖 `.home-enter` 动画，火箭/烟花/hover 变换等均未覆盖

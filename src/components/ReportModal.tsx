@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { fetchJson } from '../utils'
+import { useModalFocus } from '../hooks/useModalFocus'
 import '../pages/chat/ChatHub.css' // 复用 chips / 弹窗面板样式
 
 const REASONS = ['广告/垃圾信息', '人身攻击', '色情低俗', '政治敏感', '侵权内容', '其他']
@@ -19,6 +20,7 @@ export default function ReportModal({
   const [custom, setCustom] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const dialogRef = useModalFocus(true, onClose)
 
   const handleSubmit = async () => {
     const finalReason = reason === '其他' ? custom.trim() : reason
@@ -51,9 +53,9 @@ export default function ReportModal({
   }
 
   return (
-    <div className="confirm-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="confirm-panel chat-post-modal" onClick={(event) => event.stopPropagation()}>
-        <div className="confirm-title">举报</div>
+    <div className="confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="report-dialog-title" onClick={onClose}>
+      <div ref={dialogRef} className="confirm-panel chat-post-modal" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
+        <div id="report-dialog-title" className="confirm-title">举报</div>
         <div className="chat-modal-field">
           <span>举报原因</span>
           <div className="chat-module-chips">

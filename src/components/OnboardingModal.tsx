@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import './OnboardingModal.css'
+import { useModalFocus } from '../hooks/useModalFocus'
 
 const STEPS = [
   { icon: '🚀', title: '欢迎来到星栈', desc: '这里聚合了在线评测、社区讨论与个人成长。先花 10 秒认识一下主要入口。' },
@@ -11,19 +12,20 @@ const STEPS = [
 
 export default function OnboardingModal({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(0)
+  const dialogRef = useModalFocus(true, onClose)
   const current = STEPS[step]
   const isLast = step === STEPS.length - 1
 
   return (
-    <div className="confirm-backdrop onboarding-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="confirm-panel onboarding-modal" onClick={(event) => event.stopPropagation()}>
+    <div className="confirm-backdrop onboarding-backdrop" role="dialog" aria-modal="true" aria-labelledby="onboarding-dialog-title" onClick={onClose}>
+      <div ref={dialogRef} className="confirm-panel onboarding-modal" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
         <div className="onboarding-dots" aria-hidden="true">
           {STEPS.map((item, index) => (
             <span key={item.title} className={index === step ? 'active' : ''} />
           ))}
         </div>
         <div className="onboarding-icon" aria-hidden="true">{current.icon}</div>
-        <h2>{current.title}</h2>
+        <h2 id="onboarding-dialog-title">{current.title}</h2>
         <p>{current.desc}</p>
         <div className="confirm-actions">
           <button className="ghost" type="button" onClick={onClose}>

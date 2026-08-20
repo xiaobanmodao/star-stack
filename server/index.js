@@ -29,6 +29,13 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
 
 const app = express()
 app.disable('x-powered-by')
+// 只信任部署链路中明确配置的代理层，避免请求方伪造 X-Forwarded-For 绕过限流。
+// 生产默认按 Nginx → Node 的单跳部署处理；多级代理请显式设置 TRUST_PROXY_HOPS。
+const configuredProxyHops = Number.parseInt(
+  process.env.TRUST_PROXY_HOPS ?? (process.env.NODE_ENV === 'production' ? '1' : '0'),
+  10,
+)
+app.set('trust proxy', Number.isInteger(configuredProxyHops) && configuredProxyHops >= 0 ? configuredProxyHops : 0)
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('X-Frame-Options', 'SAMEORIGIN')

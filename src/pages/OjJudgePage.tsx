@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef, useMemo, type CSSProperties }
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import { fetchJson } from '../utils'
-import { TOKEN_KEY } from '../constants'
 import type { Achievement, OjSubmission, ProfileStatsResponse, SubmissionResponse } from '../types'
 import { Badge, Button, PageHeader, Panel } from '../components/ui'
 import './OjJudgePage.css'
@@ -28,7 +27,7 @@ type JudgeStatusMeta = {
   label: string
   shortLabel: string
   tone: 'neutral' | 'success' | 'warning' | 'danger' | 'info'
-  kind: 'idle' | 'running' | 'accepted' | 'wrong' | 'tle' | 'runtime' | 'compile'
+  kind: 'idle' | 'running' | 'accepted' | 'wrong' | 'tle' | 'runtime' | 'compile' | 'judge'
   title: string
   description: string
 }
@@ -111,6 +110,17 @@ const getJudgeStatusMeta = (status: string | undefined, stage: JudgeStage): Judg
       kind: 'compile',
       title: '编译失败，先看第一条错误',
       description: '编译器通常从第一处错误开始连锁报错，先修第一条最有效。',
+    }
+  }
+
+  if (status === 'Judge Error') {
+    return {
+      label: 'Judge Error',
+      shortLabel: 'JUDGE',
+      tone: 'warning',
+      kind: 'judge',
+      title: '评测服务暂时不可用',
+      description: '本次提交没有得到可靠的评测结果，请稍后重试；如果持续出现，请联系管理员检查沙箱和评测队列。',
     }
   }
 
@@ -243,30 +253,25 @@ export default function OjJudgePage() {
     setRecentAchievements([])
 
     try {
-      const token = localStorage.getItem(TOKEN_KEY)
-      const resp = await fetch('/api/oj/submissions/stream', {
+      const { response: resp, data: typedError } = await fetchJson<{
+        message?: string
+        activeJudges?: number
+        queuedJudges?: number
+        maxActiveJudges?: number
+        maxQueuedJudges?: number
+      }>('/api/oj/submissions/stream', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
         body: JSON.stringify({
           problemId: payload.problemId,
           language: payload.language,
           code: payload.code,
         }),
         signal: abortController.signal,
+        // SSE 连接由评测完成事件结束，不使用普通请求超时。
+        timeoutMs: 0,
       })
 
       if (!resp.ok) {
-        const errData = await resp.json().catch(() => null)
-        const typedError = errData as {
-          message?: string
-          activeJudges?: number
-          queuedJudges?: number
-          maxActiveJudges?: number
-          maxQueuedJudges?: number
-        } | null
         const queueHint = resp.status === 503 && typedError?.activeJudges !== undefined && typedError.maxActiveJudges !== undefined
           ? `（运行中 ${typedError.activeJudges}/${typedError.maxActiveJudges}，排队中 ${typedError.queuedJudges ?? 0}/${typedError.maxQueuedJudges ?? '--'}）`
           : ''
@@ -592,7 +597,7 @@ export default function OjJudgePage() {
   ]
 
   return (
-    <section className={`section judge-page-v2 judge-page-${statusMeta.kind}`}>
+    <section className={`section judge-page-v2 judge-page-${statusMeta.kind}`} aria-busy={stage === 'running' || undefined}>
       <PageHeader
         kicker="Judge Result"
         title={problemTitle}
@@ -642,7 +647,7 @@ export default function OjJudgePage() {
           </>
         )}
       />
-      {error && <div className="auth-error">{error}</div>}
+      {error && <div className="auth-error" role="alert" aria-live="assertive">{error}</div>}
 
       <Panel className="judge-overview" elevated>
         <div className={`judge-visual ${statusMeta.kind}`}>
@@ -800,7 +805,7 @@ export default function OjJudgePage() {
           <div className="sse-progress-bar">
             <div className="sse-progress-fill" style={{ width: `${totalCases > 0 ? (streamResults.length / totalCases) * 100 : 0}%` }} />
           </div>
-          <div className="sse-progress-text">已完成 {streamResults.length}{totalCases > 0 ? ` / ${totalCases}` : ' 个测试点'}</div>
+          <div className="sse-progress-text" role="status" aria-live="polite">已完成 {streamResults.length}{totalCases > 0 ? ` / ${totalCases}` : ' 个测试点'}</div>
           <div className="sse-testcase-grid">
             {streamResults.map((tc) => (
               <span key={tc.index} className={`sse-tc-dot ${tc.status === 'Accepted' ? 'ac' : tc.status === 'Time Limit Exceeded' ? 'tle' : 'err'}`} title={`#${tc.index + 1}: ${tc.status}`} />

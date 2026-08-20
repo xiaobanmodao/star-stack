@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import type { Conversation, ConversationsResponse } from '../types'
 import { fetchJson, htmlToPlainText, isPollingPageVisible } from '../utils'
+import { useModalFocus } from '../hooks/useModalFocus'
 import './OpsPages.css'
 import './ChatPage.css'
 
@@ -15,6 +16,7 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
   const [searchResults, setSearchResults] = useState<{ id: string; name: string; avatar?: string }[]>([])
   const [searching, setSearching] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const newChatDialogRef = useModalFocus(showNewChat, () => setShowNewChat(false))
 
   const loadConversations = useCallback(async () => {
     try {
@@ -200,9 +202,9 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
       )}
 
       {showNewChat && (
-        <div className="confirm-backdrop" role="dialog" aria-modal="true" onClick={() => setShowNewChat(false)}>
-          <div className="confirm-panel new-chat-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="confirm-title">发起聊天</div>
+        <div className="confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="new-chat-dialog-title" onClick={() => setShowNewChat(false)}>
+          <div ref={newChatDialogRef} className="confirm-panel new-chat-modal" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
+            <div id="new-chat-dialog-title" className="confirm-title">发起聊天</div>
             <input
               className="new-chat-search"
               type="text"

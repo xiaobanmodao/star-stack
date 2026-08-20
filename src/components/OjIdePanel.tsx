@@ -147,7 +147,7 @@ type IdeDraft = {
 
 type FetchJsonFn = <T = unknown>(
   url: string,
-  options?: RequestInit
+  options?: RequestInit & { timeoutMs?: number }
 ) => Promise<{ response: Response; data: T | null }>
 
 type OjIdePanelProps = {
@@ -203,6 +203,8 @@ const OjIdePanel = ({
   const draftSyncTimerRef = useRef<number | null>(null)
   const pendingSampleRunRef = useRef<number | null>(null)
   const submitBusyRef = useRef(false)
+  const runBusyRef = useRef(false)
+  const runAbortRef = useRef<AbortController | null>(null)
   const outputRef = useRef<HTMLPreElement | null>(null)
 
   const flushDraft = useCallback(() => {
@@ -293,6 +295,13 @@ const OjIdePanel = ({
     }
   }, [])
 
+  useEffect(() => {
+    return () => {
+      runAbortRef.current?.abort()
+      runAbortRef.current = null
+    }
+  }, [])
+
   const updateLanguage = useCallback((next: string) => {
     userEditedRef.current = true
     setDraftState('saved')
@@ -329,6 +338,10 @@ const OjIdePanel = ({
       setRunTime(null)
       return
     }
+    if (runBusyRef.current) return
+    runBusyRef.current = true
+    const abortController = new AbortController()
+    runAbortRef.current = abortController
     setRunBusy(true)
     setRunStatus('运行中')
     setRunMessage('')
@@ -338,6 +351,8 @@ const OjIdePanel = ({
       const { response, data } = await fetchJson<{ status?: string; message?: string; output?: string; timeMs?: number }>('/api/oj/run-custom', {
         method: 'POST',
         body: JSON.stringify({ problemId: problem.id, language, code: currentCode, input, expected }),
+        signal: abortController.signal,
+        timeoutMs: 15000,
       })
       if (!response.ok) {
         setRunStatus('失败')
@@ -349,9 +364,12 @@ const OjIdePanel = ({
       setRunOutput(data?.output || '')
       setRunTime(data?.timeMs ?? null)
     } catch {
+      if (abortController.signal.aborted) return
       setRunStatus('失败')
       setRunMessage('运行请求失败，请稍后重试')
     } finally {
+      if (runAbortRef.current === abortController) runAbortRef.current = null
+      runBusyRef.current = false
       setRunBusy(false)
     }
   }, [currentUser, fetchJson, language, openAuth, problem.id])
@@ -417,6 +435,7 @@ const OjIdePanel = ({
           <div className="ide-header-right">
             <button
               className="ide-btn ide-btn-primary"
+              type="button"
               onClick={handleSubmit}
               disabled={submitBusy}
               aria-busy={submitBusy}
@@ -493,7 +512,7 @@ const OjIdePanel = ({
         </div>
 
         <div className="ide-lab">
-          <div className="ide-run">
+          <div className="ide-run" aria-busy={runBusy || undefined}>
             <div className="ide-run-header">
               <span className="ide-run-title">测试运行</span>
               <button
@@ -549,7 +568,7 @@ const OjIdePanel = ({
 
         {submitError && (
           <div className="ide-footer">
-            <div className="ide-error">{submitError}</div>
+            <div className="ide-error" role="alert">{submitError}</div>
           </div>
         )}
       </div>

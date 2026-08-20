@@ -53,7 +53,7 @@ StarStack 是一个全栈竞赛编程在线评测（OJ）平台，采用星空�
 - 安全防护（XSS 过滤、速率限制、输入校验）
 - API 性能优化
 
-**技术栈：** Node.js (≥22), Express 4, bcryptjs, cors
+**技术栈：** Node.js (≥22), Express 5, bcryptjs, cors
 
 **关键文件：**
 - `server/index.js` — 所有 API 端点和业务逻辑
@@ -92,7 +92,7 @@ StarStack 是一个全栈竞赛编程在线评测（OJ）平台，采用星空�
 - 数据库诊断和修复（`server/diagnose.js`, `server/fix-database.js`）
 - 数据备份策略
 
-**技术栈：** SQLite 5, sqlite3 5, SQL
+**技术栈：** SQLite 5, sqlite3 6, SQL
 
 **关键文件：**
 - `server/db.js` — 数据库初始化和 Schema 定义
@@ -262,7 +262,7 @@ StarStack 是一个全栈竞赛编程在线评测（OJ）平台，采用星空�
 - Bug 复现和修复验证
 - ESLint 规则维护
 
-**技术栈：** ESLint 9, TypeScript strict mode
+**技术栈：** ESLint 10, TypeScript strict mode
 
 **关键文件：**
 - `eslint.config.js` — ESLint 配置

@@ -1,11 +1,6 @@
 const TURNSTILE_VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify'
 
-const getClientIp = (req) => (
-  req.headers['cf-connecting-ip']
-  || req.headers['x-forwarded-for']?.split(',')[0]?.trim()
-  || req.socket?.remoteAddress
-  || ''
-)
+const getClientIp = (req) => req.ip || req.socket?.remoteAddress || ''
 
 const getConfiguredHostnames = () => (process.env.TURNSTILE_HOSTNAMES || '')
   .split(',')

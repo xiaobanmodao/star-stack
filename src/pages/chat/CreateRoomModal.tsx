@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { fetchJson } from '../../utils'
+import { useModalFocus } from '../../hooks/useModalFocus'
 
 export default function CreateRoomModal({
   onClose,
@@ -13,6 +14,7 @@ export default function CreateRoomModal({
   const [type, setType] = useState<'public' | 'invite'>('public')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const dialogRef = useModalFocus(true, onClose)
 
   const handleSubmit = async () => {
     if (!name.trim()) {
@@ -39,9 +41,9 @@ export default function CreateRoomModal({
   }
 
   return (
-    <div className="confirm-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="confirm-panel chat-room-modal" onClick={(event) => event.stopPropagation()}>
-        <div className="confirm-title">创建聊天室</div>
+    <div className="confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="create-room-dialog-title" onClick={onClose}>
+      <div ref={dialogRef} className="confirm-panel chat-room-modal" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
+        <div id="create-room-dialog-title" className="confirm-title">创建聊天室</div>
         <label className="chat-modal-field">
           <span>房间名</span>
           <input

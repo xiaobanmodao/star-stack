@@ -1,5 +1,5 @@
-import { TOKEN_KEY } from '../constants'
 import type { ChatStreamEvent } from '../types'
+import { fetchJson } from '../utils'
 
 /**
  * 订阅聊天流（SSE over fetch）。
@@ -16,17 +16,19 @@ export function subscribeChatStream(
   let controller: AbortController | null = null
 
   const connect = async () => {
-    const token = localStorage.getItem(TOKEN_KEY)
-    if (!token || aborted) return
+    if (aborted) return
+    let authExpired = false
+    let abortFromOutside: (() => void) | null = null
     try {
       controller = new AbortController()
-      const abortFromOutside = () => controller?.abort()
+      abortFromOutside = () => controller?.abort()
       signal?.addEventListener('abort', abortFromOutside)
 
-      const response = await fetch(`/api/chat/${scopePath}/stream`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const { response } = await fetchJson(`/api/chat/${scopePath}/stream`, {
         signal: controller.signal,
+        timeoutMs: 0,
       })
+      authExpired = response.status === 401
       if (!response.ok || !response.body) {
         throw new Error(`stream failed: ${response.status}`)
       }
@@ -50,11 +52,12 @@ export function subscribeChatStream(
           }
         }
       }
-      signal?.removeEventListener('abort', abortFromOutside)
     } catch {
       // 连接断开或中止
+    } finally {
+      if (abortFromOutside) signal?.removeEventListener('abort', abortFromOutside)
     }
-    if (!aborted) {
+    if (!aborted && !authExpired) {
       retryTimer = window.setTimeout(connect, 3000)
     }
   }

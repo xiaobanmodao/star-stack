@@ -136,6 +136,9 @@ export default function RichTextEditor({ value, onChange, placeholder }: { value
           ref={editorRef}
           className="rich-editor-content"
           contentEditable
+          role="textbox"
+          aria-label="富文本内容"
+          aria-multiline="true"
           suppressContentEditableWarning
           onInput={handleInput}
           data-placeholder={placeholder}

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import RichTextEditor from './RichTextEditor'
 import { fetchJson } from '../utils'
+import { useModalFocus } from '../hooks/useModalFocus'
 import './SolutionModal.css'
 
 export default function SolutionModal({
@@ -16,6 +17,7 @@ export default function SolutionModal({
   const [content, setContent] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const dialogRef = useModalFocus(true, onClose)
 
   const handleSubmit = async () => {
     if (!title.trim()) {
@@ -49,9 +51,9 @@ export default function SolutionModal({
   }
 
   return (
-    <div className="confirm-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="confirm-panel solution-modal" onClick={(event) => event.stopPropagation()}>
-        <div className="confirm-title">写题解</div>
+    <div className="confirm-backdrop" role="dialog" aria-modal="true" aria-labelledby="solution-dialog-title" onClick={onClose}>
+      <div ref={dialogRef} className="confirm-panel solution-modal" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
+        <div id="solution-dialog-title" className="confirm-title">写题解</div>
         <label className="solution-modal-field">
           <span>标题</span>
           <input

@@ -19,5 +19,15 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    // React Hooks 7.1 adds strict compiler diagnostics that are not yet
+    // part of this project's lint baseline. Keep the security/toolchain
+    // update while preserving the existing validation rules until the
+    // affected components are migrated individually.
+    rules: {
+      'react-hooks/immutability': 'off',
+      'react-hooks/purity': 'off',
+      'react-hooks/refs': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+    },
   },
 ])

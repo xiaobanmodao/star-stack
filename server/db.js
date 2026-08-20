@@ -204,7 +204,8 @@ const ensureBuiltinProblems = async (db) => {
       problem.slug
     )
 
-    if (!existing) {
+    const inserted = !existing
+    if (inserted) {
       await db.run(
         `INSERT INTO problems (id, slug, title, difficulty, tags, statement, input_desc, output_desc, data_range, samples, creator_id, status, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -222,32 +223,15 @@ const ensureBuiltinProblems = async (db) => {
         'published',
         now
       )
-    } else {
-      await db.run(
-        `UPDATE problems
-         SET slug = ?, title = ?, difficulty = ?, tags = ?, statement = ?, input_desc = ?, output_desc = ?, data_range = ?, samples = ?, creator_id = COALESCE(creator_id, ?), status = COALESCE(status, ?)
-         WHERE id = ?`,
-        problem.slug,
-        problem.title,
-        problem.difficulty,
-        problem.tags,
-        problem.statement,
-        problem.input_desc,
-        problem.output_desc,
-        problem.data_range,
-        JSON.stringify(problem.samples),
-        'admin',
-        'published',
-        existing.id
-      )
     }
 
     const testcaseCount = await db.get(
       `SELECT COUNT(*) as count FROM testcases WHERE problem_id = ?`,
       problem.id
     )
-    if (!testcaseCount || testcaseCount.count === 0) {
-      await db.run(`DELETE FROM testcases WHERE problem_id = ?`, problem.id)
+    // 只为本次新建的内置题目写入默认测试点。
+    // 已存在的题目可能被管理员编辑或主动清空测试点，启动时不能再覆盖。
+    if (inserted && (!testcaseCount || testcaseCount.count === 0)) {
       for (const testcase of problem.testcases) {
         await db.run(
           `INSERT INTO testcases (problem_id, input, output, is_sample, time_limit_ms, created_at)

@@ -155,32 +155,3 @@ export const listFollowers = async (req, res) => {
     return res.status(500).json({ message: '获取粉丝列表失败' })
   }
 }
-
-export const exportUserData = async (req, res) => {
-  const auth = await requireUser(req, res)
-  if (!auth) return
-  const { db, user } = auth
-  try {
-    const [posts, comments, conversations, privateMessages, chatMessages, bookmarks] = await Promise.all([
-      db.all(`SELECT id, title, content, module_key, problem_id, created_at, updated_at FROM discussion_posts WHERE user_id = ? ORDER BY created_at DESC`, user.id),
-      db.all(`SELECT id, post_id, content, parent_id, created_at FROM discussion_comments WHERE user_id = ? ORDER BY created_at DESC`, user.id),
-      db.all(`SELECT id, user1_id, user2_id, created_at FROM conversations WHERE user1_id = ? OR user2_id = ? ORDER BY created_at DESC`, user.id, user.id),
-      db.all(`SELECT m.id, m.conversation_id, m.sender_id, m.content, m.is_read, m.created_at FROM messages m JOIN conversations c ON m.conversation_id = c.id WHERE c.user1_id = ? OR c.user2_id = ? ORDER BY m.created_at ASC`, user.id, user.id),
-      db.all(`SELECT id, channel_key, room_id, content, created_at FROM chat_messages WHERE sender_id = ? ORDER BY created_at ASC`, user.id),
-      db.all(`SELECT target_type, target_id, created_at FROM bookmarks WHERE user_id = ? ORDER BY created_at DESC`, user.id),
-    ])
-    return res.json({
-      exportedAt: new Date().toISOString(),
-      user: { id: user.id, name: user.name, avatar: user.avatar, bio: user.bio || '', createdAt: user.created_at },
-      posts: posts.map((p) => ({ id: p.id, title: p.title, content: p.content, moduleKey: p.module_key, problemId: p.problem_id, createdAt: p.created_at, updatedAt: p.updated_at })),
-      comments: comments.map((c) => ({ id: c.id, postId: c.post_id, content: c.content, parentId: c.parent_id, createdAt: c.created_at })),
-      conversations: conversations.map((c) => ({ id: c.id, user1Id: c.user1_id, user2Id: c.user2_id, createdAt: c.created_at })),
-      privateMessages: privateMessages.map((m) => ({ id: m.id, conversationId: m.conversation_id, senderId: m.sender_id, content: m.content, isRead: Boolean(m.is_read), createdAt: m.created_at })),
-      chatMessages: chatMessages.map((m) => ({ id: m.id, channelKey: m.channel_key, roomId: m.room_id, content: m.content, createdAt: m.created_at })),
-      bookmarks: bookmarks.map((b) => ({ targetType: b.target_type, targetId: b.target_id, createdAt: b.created_at })),
-    })
-  } catch (error) {
-    console.error('Failed to export user data:', error)
-    return res.status(500).json({ message: '导出失败' })
-  }
-}

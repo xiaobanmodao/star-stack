@@ -33,8 +33,15 @@ export default function ThemeToggle() {
     const handleClick = (event: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(event.target as Node)) setOpen(false)
     }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
     document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleClick)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
   }, [open])
 
   const pickAccent = (value: string) => {
@@ -56,11 +63,14 @@ export default function ThemeToggle() {
         onClick={() => setOpen((prev) => !prev)}
         title={`主题：${MODE_META[mode].label}（点击展开设置）`}
         aria-label="主题设置"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-controls="theme-panel"
       >
         <span aria-hidden="true">{MODE_META[mode].icon}</span>
       </button>
       {open && (
-        <div className="theme-panel">
+        <div id="theme-panel" className="theme-panel" role="dialog" aria-modal="false" aria-label="主题设置">
           <div className="theme-panel-section">
             <span className="theme-panel-title">外观</span>
             <div className="theme-mode-row">

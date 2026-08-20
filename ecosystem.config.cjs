@@ -15,6 +15,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 5174,
+        TRUST_PROXY_HOPS: process.env.TRUST_PROXY_HOPS || '1',
         ALLOWED_ORIGINS: 'https://xingzhan.cc,https://www.xingzhan.cc',
         TURNSTILE_HOSTNAMES: 'xingzhan.cc,www.xingzhan.cc',
         TURNSTILE_SECRET_KEY: process.env.TURNSTILE_SECRET_KEY || '',

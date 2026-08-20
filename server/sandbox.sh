@@ -3,7 +3,16 @@
 # 使用 Linux 内核特性隔离用户代码执行
 # 用法: sandbox.sh <work_dir> <time_limit_sec> <memory_limit_kb> <cmd> [args...]
 
-set -e
+set -euo pipefail
+
+if ! command -v unshare >/dev/null 2>&1; then
+  echo 'sandbox unavailable: unshare is required' >&2
+  exit 125
+fi
+if ! command -v timeout >/dev/null 2>&1; then
+  echo 'sandbox unavailable: timeout is required' >&2
+  exit 125
+fi
 
 WORK_DIR="$1"
 TIME_LIMIT="$2"
@@ -32,26 +41,14 @@ ulimit -c 0 2>/dev/null || true
 # 最大打开文件数
 ulimit -n 64 2>/dev/null || true
 
-# 使用 unshare 隔离网络命名空间（禁止网络访问）
-# --net: 新的网络命名空间（无网络接口）
-# --mount: 新的挂载命名空间
-# 如果 unshare 不可用或权限不足，回退到直接执行
-if command -v unshare &>/dev/null; then
-  if [[ -n "$TIMING_MARKER" && -x /usr/bin/time ]]; then
-    exec unshare --net --mount -- \
-      timeout --signal=KILL "${TIME_LIMIT}s" \
-      /usr/bin/time -f "${TIMING_MARKER} %U %S" \
-      "$@"
-  fi
-  exec unshare --net --mount -- \
+# 使用 unshare 隔离网络、挂载和进程命名空间。
+# 沙箱能力不足时直接失败，不能回退到无隔离执行。
+if [[ -n "$TIMING_MARKER" && -x /usr/bin/time ]]; then
+  exec unshare --net --mount --pid --fork --mount-proc --kill-child -- \
     timeout --signal=KILL "${TIME_LIMIT}s" \
-    "$@"
-else
-  if [[ -n "$TIMING_MARKER" && -x /usr/bin/time ]]; then
-    exec timeout --signal=KILL "${TIME_LIMIT}s" \
-      /usr/bin/time -f "${TIMING_MARKER} %U %S" \
-      "$@"
-  fi
-  exec timeout --signal=KILL "${TIME_LIMIT}s" \
+    /usr/bin/time -f "${TIMING_MARKER} %U %S" \
     "$@"
 fi
+exec unshare --net --mount --pid --fork --mount-proc --kill-child -- \
+  timeout --signal=KILL "${TIME_LIMIT}s" \
+  "$@"
