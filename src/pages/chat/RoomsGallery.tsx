@@ -5,6 +5,7 @@ import { floatRoom } from '../../utils/floatRoom'
 import { MessageCircle } from 'lucide-react'
 import type { ChatRoom, ChatRoomsResponse } from '../../types'
 import CreateRoomModal from './CreateRoomModal'
+import { EmptyState, LoadingState } from '../../components/ui'
 import './ChatHub.css'
 
 const formatRoomTime = (iso: string) => {
@@ -69,9 +70,9 @@ export default function RoomsGallery() {
 
       <div className="rooms-gallery">
         {loading ? (
-          <div className="chat-loading">加载中...</div>
+          <LoadingState variant="list" label="正在加载聊天室…" />
         ) : rooms.length === 0 ? (
-          <div className="chat-empty">还没有聊天室，创建第一个吧 ✨</div>
+          <EmptyState title="还没有聊天室" description="创建第一个聊天室吧 ✨" />
         ) : (
           rooms.map((room) => (
             <button

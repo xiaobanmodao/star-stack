@@ -1,5 +1,6 @@
 import { useLocation, useNavigate, Outlet } from 'react-router-dom'
 import { House, BookOpen, FileText } from 'lucide-react'
+import { preloadRoute } from '../utils/routePreload'
 import './OjLayout.css'
 
 const NAV_ITEMS = [
@@ -26,6 +27,8 @@ export default function OjLayout() {
               type="button"
               className={`nav-link ${item.match(pathname) ? 'active' : ''}`}
               onClick={() => navigate(item.path)}
+              onMouseEnter={() => preloadRoute(item.path)}
+              onFocus={() => preloadRoute(item.path)}
             >
               <span className="nav-icon" aria-hidden="true">
                 <item.icon size={18} strokeWidth={1.8} />

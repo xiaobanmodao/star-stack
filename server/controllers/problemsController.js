@@ -167,6 +167,9 @@ export const getDailyProblem = async (req, res) => {
 export const listProblems = async (req, res) => {
   const db = await getDb()
   const { search, tag, difficulty, solved } = req.query || {}
+  const paginationRequested = req.query?.page !== undefined || req.query?.pageSize !== undefined
+  const page = Math.max(1, Number.parseInt(String(req.query?.page || '1'), 10) || 1)
+  const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(req.query?.pageSize || '20'), 10) || 20))
   const where = ['status = ?']
   const params = ['published']
   const token = getAuthToken(req)
@@ -199,16 +202,29 @@ export const listProblems = async (req, res) => {
     where.push(solved === 'solved' ? existsSql : `NOT ${existsSql}`)
     params.push(user.id)
   }
+  const totalRow = await db.get(
+    `SELECT COUNT(*) as total FROM problems WHERE ${where.join(' AND ')}`,
+    ...params,
+  )
+  const total = Number(totalRow?.total || 0)
+  const selectParams = user ? [user.id, ...params] : [...params]
+  const paginationSql = paginationRequested ? ' LIMIT ? OFFSET ?' : ''
+  if (paginationRequested) {
+    selectParams.push(pageSize, (page - 1) * pageSize)
+  }
   const rows = await db.all(
     `SELECT id, slug, title, difficulty, tags, created_at,
        (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id AND status = 'Accepted') as ac_count,
        (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id) as total_count,
        ${user ? `EXISTS (SELECT 1 FROM solved_problems sp_user WHERE sp_user.problem_id = problems.id AND sp_user.user_id = ?)` : '0'} as solved
-     FROM problems WHERE ${where.join(' AND ')} ORDER BY id ASC`,
-    ...(user ? [user.id, ...params] : params)
+     FROM problems WHERE ${where.join(' AND ')} ORDER BY id ASC${paginationSql}`,
+    ...selectParams,
   )
   return res.json({
-    total: rows.length,
+    total,
+    page: paginationRequested ? page : 1,
+    pageSize: paginationRequested ? pageSize : total,
+    totalPages: paginationRequested ? Math.ceil(total / pageSize) : (total > 0 ? 1 : 0),
     problems: rows.map((row) => ({
       id: row.id, slug: row.slug, title: row.title, difficulty: row.difficulty,
       tags: row.tags ? row.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],

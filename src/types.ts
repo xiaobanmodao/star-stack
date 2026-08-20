@@ -167,6 +167,9 @@ export type CheckinResponse = {
 export type ProblemsResponse = {
   problems: OjProblemSummary[]
   total: number
+  page?: number
+  pageSize?: number
+  totalPages?: number
   message?: string
 }
 

@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, type KeyboardEvent, type MouseEvent } from 'react'
+import { useState, useEffect, useCallback, useRef, type KeyboardEvent, type MouseEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import { useToast } from '../components/ui/ToastContext'
 import CustomSelect from '../components/CustomSelect'
 import TagSelector from '../components/TagSelector'
 import { Badge, Button, DataList, DataListHead, DataListRow, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
-import { fetchJson, openInNewTab } from '../utils'
+import { ApiRequestError, fetchJson, openInNewTab } from '../utils'
 import { DIFFICULTY_OPTIONS } from '../constants'
 import type { OjProblemSummary, ProblemsResponse } from '../types'
 import './OjProblemListPage.css'
@@ -39,51 +39,74 @@ export default function OjProblemListPage() {
     return tagParam ? tagParam.split(',').map((item) => item.trim()).filter(Boolean) : []
   })
   const [problemList, setProblemList] = useState<OjProblemSummary[]>([])
+  const [totalProblems, setTotalProblems] = useState(0)
   const [problemLoading, setProblemLoading] = useState(false)
   const [problemError, setProblemError] = useState('')
   const [daily, setDaily] = useState<DailyQuest | null>(null)
   const [dailyLoading, setDailyLoading] = useState(true)
   const [planBusyId, setPlanBusyId] = useState<number | null>(null)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [pageInput, setPageInput] = useState('1')
+  const initialPage = Math.max(1, Number.parseInt(searchParams.get('page') || '1', 10) || 1)
+  const [currentPage, setCurrentPage] = useState(initialPage)
+  const [pageInput, setPageInput] = useState(String(initialPage))
   const itemsPerPage = 20
+  const requestControllerRef = useRef<AbortController | null>(null)
+  const filterInitializedRef = useRef(false)
 
-  const buildQueryParams = useCallback(() => {
+  const buildQueryParams = useCallback((page: number) => {
     const params = new URLSearchParams()
     if (search.trim()) params.set('search', search.trim())
     if (difficulty) params.set('difficulty', difficulty)
     if (tag.length > 0) params.set('tag', tag.join(','))
     if (currentUser && solvedFilter) params.set('solved', solvedFilter)
+    params.set('page', String(page))
+    params.set('pageSize', String(itemsPerPage))
     return params
   }, [currentUser, difficulty, search, solvedFilter, tag])
 
-  const loadProblems = useCallback(async () => {
+  const loadProblems = useCallback(async (page = currentPage, signal?: AbortSignal) => {
     setProblemLoading(true)
     setProblemError('')
-    const params = buildQueryParams()
+    const params = buildQueryParams(page)
     setSearchParams(params, { replace: true })
     try {
-      const { response, data } = await fetchJson<ProblemsResponse>(`/api/oj/problems?${params.toString()}`)
+      const { response, data } = await fetchJson<ProblemsResponse>(`/api/oj/problems?${params.toString()}`, { signal })
       if (!response.ok) {
         setProblemError(data?.message || '无法加载题目')
         return
       }
       setProblemList(data?.problems || [])
-      setCurrentPage(1)
-      setPageInput('1')
-    } catch {
+      setTotalProblems(data?.total || 0)
+      setCurrentPage(data?.page || page)
+      setPageInput(String(data?.page || page))
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.code === 'ABORTED') return
       setProblemError('网络异常，暂时无法加载题库')
     } finally {
-      setProblemLoading(false)
+      if (!signal?.aborted) setProblemLoading(false)
     }
-  }, [buildQueryParams, setSearchParams])
+  }, [buildQueryParams, currentPage, setSearchParams])
 
   useEffect(() => {
+    const controller = new AbortController()
+    requestControllerRef.current?.abort()
+    requestControllerRef.current = controller
     const timer = window.setTimeout(() => {
-      void loadProblems()
+      void loadProblems(currentPage, controller.signal)
     }, 220)
-    return () => window.clearTimeout(timer)
-  }, [loadProblems])
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [currentPage, difficulty, loadProblems, search, solvedFilter, tag])
+
+  useEffect(() => {
+    if (!filterInitializedRef.current) {
+      filterInitializedRef.current = true
+      return
+    }
+    setCurrentPage(1)
+    setPageInput('1')
+  }, [difficulty, search, solvedFilter, tag])
 
   // 每日一题 + AC 连击
   useEffect(() => {
@@ -94,7 +117,7 @@ export default function OjProblemListPage() {
       if (!cancelled) setDailyLoading(false)
     })
     return () => { cancelled = true }
-  }, [loadProblems])
+  }, [])
 
   const togglePlan = async (event: MouseEvent, problem: OjProblemSummary) => {
     event.stopPropagation()
@@ -117,11 +140,8 @@ export default function OjProblemListPage() {
     }
   }
 
-  // 计算分页
-  const totalPages = Math.ceil(problemList.length / itemsPerPage)
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const endIndex = startIndex + itemsPerPage
-  const currentProblems = problemList.slice(startIndex, endIndex)
+  const totalPages = Math.ceil(totalProblems / itemsPerPage)
+  const currentProblems = problemList
 
   const clearFilters = () => {
     setSearch('')
@@ -291,7 +311,7 @@ export default function OjProblemListPage() {
             </button>
           ))}
         </div>
-        <Button variant="primary" onClick={loadProblems} loading={problemLoading}>
+        <Button variant="primary" onClick={() => void loadProblems()} loading={problemLoading}>
           搜索
         </Button>
         <Button variant="ghost" onClick={clearFilters}>
@@ -312,7 +332,7 @@ export default function OjProblemListPage() {
       )}
 
       <div className="problem-library-result-meta" aria-live="polite">
-        <span>{problemLoading ? '正在更新题目…' : `筛选后 ${problemList.length} 道题`}</span>
+        <span>{problemLoading ? '正在更新题目…' : `筛选后 ${totalProblems} 道题`}</span>
         {(search || difficulty || tag.length > 0 || solvedFilter) && (
           <button type="button" onClick={clearFilters}>清除当前筛选</button>
         )}

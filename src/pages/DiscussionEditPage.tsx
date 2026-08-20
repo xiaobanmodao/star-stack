@@ -5,6 +5,7 @@ import './DiscussionPages.css'
 import RichTextEditor from '../components/RichTextEditor'
 import { fetchJson } from '../utils'
 import type { ApiResponse, DiscussionDetailResponse, OjProblemSummary, ProblemsResponse } from '../types'
+import { LoadingState } from '../components/ui'
 
 export default function DiscussionEditPage() {
   const navigate = useNavigate()
@@ -72,7 +73,7 @@ export default function DiscussionEditPage() {
   }
 
   if (!currentUser) return <Navigate to="/auth" replace />
-  if (loading) return <section className="discussion-create-page"><div className="discussion-loading">加载中...</div></section>
+  if (loading) return <section className="discussion-create-page"><LoadingState variant="page" label="正在加载编辑器…" /></section>
 
   return (
     <section className="discussion-create-page">

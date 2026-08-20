@@ -1,7 +1,7 @@
 import type { HTMLAttributes } from 'react'
 import { classNames } from './classNames'
 
-type LoadingVariant = 'page' | 'ide' | 'inline' | 'compact'
+type LoadingVariant = 'page' | 'ide' | 'inline' | 'compact' | 'list'
 
 type LoadingStateProps = HTMLAttributes<HTMLDivElement> & {
   label?: string

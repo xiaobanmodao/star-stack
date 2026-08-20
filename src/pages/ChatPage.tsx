@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
-import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, EmptyState, LoadingState, PageHeader, Panel } from '../components/ui'
 import RichTextEditor from '../components/RichTextEditor'
 import { fetchJson, isPollingPageVisible } from '../utils'
 import { renderRichText } from '../utils/richText'
@@ -253,7 +253,7 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
     return (
       <section className="ops-page-v2 chat-workspace-v2">
         <Panel>
-          <div className="loading-state">加载中...</div>
+          <LoadingState variant="list" label="正在加载会话…" />
         </Panel>
       </section>
     )
@@ -371,7 +371,7 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
             <div className="chat-messages" ref={messagesContainerRef}>
               {hasMore && (
                 <Button variant="secondary" size="sm" className="load-more-button" onClick={handleLoadMore} disabled={loading}>
-                  {loading ? '加载中...' : '加载更多'}
+                  加载更多
                 </Button>
               )}
               {messagesWithDates.length === 0 ? (

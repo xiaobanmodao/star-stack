@@ -4,6 +4,7 @@ import { useAppContext } from '../../context/AppContext'
 import { fetchJson } from '../../utils'
 import { floatRoom } from '../../utils/floatRoom'
 import type { ChatRoom } from '../../types'
+import { LoadingState } from '../../components/ui'
 import './ChatHub.css'
 
 export default function JoinRoomPane() {
@@ -68,7 +69,7 @@ export default function JoinRoomPane() {
     <section className="chat-scope-pane">
       <div className="chat-room-locked">
         {status === 'loading' ? (
-          <div className="chat-loading">链接验证中...</div>
+          <LoadingState variant="list" label="正在验证邀请链接…" />
         ) : status === 'error' ? (
           <>
             <span className="chat-room-locked-icon">🔗</span>

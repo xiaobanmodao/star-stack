@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, EmptyState, ErrorState, LoadingState, PageHeader, Panel } from '../components/ui'
 import type { Conversation, ConversationsResponse } from '../types'
-import { fetchJson, htmlToPlainText, isPollingPageVisible } from '../utils'
+import { ApiRequestError, fetchJson, htmlToPlainText, isPollingPageVisible } from '../utils'
 import { useModalFocus } from '../hooks/useModalFocus'
 import './OpsPages.css'
 import './ChatPage.css'
@@ -16,21 +16,27 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
   const [searchResults, setSearchResults] = useState<{ id: string; name: string; avatar?: string }[]>([])
   const [searching, setSearching] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const conversationControllerRef = useRef<AbortController | null>(null)
+  const searchControllerRef = useRef<AbortController | null>(null)
   const newChatDialogRef = useModalFocus(showNewChat, () => setShowNewChat(false))
 
   const loadConversations = useCallback(async () => {
+    conversationControllerRef.current?.abort()
+    const controller = new AbortController()
+    conversationControllerRef.current = controller
     try {
-      const { response, data } = await fetchJson<ConversationsResponse>('/api/messages/conversations')
+      const { response, data } = await fetchJson<ConversationsResponse>('/api/messages/conversations', { signal: controller.signal })
       if (response.ok && data) {
         setConversations(data.conversations || [])
         setLoadError('')
       } else {
         setLoadError('会话列表加载失败，请重试。')
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.code === 'ABORTED') return
       setLoadError('网络异常，会话列表暂时不可用。')
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
     }
   }, [])
 
@@ -52,30 +58,41 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
     return () => {
       clearInterval(interval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
+      conversationControllerRef.current?.abort()
     }
   }, [loadConversations])
 
   useEffect(() => {
+    searchControllerRef.current?.abort()
     if (!searchQuery.trim()) {
       setSearchResults([])
       return
     }
     const timer = setTimeout(async () => {
+      searchControllerRef.current?.abort()
+      const controller = new AbortController()
+      searchControllerRef.current = controller
       setSearching(true)
       try {
         const { response, data } = await fetchJson<{ users: { id: string; name: string; avatar?: string }[] }>(
-          `/api/users/search?q=${encodeURIComponent(searchQuery.trim())}`
+          `/api/users/search?q=${encodeURIComponent(searchQuery.trim())}`,
+          { signal: controller.signal },
         )
         if (response.ok && data) {
           setSearchResults(data.users || [])
         }
-      } catch {
-        // ignore
+      } catch (error) {
+        if (!(error instanceof ApiRequestError && error.code === 'ABORTED')) {
+          setSearchResults([])
+        }
       } finally {
-        setSearching(false)
+        if (!controller.signal.aborted) setSearching(false)
       }
     }, 300)
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      searchControllerRef.current?.abort()
+    }
   }, [searchQuery])
 
   useEffect(() => {
@@ -135,7 +152,7 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
 
       {loading ? (
         <Panel>
-          <div className="loading-state">加载中...</div>
+          <LoadingState variant="list" label="正在加载会话…" />
         </Panel>
       ) : loadError ? (
         <ErrorState description={loadError} onRetry={() => { setLoading(true); void loadConversations() }} />
@@ -173,7 +190,7 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
                   }}
                 >
                   {conversation.otherUser.avatar ? (
-                    <img src={conversation.otherUser.avatar} alt={conversation.otherUser.name} loading="lazy" />
+                    <img src={conversation.otherUser.avatar} alt={conversation.otherUser.name} loading="lazy" decoding="async" width="44" height="44" />
                   ) : (
                     <span>{conversation.otherUser.name.charAt(0).toUpperCase()}</span>
                   )}
@@ -222,7 +239,7 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
                 searchResults.map((user) => (
                   <button key={user.id} type="button" className="new-chat-user" onClick={() => { setShowNewChat(false); navigate(`${basePath}/${user.id}`) }}>
                     <div className="conversation-avatar" style={{ width: 36, height: 36, fontSize: 16 }}>
-                      {user.avatar ? <img src={user.avatar} alt={user.name} loading="lazy" /> : <span>{user.name.charAt(0).toUpperCase()}</span>}
+                      {user.avatar ? <img src={user.avatar} alt={user.name} loading="lazy" decoding="async" width="36" height="36" /> : <span>{user.name.charAt(0).toUpperCase()}</span>}
                     </div>
                     <div>
                       <div className="new-chat-user-name">{user.name}</div>

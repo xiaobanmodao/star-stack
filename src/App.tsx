@@ -13,11 +13,14 @@ import SearchOverlay from './components/SearchOverlay'
 import ThemeToggle from './components/ThemeToggle'
 import UserMenu from './components/UserMenu'
 import LoadingState from './components/ui/LoadingState'
+import { IconButton } from './components/ui'
 import { useToast } from './components/ui/ToastContext'
 import AuthPage from './pages/AuthPage'
 import { useStarfield } from './hooks/useStarfield'
 import { useModalFocus } from './hooks/useModalFocus'
 import { fetchJson, isPollingPageVisible } from './utils'
+import { preloadRoute } from './utils/routePreload'
+import { Code2, House, Mail, MessageCircle, Search } from 'lucide-react'
 import type {
   UserRecord, ProblemPlan, AuthMode,
   UserResponse, AuthResponse, UnreadCountResponse, ApiResponse,
@@ -581,24 +584,20 @@ function App() {
               <button
                 className="topbar-message-btn"
                 onClick={() => navigate('/chat/plaza')}
+                onMouseEnter={() => preloadRoute('/chat')}
+                onFocus={() => preloadRoute('/chat')}
                 title="聊天广场"
                 aria-label="聊天广场"
               >
-                <svg viewBox="0 0 24 24" width="20" height="20">
-                  <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-                </svg>
+                <MessageCircle size={20} strokeWidth={1.8} aria-hidden="true" />
               </button>
-              <button
+              <IconButton
                 className="topbar-message-btn"
+                icon={<Search size={20} strokeWidth={1.8} />}
+                label="搜索"
                 onClick={() => setSearchOpen(true)}
-                title="搜索 (Ctrl+K)"
-                aria-label="搜索"
-              >
-                <svg viewBox="0 0 24 24" width="20" height="20">
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="m21 21-4.3-4.3" />
-                </svg>
-              </button>
+                tooltip="搜索 (Ctrl+K)"
+              />
               <ThemeToggle />
               {currentUser ? (
                 <>
@@ -606,13 +605,12 @@ function App() {
                   <button
                     className="topbar-message-btn"
                     onClick={() => navigate('/messages')}
+                    onMouseEnter={() => preloadRoute('/messages')}
+                    onFocus={() => preloadRoute('/messages')}
                     title={unreadMessageCount > 0 ? `${unreadMessageCount} 条未读消息` : '私信'}
                     aria-label={unreadMessageCount > 0 ? `私信，${unreadMessageCount} 条未读消息` : '私信'}
                   >
-                    <svg viewBox="0 0 24 24" width="20" height="20">
-                      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-                      <polyline points="22,6 12,13 2,6" />
-                    </svg>
+                    <Mail size={20} strokeWidth={1.8} aria-hidden="true" />
                     {unreadMessageCount > 0 && <span className="topbar-message-dot" />}
                   </button>
                   <UserMenu currentUser={currentUser} initial={initial} openLogoutConfirm={openLogoutConfirm} />
@@ -692,21 +690,21 @@ function App() {
           <nav className="mobile-tabbar" aria-label="移动端导航">
             <button className={location.pathname === '/' ? 'active' : ''} type="button" aria-current={location.pathname === '/' ? 'page' : undefined} onClick={() => navigate('/')}>
               <span className="mobile-tabbar-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5" /><path d="M5.5 10.8V20h5v-5h3v5h5v-9.2" /></svg>
+                <House size={18} strokeWidth={1.8} />
               </span>
               首页
             </button>
             {OJ_ENABLED && (
-              <button className={location.pathname.startsWith('/oj') ? 'active' : ''} type="button" aria-current={location.pathname.startsWith('/oj') ? 'page' : undefined} onClick={() => navigate('/oj/list')}>
+              <button className={location.pathname.startsWith('/oj') ? 'active' : ''} type="button" aria-current={location.pathname.startsWith('/oj') ? 'page' : undefined} onClick={() => navigate('/oj/list')} onMouseEnter={() => preloadRoute('/oj/list')} onFocus={() => preloadRoute('/oj/list')}>
                 <span className="mobile-tabbar-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24"><path d="M7.5 7 3.5 12l4 5" /><path d="M16.5 7 20.5 12l-4 5" /><path d="M10 17l4-10" /></svg>
+                  <Code2 size={18} strokeWidth={1.8} />
                 </span>
                 题库
               </button>
             )}
-            <button className={location.pathname.startsWith('/chat') ? 'active' : ''} type="button" aria-current={location.pathname.startsWith('/chat') ? 'page' : undefined} onClick={() => navigate('/chat')}>
+            <button className={location.pathname.startsWith('/chat') ? 'active' : ''} type="button" aria-current={location.pathname.startsWith('/chat') ? 'page' : undefined} onClick={() => navigate('/chat')} onMouseEnter={() => preloadRoute('/chat')} onFocus={() => preloadRoute('/chat')}>
               <span className="mobile-tabbar-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
+                <MessageCircle size={18} strokeWidth={1.8} />
               </span>
               聊天
             </button>

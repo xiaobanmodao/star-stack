@@ -4,6 +4,7 @@ import { fetchJson } from '../../utils'
 import { subscribeChatStream } from '../../utils/chat'
 import type { ChatMessage, ChatMessageListResponse, ChatStreamEvent } from '../../types'
 import MessageItem from './MessageItem'
+import { EmptyState, LoadingState } from '../ui'
 import '../../pages/chat/ChatHub.css' // 聊天线程样式：全局可用（浮窗在非聊天页也需加载）
 import { PRESET_EMOJIS } from './chatMeta'
 
@@ -387,9 +388,9 @@ export default function ChatThread({
     <div className="chat-thread">
       <div className="chat-messages" ref={containerRef}>
         {loading && messages.length === 0 ? (
-          <div className="chat-loading">加载中...</div>
+          <LoadingState variant="list" label="正在加载消息…" />
         ) : messages.length === 0 ? (
-          <div className="chat-empty">还没有消息，来说点什么吧 ✨</div>
+          <EmptyState title="还没有消息" description="来说点什么吧 ✨" />
         ) : (
           <>
             {hasMore && (

@@ -2,19 +2,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { NotificationItem, NotificationType, NotificationsResponse } from '../types'
 import { fetchJson } from '../utils'
+import { ApiRequestError } from '../utils'
 import { useModalFocus } from '../hooks/useModalFocus'
 import { disablePush, enablePush, isPushEnabled } from '../utils/push'
+import { AtSign, Bell, BellRing, FileText, Heart, MessageCircle, Megaphone, Reply, Trophy, type LucideIcon } from 'lucide-react'
+import { EmptyState, ErrorState, LoadingState } from './ui'
 import './NotificationBell.css'
 
-const TYPE_ICONS: Record<NotificationType, string> = {
-  follow: '❤️',
-  comment: '💬',
-  reply: '↩️',
-  mention: '@',
-  invite: '🔔',
-  'achievement.unlocked': '🏆',
-  'problem.review_requested': '📝',
-  'problem.status_changed': '📣',
+const TYPE_ICONS: Record<NotificationType, LucideIcon> = {
+  follow: Heart,
+  comment: MessageCircle,
+  reply: Reply,
+  mention: AtSign,
+  invite: Bell,
+  'achievement.unlocked': Trophy,
+  'problem.review_requested': FileText,
+  'problem.status_changed': Megaphone,
 }
 
 const formatNotifTime = (iso: string) => {
@@ -60,6 +63,7 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<NotificationItem[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [pushEnabled, setPushEnabled] = useState(isPushEnabled)
   const [pushBusy, setPushBusy] = useState(false)
   const [activeFilter, setActiveFilter] = useState<NotificationFilter>('all')
@@ -93,23 +97,30 @@ export default function NotificationBell() {
 
   useEffect(() => {
     if (!open) return
+    const controller = new AbortController()
     const timer = window.setTimeout(() => {
       setLoading(true)
+      setLoadError('')
       void (async () => {
         try {
-          const { response, data } = await fetchJson<NotificationsResponse>('/api/notifications?page=1&pageSize=20')
+          const { response, data } = await fetchJson<NotificationsResponse>('/api/notifications?page=1&pageSize=20', { signal: controller.signal })
           if (response.ok && data) {
             setItems(data.notifications || [])
             setUnreadCount(data.unreadCount)
           }
-        } catch {
-          // 打开通知面板失败时保留已有数据，下一次打开会自动重试。
+        } catch (error) {
+          if (!(error instanceof ApiRequestError && error.code === 'ABORTED')) {
+            setLoadError('通知加载失败，请重试。')
+          }
         } finally {
-          setLoading(false)
+          if (!controller.signal.aborted) setLoading(false)
         }
       })()
     }, 0)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
   }, [open])
 
   // 点击外部关闭
@@ -224,9 +235,17 @@ export default function NotificationBell() {
           </div>
           <div className="notif-list">
             {loading ? (
-              <div className="notif-empty">加载中...</div>
+              <LoadingState variant="compact" label="正在加载通知…" />
+            ) : loadError ? (
+              <ErrorState
+                description={loadError}
+                onRetry={() => {
+                  setOpen(false)
+                  window.setTimeout(() => setOpen(true), 0)
+                }}
+              />
             ) : filteredItems.length === 0 ? (
-              <div className="notif-empty">还没有通知</div>
+              <EmptyState title="还没有通知" description="新的互动和题库动态会显示在这里。" />
             ) : (
               filteredItems.map((item) => (
                 <button
@@ -237,7 +256,7 @@ export default function NotificationBell() {
                 >
                   <span className="notif-avatar">
                     {item.actor.avatar ? (
-                      <img src={item.actor.avatar} alt="" loading="lazy" />
+                      <img src={item.actor.avatar} alt="" loading="lazy" decoding="async" width="32" height="32" />
                     ) : (
                       <span>{item.actor.name.charAt(0).toUpperCase()}</span>
                     )}
@@ -247,7 +266,7 @@ export default function NotificationBell() {
                       <strong>{item.actor.name}</strong> {item.message}
                     </span>
                     <span className="notif-time">
-                      {TYPE_ICONS[item.type]} {formatNotifTime(item.createdAt)}
+                      {(() => { const Icon = TYPE_ICONS[item.type]; return <Icon size={13} strokeWidth={1.8} aria-hidden="true" /> })()} {formatNotifTime(item.createdAt)}
                     </span>
                   </span>
                   {!item.isRead && <span className="notif-dot" aria-hidden="true" />}
@@ -263,7 +282,7 @@ export default function NotificationBell() {
               disabled={pushBusy}
               title={pushEnabled ? '关闭浏览器推送' : '开启浏览器推送（关注/评论/@提及/邀请时通知你）'}
             >
-              {pushBusy ? '处理中...' : pushEnabled ? '🔔 浏览器推送已开启' : '🔕 开启浏览器推送'}
+              {pushBusy ? '处理中...' : pushEnabled ? <><BellRing size={14} aria-hidden="true" /> 浏览器推送已开启</> : <><Bell size={14} aria-hidden="true" /> 开启浏览器推送</>}
             </button>
             <span>{items.length} 条最近通知</span>
           </div>

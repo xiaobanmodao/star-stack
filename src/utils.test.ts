@@ -84,4 +84,15 @@ describe('fetchJson', () => {
     await expect(request).rejects.toBeInstanceOf(ApiRequestError)
     await expect(request).rejects.toMatchObject({ code: 'NETWORK_ERROR' })
   })
+
+  it('normalizes caller cancellation without treating it as a network failure', async () => {
+    installBrowserGlobals()
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+    })))
+    const controller = new AbortController()
+    const request = fetchJson('/api/oj/problems', { signal: controller.signal })
+    controller.abort()
+    await expect(request).rejects.toMatchObject({ code: 'ABORTED' })
+  })
 })

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
-import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, EmptyState, ErrorState, LoadingState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
 import type { OjProblemSummary, ProblemsResponse, ApiResponse } from '../types'
 import './CreatorAdminPages.css'
@@ -180,7 +180,7 @@ export default function MyProblemsPage() {
 
       {loading && (
         <Panel>
-          <div className="oj-loading">加载中...</div>
+          <LoadingState variant="list" label="正在加载我的题目…" />
         </Panel>
       )}
       {error && <ErrorState description={error} onRetry={() => void loadMyProblems()} />}

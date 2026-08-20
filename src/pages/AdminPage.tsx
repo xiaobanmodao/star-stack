@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import { useToast } from '../components/ui/ToastContext'
-import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, EmptyState, ErrorState, LoadingState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
 import type { AdminAuditLog, AdminMetricsResponse, AdminProblem, AdminReport, AdminStatsResponse, UserRecord, ApiResponse } from '../types'
 import './CreatorAdminPages.css'
@@ -735,7 +735,7 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
         </Panel>
       )}
       {loading ? (
-        <div className="oj-loading">加载中...</div>
+        <LoadingState variant="list" label="正在加载题目…" />
       ) : problems.length === 0 ? (
         <EmptyState title="没有匹配题目" description="调整筛选条件后再试。" />
       ) : (
@@ -814,7 +814,7 @@ function AdminAuditLogsSection() {
       </div>
       {error && <ErrorState description={error} onRetry={() => void load()} />}
       {loading ? (
-        <div className="oj-loading">加载中...</div>
+        <LoadingState variant="list" label="正在加载操作日志…" />
       ) : logs.length === 0 ? (
         <EmptyState title="暂无操作记录" description="管理员执行敏感操作后会在这里留下记录。" />
       ) : (
@@ -949,7 +949,7 @@ function AdminReportsSection() {
       </div>
       {error && <ErrorState description={error} onRetry={() => void load()} />}
       {loading ? (
-        <div className="oj-loading">加载中...</div>
+        <LoadingState variant="list" label="正在加载举报…" />
       ) : reports.length === 0 ? (
         <EmptyState title="没有举报" description={status === 'open' ? '当前没有待处理的举报。' : '还没有已处理的举报。'} />
       ) : (
@@ -1052,7 +1052,7 @@ function AdminStatsSection() {
         </div>
       </div>
       {loading ? (
-        <div className="oj-loading">加载中...</div>
+        <LoadingState variant="list" label="正在加载数据看板…" />
       ) : error ? (
         <ErrorState description={error} onRetry={() => void load()} />
       ) : (

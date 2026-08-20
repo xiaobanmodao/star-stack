@@ -4,6 +4,7 @@ import ChatThread from '../../components/chat/ChatThread'
 import { floatRoom } from '../../utils/floatRoom'
 import type { ChatRoomDetail, ChatRoomResponse, ChatRoomMember, ChatStreamEvent, FollowUser, FriendsResponse } from '../../types'
 import { fetchJson } from '../../utils'
+import { LoadingState } from '../../components/ui'
 import './ChatHub.css'
 
 export default function RoomPane() {
@@ -132,7 +133,7 @@ export default function RoomPane() {
   }
 
   if (loading) {
-    return <section className="chat-scope-pane"><div className="chat-loading">加载中...</div></section>
+    return <section className="chat-scope-pane"><LoadingState variant="list" label="正在加载聊天室…" /></section>
   }
 
   if (!room || error) {

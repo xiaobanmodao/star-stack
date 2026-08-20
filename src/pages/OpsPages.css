@@ -410,6 +410,8 @@ button.submission-row-v2:hover {
 }
 
 .messages-v2 .conversation-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 76px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 14px;

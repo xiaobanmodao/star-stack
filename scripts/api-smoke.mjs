@@ -17,4 +17,13 @@ for (const [method, path, expected] of checks) {
   console.log(`ok ${path} -> ${response.status}`)
 }
 
+const paginatedResponse = await fetch(`${baseUrl}/api/oj/problems?page=1&pageSize=2`)
+if (paginatedResponse.status !== 200) {
+  throw new Error(`/api/oj/problems pagination: expected 200, got ${paginatedResponse.status}`)
+}
+const paginatedBody = await paginatedResponse.json()
+if (paginatedBody.page !== 1 || paginatedBody.pageSize !== 2 || !Number.isInteger(paginatedBody.totalPages) || !Array.isArray(paginatedBody.problems) || paginatedBody.problems.length > 2) {
+  throw new Error('题库分页响应格式不正确')
+}
+console.log('ok /api/oj/problems pagination -> 200')
 console.log('API smoke checks passed')

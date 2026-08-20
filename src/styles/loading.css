@@ -34,6 +34,13 @@
   font-size: var(--ss-text-xs);
 }
 
+.ss-loading-list {
+  width: 100%;
+  min-height: 120px;
+  justify-content: flex-start;
+  padding: 24px 16px;
+}
+
 .ss-loading-orbit {
   position: relative;
   display: inline-block;

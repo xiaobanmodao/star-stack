@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../../context/AppContext'
+import { LoadingState } from '../../components/ui'
 import type { FollowListResponse, FollowUser, FriendsResponse } from '../../types'
 import { fetchJson } from '../../utils'
 import './ChatHub.css'
@@ -152,7 +153,7 @@ export default function FriendsPane() {
         <div className="friends-list">
           <div className="friends-list-title">搜索结果</div>
           {searching ? (
-            <div className="chat-loading">搜索中...</div>
+            <LoadingState variant="compact" label="正在搜索…" />
           ) : searchResults.length === 0 ? (
             <div className="chat-empty">没有找到匹配的用户</div>
           ) : (
@@ -191,7 +192,7 @@ export default function FriendsPane() {
       ) : (
         <div className="friends-list">
           {loading ? (
-            <div className="chat-loading">加载中...</div>
+            <LoadingState variant="list" label="正在加载好友…" />
           ) : users.length === 0 ? (
             <div className="chat-empty">
               {tab === 'friends'

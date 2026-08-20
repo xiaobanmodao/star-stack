@@ -367,6 +367,8 @@
   display: flex;
   gap: 10px;
   max-width: min(100%, 720px);
+  content-visibility: auto;
+  contain-intrinsic-size: 88px;
 }
 
 .chat-message.mine {
@@ -922,6 +924,8 @@
 }
 
 .plaza-post {
+  content-visibility: auto;
+  contain-intrinsic-size: 180px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1416,6 +1420,8 @@
 }
 
 .room-square-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 220px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1986,6 +1992,8 @@
 }
 
 .activity-row {
+  content-visibility: auto;
+  contain-intrinsic-size: 64px;
   display: flex;
   align-items: center;
   gap: 10px;

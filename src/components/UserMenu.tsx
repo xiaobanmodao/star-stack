@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import './UserMenu.css'
 import { OJ_ENABLED } from '../constants'
 import type { UserRecord } from '../types'
+import { BookOpen, CircleUserRound, FileText, LogOut, ShieldCheck, UserRound } from 'lucide-react'
 
 interface UserMenuProps {
   currentUser: UserRecord
@@ -76,7 +77,7 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
         onFocus={handleMouseEnter}
       >
         {currentUser.avatar ? (
-          <img src={currentUser.avatar} alt="头像" />
+          <img src={currentUser.avatar} alt="头像" loading="eager" decoding="async" width="36" height="36" />
         ) : (
           <span>{initial}</span>
         )}
@@ -89,7 +90,7 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
         aria-hidden={!userMenuOpen}
       >
         <div className="user-menu-level">
-          <span aria-hidden="true">{currentUser.icon || '✦'}</span>
+          <span aria-hidden="true">{currentUser.icon || <CircleUserRound size={16} strokeWidth={1.8} />}</span>
           <span>Lv.{currentUser.level ?? 1}</span>
           <strong>{currentUser.title || '星尘'}</strong>
         </div>
@@ -98,20 +99,20 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
           if (location.pathname !== '/account') navigate('/account')
           setUserMenuOpen(false)
         }}>
-          个人中心
+          <UserRound size={15} strokeWidth={1.8} aria-hidden="true" /> 个人中心
         </button>
         <button className="user-menu-item" role="menuitem" type="button" onClick={() => {
           if (location.pathname !== '/my-problems') navigate('/my-problems')
           setUserMenuOpen(false)
         }}>
-          我的题目
+          <BookOpen size={15} strokeWidth={1.8} aria-hidden="true" /> 我的题目
         </button>
         {currentUser.isAdmin && (
           <button className="user-menu-item" role="menuitem" type="button" onClick={() => {
             if (location.pathname !== '/admin') navigate('/admin')
             setUserMenuOpen(false)
           }}>
-            管理员面板
+            <ShieldCheck size={15} strokeWidth={1.8} aria-hidden="true" /> 管理员面板
           </button>
         )}
         {OJ_ENABLED && (
@@ -119,7 +120,7 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
             if (location.pathname !== '/oj/submissions') navigate('/oj/submissions')
             setUserMenuOpen(false)
           }}>
-            我的提交
+            <FileText size={15} strokeWidth={1.8} aria-hidden="true" /> 我的提交
           </button>
         )}
         <div className="user-menu-divider" aria-hidden="true" />
@@ -127,7 +128,7 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
           openLogoutConfirm()
           setUserMenuOpen(false)
         }}>
-          退出账号
+          <LogOut size={15} strokeWidth={1.8} aria-hidden="true" /> 退出账号
         </button>
       </div>
     </div>

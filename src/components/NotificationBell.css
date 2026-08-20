@@ -85,6 +85,8 @@
 }
 
 .notif-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 64px;
   display: flex;
   align-items: flex-start;
   gap: 10px;

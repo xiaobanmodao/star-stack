@@ -163,7 +163,7 @@ export default function UserProfilePage() {
             <div className="profile-avatar-shell">
               <div className="profile-avatar-large">
                 {user.avatar ? (
-                  <img src={user.avatar} alt="头像" loading="lazy" />
+                  <img src={user.avatar} alt="头像" loading="lazy" decoding="async" width="88" height="88" />
                 ) : (
                   <span>{user.name.charAt(0).toUpperCase()}</span>
                 )}

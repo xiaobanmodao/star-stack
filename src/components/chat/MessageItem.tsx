@@ -27,7 +27,7 @@ function ThreadReplyItem({
         title="查看个人主页"
       >
         {reply.senderAvatar ? (
-          <img src={reply.senderAvatar} alt="" loading="lazy" />
+          <img src={reply.senderAvatar} alt="" loading="lazy" decoding="async" width="24" height="24" />
         ) : (
           <span>{reply.senderName.charAt(0).toUpperCase()}</span>
         )}
@@ -121,7 +121,7 @@ export default function MessageItem({
         title="查看个人主页"
       >
         {message.senderAvatar ? (
-          <img src={message.senderAvatar} alt="" loading="lazy" />
+          <img src={message.senderAvatar} alt="" loading="lazy" decoding="async" width="32" height="32" />
         ) : (
           <span>{message.senderName.charAt(0).toUpperCase()}</span>
         )}

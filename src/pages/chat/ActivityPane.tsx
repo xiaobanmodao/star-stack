@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchJson } from '../../utils'
 import type { ActivityLeaderboardResponse, ChatStatsResponse } from '../../types'
+import { EmptyState, LoadingState } from '../../components/ui'
 import './ChatHub.css'
 
 const SCORE_RULES = [
@@ -71,9 +72,9 @@ export default function ActivityPane() {
       <div className="activity-body">
         <div className="activity-leaderboard">
           {loading ? (
-            <div className="chat-loading">加载中...</div>
+            <LoadingState variant="list" label="正在加载活跃榜…" />
           ) : !data || data.leaderboard.length === 0 ? (
-            <div className="chat-empty">这段时间还没有人获得活跃分，去发条消息吧 ✨</div>
+            <EmptyState title="暂时没有活跃榜数据" description="去发条消息，成为第一个上榜的人吧 ✨" />
           ) : (
             data.leaderboard.map((entry) => (
               <button

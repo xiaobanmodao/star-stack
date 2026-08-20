@@ -1,4 +1,4 @@
-const CACHE_NAME = 'starstack-v1'
+const CACHE_NAME = 'starstack-v2'
 const STATIC_ASSETS = [
   '/',
   '/starstack.svg',

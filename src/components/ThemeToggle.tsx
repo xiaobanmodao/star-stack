@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ACCENT_KEY, ACCENT_PRESETS, applyAccent, applyTheme, readSavedAccent, readSavedTheme, type ThemeMode,
 } from '../utils/theme'
+import { Monitor, Moon, Sun } from 'lucide-react'
 
 const ORDER: ThemeMode[] = ['dark', 'light', 'system']
 
-const MODE_META: Record<ThemeMode, { icon: string; label: string }> = {
-  dark: { icon: '🌙', label: '深色' },
-  light: { icon: '☀️', label: '浅色' },
-  system: { icon: '🖥️', label: '跟随系统' },
+const MODE_META: Record<ThemeMode, { icon: typeof Moon; label: string }> = {
+  dark: { icon: Moon, label: '深色' },
+  light: { icon: Sun, label: '浅色' },
+  system: { icon: Monitor, label: '跟随系统' },
 }
 
 export default function ThemeToggle() {
@@ -67,7 +68,7 @@ export default function ThemeToggle() {
         aria-haspopup="dialog"
         aria-controls="theme-panel"
       >
-        <span aria-hidden="true">{MODE_META[mode].icon}</span>
+        {(() => { const Icon = MODE_META[mode].icon; return <Icon size={18} strokeWidth={1.8} aria-hidden="true" /> })()}
       </button>
       {open && (
         <div id="theme-panel" className="theme-panel" role="dialog" aria-modal="false" aria-label="主题设置">
@@ -81,7 +82,7 @@ export default function ThemeToggle() {
                   className={mode === m ? 'active' : ''}
                   onClick={() => setMode(m)}
                 >
-                  {MODE_META[m].icon} {MODE_META[m].label}
+                  {(() => { const Icon = MODE_META[m].icon; return <Icon size={16} strokeWidth={1.8} aria-hidden="true" /> })()} {MODE_META[m].label}
                 </button>
               ))}
             </div>

@@ -6,6 +6,7 @@ import type { DiscussionListResponse, DiscussionPost, ChatModuleKey } from '../.
 import { fetchJson, openInNewTab } from '../../utils'
 import { MODULE_KEYS, MODULE_META } from '../../components/chat/chatMeta'
 import { useModalFocus } from '../../hooks/useModalFocus'
+import { EmptyState, LoadingState } from '../../components/ui'
 import './ChatHub.css'
 
 const formatPostTime = (iso: string) => {
@@ -308,9 +309,9 @@ export default function PostBoard({ module = 'all' }: { module?: ChatModuleKey |
 
       <div className="plaza-feed">
         {loading ? (
-          <div className="chat-loading">加载中...</div>
+          <LoadingState variant="list" label="正在加载帖子…" />
         ) : posts.length === 0 ? (
-          <div className="chat-empty">这个区域还没有帖子，来发第一帖吧 ✨</div>
+          <EmptyState title="这个区域还没有帖子" description="来发第一帖吧 ✨" />
         ) : (
           posts.map((post) => (
             <div
