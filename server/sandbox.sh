@@ -30,6 +30,8 @@ fi
 # 资源限制 (ulimit)
 # ulimit 的 CPU 时间只能按整秒设置，墙钟时间仍由 timeout 按毫秒精确限制。
 TIME_LIMIT_SEC=$(( (TIME_LIMIT_MS + 999) / 1000 ))
+# GNU timeout 接受十进制秒，但不接受毫秒后缀；保留三位小数以精确表达 100～3000ms。
+TIME_LIMIT_SECONDS="$((TIME_LIMIT_MS / 1000)).$(printf '%03d' $((TIME_LIMIT_MS % 1000)))"
 # 虚拟内存限制
 ulimit -v "$MEM_LIMIT_KB" 2>/dev/null || true
 # CPU 时间上限（秒），与 timeout 的墙钟限制同时生效，防止异常进程长期占用 CPU。
@@ -47,10 +49,10 @@ ulimit -n 64 2>/dev/null || true
 # 沙箱能力不足时直接失败，不能回退到无隔离执行。
 if [[ -n "$TIMING_MARKER" && -x /usr/bin/time ]]; then
   exec unshare --net --mount --pid --fork --mount-proc --kill-child -- \
-    timeout --signal=KILL "${TIME_LIMIT_MS}ms" \
+    timeout --signal=KILL "${TIME_LIMIT_SECONDS}s" \
     /usr/bin/time -f "${TIMING_MARKER} %U %S" \
     "$@"
 fi
 exec unshare --net --mount --pid --fork --mount-proc --kill-child -- \
-  timeout --signal=KILL "${TIME_LIMIT_MS}ms" \
+  timeout --signal=KILL "${TIME_LIMIT_SECONDS}s" \
   "$@"
