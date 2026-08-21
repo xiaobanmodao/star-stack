@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import CustomSelect from '../components/CustomSelect'
-import { fetchJson, formatTime } from '../utils'
+import { ApiRequestError, fetchJson, formatTime } from '../utils'
 import type { OjSubmission, SubmissionsResponse } from '../types'
 import './OpsPages.css'
 
@@ -51,13 +51,17 @@ export default function OjSubmissionsPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [languageFilter, setLanguageFilter] = useState('')
+  const requestAbortRef = useRef<AbortController | null>(null)
   const submissionsPerPage = 20
 
   const loadSubmissions = useCallback(async () => {
+    requestAbortRef.current?.abort()
+    const controller = new AbortController()
+    requestAbortRef.current = controller
     setLoading(true)
     setError('')
     try {
-      const { response, data } = await fetchJson<SubmissionsResponse>('/api/oj/submissions')
+      const { response, data } = await fetchJson<SubmissionsResponse>('/api/oj/submissions', { signal: controller.signal })
       if (!response.ok) {
         setError(data?.message || '无法加载提交记录')
         return
@@ -65,10 +69,12 @@ export default function OjSubmissionsPage() {
       setSubmissions(data?.submissions || [])
       setSubmissionsPage(1)
       setSubmissionsPageInput('1')
-    } catch {
+    } catch (requestError) {
+      if (requestError instanceof ApiRequestError && requestError.code === 'ABORTED') return
       setError('网络异常，暂时无法加载提交记录')
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
+      if (requestAbortRef.current === controller) requestAbortRef.current = null
     }
   }, [])
 
@@ -78,6 +84,8 @@ export default function OjSubmissionsPage() {
     }, 0)
     return () => window.clearTimeout(timer)
   }, [loadSubmissions])
+
+  useEffect(() => () => requestAbortRef.current?.abort(), [])
 
   const handleSubmissionClick = (submissionId: number) => {
     navigate(`/oj/judge/${submissionId}`)

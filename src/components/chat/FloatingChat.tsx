@@ -35,6 +35,7 @@ export default function FloatingChat() {
   const [windows, setWindows] = useState<FloatWindow[]>([])
   const [rooms, setRooms] = useState<ChatRoomsResponse['rooms']>([])
   const dragRef = useRef<{ id: number; dx: number; dy: number } | null>(null)
+  const roomsAbortRef = useRef<AbortController | null>(null)
   const [draggingId, setDraggingId] = useState<number | null>(null)
   const [confirmLeaveId, setConfirmLeaveId] = useState<number | null>(null)
 
@@ -63,8 +64,13 @@ export default function FloatingChat() {
   useEffect(() => {
     if (!currentUser) return
     const load = () => {
-      void fetchJson<ChatRoomsResponse>('/api/chat/rooms').then(({ response, data }) => {
-        if (response.ok && data) setRooms(data.rooms)
+      roomsAbortRef.current?.abort()
+      const controller = new AbortController()
+      roomsAbortRef.current = controller
+      void fetchJson<ChatRoomsResponse>('/api/chat/rooms', { signal: controller.signal }).then(({ response, data }) => {
+        if (!controller.signal.aborted && response.ok && data) setRooms(data.rooms)
+      }).catch(() => undefined).finally(() => {
+        if (roomsAbortRef.current === controller) roomsAbortRef.current = null
       })
     }
     const timer = window.setTimeout(load, 0)
@@ -74,6 +80,7 @@ export default function FloatingChat() {
     return () => {
       window.clearTimeout(timer)
       window.clearInterval(interval)
+      roomsAbortRef.current?.abort()
     }
   }, [currentUser])
 

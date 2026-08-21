@@ -18,19 +18,27 @@ export default function ChatHubPage() {
   const [rooms, setRooms] = useState<ChatRoom[]>([])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const heartbeatTimerRef = useRef<number | null>(null)
+  const loadAbortRef = useRef<AbortController | null>(null)
+  const heartbeatAbortRef = useRef<AbortController | null>(null)
 
   const loadAll = useCallback(async () => {
-    const [{ response: channelRes, data: channelData }, { response: roomRes, data: roomData }] = await Promise.all([
-      fetchJson<ChatChannelsResponse>('/api/chat/channels'),
-      fetchJson<ChatRoomsResponse>('/api/chat/rooms'),
-    ])
-    if (channelRes.ok && channelData) setChannels(channelData.channels)
-    if (roomRes.ok && roomData) setRooms(roomData.rooms)
+    loadAbortRef.current?.abort()
+    const controller = new AbortController()
+    loadAbortRef.current = controller
     try {
-      const { response, data } = await fetchJson<ConversationsResponse>('/api/messages/conversations')
-      if (response.ok && data) setConversations(data.conversations)
+      const [{ response: channelRes, data: channelData }, { response: roomRes, data: roomData }, { response: conversationRes, data: conversationData }] = await Promise.all([
+        fetchJson<ChatChannelsResponse>('/api/chat/channels', { signal: controller.signal }),
+        fetchJson<ChatRoomsResponse>('/api/chat/rooms', { signal: controller.signal }),
+        fetchJson<ConversationsResponse>('/api/messages/conversations', { signal: controller.signal }),
+      ])
+      if (controller.signal.aborted) return
+      if (channelRes.ok && channelData) setChannels(channelData.channels)
+      if (roomRes.ok && roomData) setRooms(roomData.rooms)
+      if (conversationRes.ok && conversationData) setConversations(conversationData.conversations)
     } catch {
       // 忽略
+    } finally {
+      if (loadAbortRef.current === controller) loadAbortRef.current = null
     }
   }, [])
 
@@ -45,16 +53,22 @@ export default function ChatHubPage() {
     return () => {
       window.clearTimeout(timer)
       window.clearInterval(interval)
+      loadAbortRef.current?.abort()
     }
   }, [loadAll])
 
   // 在线心跳：30 秒
   useEffect(() => {
     const beat = async () => {
+      heartbeatAbortRef.current?.abort()
+      const controller = new AbortController()
+      heartbeatAbortRef.current = controller
       try {
-        await fetchJson('/api/chat/presence', { method: 'POST' })
+        await fetchJson('/api/chat/presence', { method: 'POST', signal: controller.signal })
       } catch {
         // 忽略
+      } finally {
+        if (heartbeatAbortRef.current === controller) heartbeatAbortRef.current = null
       }
     }
     const timer = window.setTimeout(() => {
@@ -66,6 +80,7 @@ export default function ChatHubPage() {
     return () => {
       window.clearTimeout(timer)
       if (heartbeatTimerRef.current !== null) window.clearInterval(heartbeatTimerRef.current)
+      heartbeatAbortRef.current?.abort()
     }
   }, [])
 

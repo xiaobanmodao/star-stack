@@ -36,6 +36,7 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
   const deleteDialogRef = useModalFocus(deleteTarget !== null, () => setDeleteTarget(null))
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const pollAbortRef = useRef<AbortController | null>(null)
   const pageSize = 30
 
   const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
@@ -105,11 +106,15 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
     const poll = async () => {
       if (!isPollingPageVisible() || polling) return
       polling = true
+      pollAbortRef.current?.abort()
+      const controller = new AbortController()
+      pollAbortRef.current = controller
       try {
         const { response, data } = await fetchJson<MessagesResponse>(
-          `/api/messages/conversations/${otherUserId}?page=1&pageSize=${pageSize}`
+          `/api/messages/conversations/${otherUserId}?page=1&pageSize=${pageSize}`,
+          { signal: controller.signal },
         )
-        if (response.ok && data) {
+        if (!controller.signal.aborted && response.ok && data) {
           setMessages(prev => {
             const newMsgs = data.messages || []
             if (newMsgs.length === 0) return prev
@@ -128,6 +133,7 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
         // Silently ignore polling errors
       } finally {
         polling = false
+        if (pollAbortRef.current === controller) pollAbortRef.current = null
       }
     }
     const interval = setInterval(poll, 7000)
@@ -141,6 +147,7 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
       clearInterval(interval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('focus', handleVisibilityChange)
+      pollAbortRef.current?.abort()
     }
   }, [otherUserId, fetchUnreadCount])
 

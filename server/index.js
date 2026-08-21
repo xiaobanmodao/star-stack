@@ -5,7 +5,7 @@ import { getAuthToken, getUserByToken } from './middleware/auth.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { createRateLimiter } from './middleware/rateLimit.js'
 import { initPush } from './controllers/notificationsController.js'
-import { getDatabaseHealth, getDiskHealth } from './utils/monitoring.js'
+import { getBackupHealth, getDatabaseHealth, getDiskHealth } from './utils/monitoring.js'
 import {
   getJudgeQueueSnapshot,
   recoverPendingSubmissions,
@@ -83,7 +83,11 @@ app.get('/api/health', async (req, res) => {
   try {
     const db = await getDb()
     await db.get('SELECT 1 AS ok')
-    const [database, disk] = await Promise.all([getDatabaseHealth(db), getDiskHealth()])
+    const [database, disk, backup] = await Promise.all([
+      getDatabaseHealth(db),
+      getDiskHealth(),
+      getBackupHealth(),
+    ])
     const judge = getJudgeQueueSnapshot()
     const healthy = database.healthy && disk.healthy
     return res.status(healthy ? 200 : 503).json({
@@ -91,6 +95,7 @@ app.get('/api/health', async (req, res) => {
       service: 'star-stack-api',
       database,
       disk,
+      backup,
       judge,
     })
   } catch (error) {

@@ -4,7 +4,7 @@ import { useAppContext } from '../context/AppContext'
 import CheckinBanner from '../components/CheckinBanner'
 import type { OjProblemSummary } from '../types'
 import { fetchJson, openInNewTab } from '../utils'
-import { Badge, Button, EmptyState, Panel } from '../components/ui'
+import { Badge, Button, EmptyState, ErrorState, LoadingState, Panel } from '../components/ui'
 import './EntryPages.css'
 
 type OjOverview = {
@@ -32,6 +32,9 @@ export default function OjHomePage() {
   const [hotProblems, setHotProblems] = useState<HotProblem[]>([])
   const [recentAc, setRecentAc] = useState<RecentAc[]>([])
   const [continueProblem, setContinueProblem] = useState<OjProblemSummary | null>(null)
+  const [overviewLoading, setOverviewLoading] = useState(true)
+  const [overviewError, setOverviewError] = useState('')
+  const [reloadToken, setReloadToken] = useState(0)
 
   const handleQuickJump = useCallback(() => {
     const value = quickJumpId.trim().toLowerCase()
@@ -44,24 +47,30 @@ export default function OjHomePage() {
   }, [navigate, quickJumpId])
 
   useEffect(() => {
-    let cancelled = false
+    const controller = new AbortController()
+    setOverviewLoading(true)
+    setOverviewError('')
     ;(async () => {
-      const [overviewResult, hotResult, recentResult, continueResult] = await Promise.all([
-        fetchJson<OjOverview>('/api/oj/overview'),
-        fetchJson<{ hotProblems: HotProblem[] }>('/api/oj/hot-problems'),
-        fetchJson<{ recentAC: RecentAc[] }>('/api/oj/recent-ac'),
-        fetchJson<{ problem: OjProblemSummary | null }>('/api/oj/continue-last'),
-      ])
-      if (cancelled) return
-      if (overviewResult.response.ok && overviewResult.data) setOverview(overviewResult.data)
-      if (hotResult.response.ok && hotResult.data) setHotProblems(hotResult.data.hotProblems || [])
-      if (recentResult.response.ok && recentResult.data) setRecentAc(recentResult.data.recentAC || [])
-      if (continueResult.response.ok && continueResult.data) setContinueProblem(continueResult.data.problem || null)
+      try {
+        const [overviewResult, hotResult, recentResult, continueResult] = await Promise.all([
+          fetchJson<OjOverview>('/api/oj/overview', { signal: controller.signal }),
+          fetchJson<{ hotProblems: HotProblem[] }>('/api/oj/hot-problems', { signal: controller.signal }),
+          fetchJson<{ recentAC: RecentAc[] }>('/api/oj/recent-ac', { signal: controller.signal }),
+          fetchJson<{ problem: OjProblemSummary | null }>('/api/oj/continue-last', { signal: controller.signal }),
+        ])
+        if (controller.signal.aborted) return
+        if (overviewResult.response.ok && overviewResult.data) setOverview(overviewResult.data)
+        if (hotResult.response.ok && hotResult.data) setHotProblems(hotResult.data.hotProblems || [])
+        if (recentResult.response.ok && recentResult.data) setRecentAc(recentResult.data.recentAC || [])
+        if (continueResult.response.ok && continueResult.data) setContinueProblem(continueResult.data.problem || null)
+      } catch {
+        if (!controller.signal.aborted) setOverviewError('网络异常，OJ 首页暂时无法加载。')
+      } finally {
+        if (!controller.signal.aborted) setOverviewLoading(false)
+      }
     })()
-    return () => {
-      cancelled = true
-    }
-  }, [currentUser])
+    return () => controller.abort()
+  }, [currentUser, reloadToken])
 
   const handleRandomProblem = async () => {
     const { data } = await fetchJson<{ problem: OjProblemSummary }>('/api/oj/random-problem')
@@ -136,6 +145,14 @@ export default function OjHomePage() {
       </section>
 
       <CheckinBanner key={currentUser?.id ?? 'guest'} />
+
+      {overviewError && (
+        <ErrorState
+          description={overviewError}
+          onRetry={() => setReloadToken((value) => value + 1)}
+        />
+      )}
+      {overviewLoading && !overview && <LoadingState variant="inline" label="正在加载 OJ 首页…" />}
 
       <section className="oj-workbench-grid">
         <Panel className="oj-workbench-section oj-workbench-difficulty">

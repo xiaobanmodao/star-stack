@@ -22,10 +22,10 @@ for (const [method, path, expected] of checks) {
 
 const healthResponse = await fetch(`${baseUrl}/api/health`)
 const healthBody = await healthResponse.json()
-if (healthResponse.status !== 200 || healthBody.ok !== true || healthBody.database?.integrity !== 'ok' || healthBody.disk?.healthy !== true) {
+if (healthResponse.status !== 200 || healthBody.ok !== true || healthBody.database?.integrity !== 'ok' || healthBody.disk?.healthy !== true || !('backup' in healthBody)) {
   throw new Error('健康接口未返回完整的数据库/磁盘健康状态')
 }
-console.log('ok /api/health payload -> database and disk healthy')
+console.log('ok /api/health payload -> database, disk and backup status present')
 
 const paginatedResponse = await fetch(`${baseUrl}/api/oj/problems?page=1&pageSize=2`)
 if (paginatedResponse.status !== 200) {

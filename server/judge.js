@@ -135,8 +135,9 @@ const runCommand = (cmd, args, options = {}) =>
       return
     }
     const start = process.hrtime.bigint()
-    const timeoutMs = options.timeout ?? TIME_LIMIT_MS
-    const timeLimitSec = Math.ceil(timeoutMs / 1000) + 1 // 沙箱超时比应用超时多 1 秒
+    const timeoutMs = Math.max(1, Math.round(Number(options.timeout ?? TIME_LIMIT_MS)))
+    // sandbox.sh 会把 CPU 兜底上限换算为整秒，并用 GNU timeout 按毫秒执行墙钟限时，
+    // 避免 100～999ms 的测试点被错误放大到 2 秒。
     const cpuTimeMarker = sandboxAvailable && options.sandbox !== false
       ? `__STARSTACK_CPU_${crypto.randomBytes(12).toString('hex')}__`
       : null
@@ -167,7 +168,7 @@ const runCommand = (cmd, args, options = {}) =>
       spawnArgs = [
         SANDBOX_SH,
         options.cwd || '.',
-        String(timeLimitSec),
+        String(timeoutMs),
         String(MEMORY_LIMIT_KB),
         cpuTimeMarker || '-',
         cmd,
@@ -216,7 +217,7 @@ const runCommand = (cmd, args, options = {}) =>
         timedOut: true,
         duration: elapsedWallTime(),
       })
-    }, timeoutMs + 2000) // 比沙箱超时多 2 秒余量
+    }, timeoutMs + 1000) // 给 sandbox wrapper 留出进程回收余量
 
     if (options.input) {
       child.stdin.write(options.input)

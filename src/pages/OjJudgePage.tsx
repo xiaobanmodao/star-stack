@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, type CSSProperties } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
-import { fetchJson, formatTime } from '../utils'
+import { ApiRequestError, fetchJson, formatTime, isPollingPageVisible } from '../utils'
 import type { Achievement, OjSubmission, ProfileStatsResponse, SubmissionResponse } from '../types'
 import { Badge, Button, PageHeader, Panel } from '../components/ui'
 import './OjJudgePage.css'
@@ -177,6 +177,7 @@ export default function OjJudgePage() {
   const streamCompletedRef = useRef(false)
   const streamCompletedSubmissionIdRef = useRef<number | null>(null)
   const streamAbortRef = useRef<AbortController | null>(null)
+  const submissionLoadAbortRef = useRef<AbortController | null>(null)
   const persistedSubmissionIdRef = useRef<number | null>(null)
   const lastPayloadKeyRef = useRef('')
   const previousSubmissionIdRef = useRef(submissionId)
@@ -195,9 +196,12 @@ export default function OjJudgePage() {
   const [cancelling, setCancelling] = useState(false)
 
   const loadSubmission = useCallback(async (idValue: number) => {
+    submissionLoadAbortRef.current?.abort()
+    const controller = new AbortController()
+    submissionLoadAbortRef.current = controller
     setError('')
     try {
-      const { response, data } = await fetchJson<SubmissionResponse>(`/api/oj/submissions/${idValue}`)
+      const { response, data } = await fetchJson<SubmissionResponse>(`/api/oj/submissions/${idValue}`, { signal: controller.signal })
       if (!response.ok) {
         setError(data?.message || '无法加载提交记录')
         setStage('fail')
@@ -234,10 +238,13 @@ export default function OjJudgePage() {
       setError('提交记录不存在')
       setStage('fail')
       setShowResults(true)
-    } catch {
+    } catch (requestError) {
+      if (requestError instanceof ApiRequestError && requestError.code === 'ABORTED') return
       setError('提交记录加载失败，请稍后重试')
       setStage('fail')
       setShowResults(true)
+    } finally {
+      if (submissionLoadAbortRef.current === controller) submissionLoadAbortRef.current = null
     }
   }, [])
 
@@ -479,6 +486,8 @@ export default function OjJudgePage() {
     return () => {
       streamAbortRef.current?.abort()
       streamAbortRef.current = null
+      submissionLoadAbortRef.current?.abort()
+      submissionLoadAbortRef.current = null
     }
   }, [])
 
@@ -548,10 +557,21 @@ export default function OjJudgePage() {
 
   useEffect(() => {
     if (!submissionId || !submission || !['Queued', 'Judging'].includes(submission.status)) return
-    const timer = window.setInterval(() => {
+    const poll = () => {
+      if (!isPollingPageVisible()) return
       void loadSubmission(submissionId)
-    }, 3000)
-    return () => window.clearInterval(timer)
+    }
+    const timer = window.setInterval(poll, 3000)
+    const handleVisibility = () => {
+      if (isPollingPageVisible()) poll()
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', handleVisibility)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', handleVisibility)
+    }
   }, [loadSubmission, submission, submissionId])
 
   useEffect(() => {

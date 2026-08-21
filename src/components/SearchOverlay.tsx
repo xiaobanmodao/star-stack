@@ -48,6 +48,7 @@ export default function SearchOverlay({ open, onClose }: { open: boolean; onClos
   const [searching, setSearching] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const timerRef = useRef<number | null>(null)
+  const requestAbortRef = useRef<AbortController | null>(null)
   const dialogRef = useModalFocus(open, onClose)
 
   useEffect(() => {
@@ -60,6 +61,7 @@ export default function SearchOverlay({ open, onClose }: { open: boolean; onClos
 
   useEffect(() => {
     if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+    requestAbortRef.current?.abort()
     const q = query.trim()
     if (!q) {
       setResults(EMPTY_RESULTS)
@@ -67,16 +69,19 @@ export default function SearchOverlay({ open, onClose }: { open: boolean; onClos
       return
     }
     setSearching(true)
+    const controller = new AbortController()
+    requestAbortRef.current = controller
     timerRef.current = window.setTimeout(async () => {
       try {
         const [problemsRes, postsRes, usersRes, messagesRes] = await Promise.all([
           OJ_ENABLED
-            ? fetchJson<{ problems: OjProblemSummary[] }>(`/api/oj/problems?search=${encodeURIComponent(q)}&pageSize=5`)
+            ? fetchJson<{ problems: OjProblemSummary[] }>(`/api/oj/problems?search=${encodeURIComponent(q)}&pageSize=5`, { signal: controller.signal })
             : Promise.resolve({ response: { ok: false } as Response, data: null }),
-          fetchJson<DiscussionListResponse>(`/api/discussions?search=${encodeURIComponent(q)}&pageSize=5`),
-          fetchJson<{ users: { id: string; name: string; avatar?: string }[] }>(`/api/users/search?q=${encodeURIComponent(q)}`),
-          fetchJson<{ messages: SearchResults['messages'] }>(`/api/chat/search?q=${encodeURIComponent(q)}&limit=5`),
+          fetchJson<DiscussionListResponse>(`/api/discussions?search=${encodeURIComponent(q)}&pageSize=5`, { signal: controller.signal }),
+          fetchJson<{ users: { id: string; name: string; avatar?: string }[] }>(`/api/users/search?q=${encodeURIComponent(q)}`, { signal: controller.signal }),
+          fetchJson<{ messages: SearchResults['messages'] }>(`/api/chat/search?q=${encodeURIComponent(q)}&limit=5`, { signal: controller.signal }),
         ])
+        if (controller.signal.aborted) return
         setResults({
           problems: problemsRes.response.ok && problemsRes.data ? problemsRes.data.problems : [],
           posts: postsRes.response.ok && postsRes.data ? postsRes.data.posts : [],
@@ -84,13 +89,15 @@ export default function SearchOverlay({ open, onClose }: { open: boolean; onClos
           messages: messagesRes.response.ok && messagesRes.data ? messagesRes.data.messages : [],
         })
       } catch {
-        setResults(EMPTY_RESULTS)
+        if (!controller.signal.aborted) setResults(EMPTY_RESULTS)
       } finally {
-        setSearching(false)
+        if (!controller.signal.aborted) setSearching(false)
       }
     }, 300)
     return () => {
       if (timerRef.current !== null) window.clearTimeout(timerRef.current)
+      controller.abort()
+      if (requestAbortRef.current === controller) requestAbortRef.current = null
     }
   }, [query])
 

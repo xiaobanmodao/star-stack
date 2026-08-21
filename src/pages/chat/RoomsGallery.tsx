@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchJson } from '../../utils'
 import { floatRoom } from '../../utils/floatRoom'
@@ -23,16 +23,22 @@ export default function RoomsGallery() {
   const [rooms, setRooms] = useState<ChatRoom[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
+  const requestAbortRef = useRef<AbortController | null>(null)
 
   const loadRooms = useCallback(async () => {
+    requestAbortRef.current?.abort()
+    const controller = new AbortController()
+    requestAbortRef.current = controller
     setLoading(true)
     try {
-      const { response, data } = await fetchJson<ChatRoomsResponse>('/api/chat/rooms')
+      const { response, data } = await fetchJson<ChatRoomsResponse>('/api/chat/rooms', { signal: controller.signal })
+      if (controller.signal.aborted) return
       if (response.ok && data) setRooms(data.rooms)
     } catch {
       // 忽略
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
+      if (requestAbortRef.current === controller) requestAbortRef.current = null
     }
   }, [])
 
@@ -46,6 +52,7 @@ export default function RoomsGallery() {
     return () => {
       window.clearTimeout(timer)
       window.clearInterval(interval)
+      requestAbortRef.current?.abort()
     }
   }, [loadRooms])
 
