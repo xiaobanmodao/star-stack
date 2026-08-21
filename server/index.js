@@ -5,6 +5,7 @@ import { getAuthToken, getUserByToken } from './middleware/auth.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { createRateLimiter } from './middleware/rateLimit.js'
 import { initPush } from './controllers/notificationsController.js'
+import { getDatabaseHealth, getDiskHealth } from './utils/monitoring.js'
 import {
   getJudgeQueueSnapshot,
   recoverPendingSubmissions,
@@ -82,7 +83,16 @@ app.get('/api/health', async (req, res) => {
   try {
     const db = await getDb()
     await db.get('SELECT 1 AS ok')
-    return res.json({ ok: true, service: 'star-stack-api', judge: getJudgeQueueSnapshot() })
+    const [database, disk] = await Promise.all([getDatabaseHealth(db), getDiskHealth()])
+    const judge = getJudgeQueueSnapshot()
+    const healthy = database.healthy && disk.healthy
+    return res.status(healthy ? 200 : 503).json({
+      ok: healthy,
+      service: 'star-stack-api',
+      database,
+      disk,
+      judge,
+    })
   } catch (error) {
     console.error('[health] failed:', error?.message || error)
     return res.status(503).json({ ok: false, message: '服务暂不可用' })
@@ -539,6 +549,30 @@ const scheduleMessageCleanup = () => {
   console.log(`Message retention scheduler initialized (${MESSAGE_RETENTION_DAYS} days)`)
 }
 
+const cleanupOperationalRecords = async () => {
+  try {
+    const db = await getDb()
+    const now = new Date().toISOString()
+    const sessionCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    const clientErrorCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    const auditCutoff = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString()
+    const sessions = await db.run(`DELETE FROM sessions WHERE created_at < ?`, sessionCutoff)
+    const verifications = await db.run(`DELETE FROM email_verifications WHERE expires_at < ?`, now)
+    const clientErrors = await db.run(`DELETE FROM client_errors WHERE created_at < ?`, clientErrorCutoff)
+    const auditLogs = await db.run(`DELETE FROM admin_audit_logs WHERE created_at < ?`, auditCutoff)
+    const removed = (sessions.changes || 0) + (verifications.changes || 0) + (clientErrors.changes || 0) + (auditLogs.changes || 0)
+    if (removed > 0) console.log(`[retention] cleaned sessions=${sessions.changes || 0} verifications=${verifications.changes || 0} clientErrors=${clientErrors.changes || 0} auditLogs=${auditLogs.changes || 0}`)
+  } catch (error) {
+    console.error('[retention] operational cleanup failed:', error)
+  }
+}
+
+const scheduleOperationalCleanup = () => {
+  void cleanupOperationalRecords()
+  setInterval(() => { void cleanupOperationalRecords() }, 6 * 60 * 60 * 1000)
+  console.log('Operational retention scheduler initialized')
+}
+
 app.use(errorHandler)
 
 const PORT = Number(process.env.PORT) || 5174
@@ -552,6 +586,7 @@ initDb()
       scheduleLeaderboardHistory()
       void saveLeaderboardHistory(true)
       scheduleMessageCleanup()
+      scheduleOperationalCleanup()
     })
   })
   .catch((error) => {

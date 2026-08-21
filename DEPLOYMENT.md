@@ -136,7 +136,7 @@ pm2 set pm2-logrotate:compress true
 
 ```bash
 curl -fsS http://127.0.0.1:5174/api/health
-# 预期：{"ok":true}
+# 预期：ok=true，database.integrity 为 ok，disk.healthy 为 true
 pm2 status
 ```
 
@@ -224,6 +224,15 @@ curl -fsS https://xingzhan.cc/api/health
 
 如果本次只修改了前端，可以跳过数据库迁移和后端重启，但仍需执行 `npm run build` 和 `rsync`。
 
+发布前在本地执行质量门禁。先启动一个本地 API（建议使用 5180，避免影响开发服务），再执行 smoke 和健康压力检查：
+
+```bash
+PORT=5180 NODE_ENV=test node server/index.js
+RELEASE_BASE_URL=http://127.0.0.1:5180 npm run test:release
+```
+
+需要包含浏览器浅色/深色审计时，再追加 `RELEASE_RUN_AUDIT=1`。发布检查失败时停止部署，不要用跳过参数掩盖失败。
+
 ## 4. 数据库备份与恢复
 
 ### 手动备份
@@ -238,6 +247,17 @@ cd /opt/star-stack
 ```bash
 BACKUP_DIR=/srv/backups/starstack KEEP_DAYS=30 ./backup.sh
 ```
+
+### 验证备份可恢复
+
+备份完成后建议在临时目录解压并执行 SQLite 完整性检查，不会覆盖当前生产数据库：
+
+```bash
+cd /opt/star-stack
+BACKUP_FILE=/www/backup/starstack/starstack_YYYYMMDD_HHMMSS.db.gz npm run db:verify-backup
+```
+
+命令会检查 `integrity_check`、核心数据表以及用户、题目、提交记录数量；验证失败时不要删除当前数据库，先保留备份并检查磁盘与 SQLite 锁状态。
 
 ### 安装每日备份
 
@@ -278,6 +298,8 @@ node server/diagnose.js
 ```
 
 健康接口中的 `judge` 字段会返回当前评测 worker、等待队列和运行沙箱数量。提交记录先以 `Queued` 写入数据库，再进入评测；服务重启时会自动恢复仍未结束的已发布题目提交，避免用户刷新页面后丢失状态。
+
+健康接口同时返回 SQLite 完整性和数据库所在磁盘空间。管理员后台“站点看板”会显示前端错误数量、磁盘可用空间和数据库完整性；会话、过期验证码、前端错误和过期审计记录由后端定期清理，消息仍按 90 天策略清理。
 
 管理员后台的“站点看板”还会显示进程内存、评测/运行队列、数据库规模和最近备份状态。备份超过 26 小时未更新时会标记为“需检查”。`JUDGE_MEMORY_LIMIT_KB` 可在 65536～524288 之间调整评测内存上限，默认 262144（256MB）；编译和运行均经过沙箱，沙箱同时限制虚拟内存、CPU 时间、进程数、文件大小和网络访问。生产主机若不具备 namespace 能力，服务会拒绝执行用户代码。
 

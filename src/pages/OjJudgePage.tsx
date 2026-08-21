@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, type CSSProperties } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
-import { fetchJson } from '../utils'
+import { fetchJson, formatTime } from '../utils'
 import type { Achievement, OjSubmission, ProfileStatsResponse, SubmissionResponse } from '../types'
 import { Badge, Button, PageHeader, Panel } from '../components/ui'
 import './OjJudgePage.css'
@@ -34,6 +34,28 @@ type JudgeStatusMeta = {
 
 const getAchievementDescription = (achievement: Achievement) =>
   achievement.description || achievement.desc || ''
+
+const JudgeTimeline = ({ submission, stage }: { submission: OjSubmission | null; stage: JudgeStage }) => {
+  const points = [
+    { key: 'queued', label: '已提交', time: submission?.createdAt, active: Boolean(submission || stage === 'running') },
+    { key: 'running', label: submission?.startedAt ? '开始评测' : '等待评测', time: submission?.startedAt, active: stage === 'running' || Boolean(submission?.startedAt) },
+    { key: 'finished', label: submission?.finishedAt ? '评测完成' : '等待结果', time: submission?.finishedAt, active: Boolean(submission?.finishedAt) },
+  ]
+  return (
+    <div className="judge-timeline" aria-label="评测时间线">
+      {points.map((point, index) => (
+        <div key={point.key} className={`judge-timeline-item ${point.active ? 'active' : ''}`}>
+          <span className="judge-timeline-dot" aria-hidden="true" />
+          <div>
+            <strong>{point.label}</strong>
+            <time dateTime={point.time || undefined}>{point.time ? formatTime(point.time) : '进行中'}</time>
+          </div>
+          {index < points.length - 1 && <span className="judge-timeline-line" aria-hidden="true" />}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 const getJudgeStatusMeta = (status: string | undefined, stage: JudgeStage): JudgeStatusMeta => {
   if (stage === 'running' || status === 'Queued' || status === 'Judging') {
@@ -255,6 +277,7 @@ export default function OjJudgePage() {
     try {
       const { response: resp, data: typedError } = await fetchJson<{
         message?: string
+        submissionId?: number
         activeJudges?: number
         queuedJudges?: number
         maxActiveJudges?: number
@@ -272,6 +295,13 @@ export default function OjJudgePage() {
       })
 
       if (!resp.ok) {
+        if (typedError?.submissionId) {
+          submitRef.current = false
+          streamCompletedRef.current = false
+          setError('相同代码已经在评测中，正在打开已有提交记录')
+          navigate(`/oj/judge/${typedError.submissionId}`, { replace: true })
+          return
+        }
         const queueHint = resp.status === 503 && typedError?.activeJudges !== undefined && typedError.maxActiveJudges !== undefined
           ? `（运行中 ${typedError.activeJudges}/${typedError.maxActiveJudges}，排队中 ${typedError.queuedJudges ?? 0}/${typedError.maxQueuedJudges ?? '--'}）`
           : ''
@@ -354,7 +384,15 @@ export default function OjJudgePage() {
         if (streamError) break
       }
 
-      if (streamError) return
+      if (streamError) {
+        if (persistedSubmissionIdRef.current) {
+          const pendingId = persistedSubmissionIdRef.current
+          submitRef.current = false
+          navigate(`/oj/judge/${pendingId}`, { replace: true })
+          setError('评测连接返回异常，正在通过提交记录继续跟踪状态')
+        }
+        return
+      }
       if (!doneSubmission) {
         if (persistedSubmissionIdRef.current) {
           const pendingId = persistedSubmissionIdRef.current
@@ -377,6 +415,13 @@ export default function OjJudgePage() {
       setTimeout(() => { setShowResults(true) }, 1100)
     } catch {
       if (abortController.signal.aborted) return
+      if (persistedSubmissionIdRef.current) {
+        const pendingId = persistedSubmissionIdRef.current
+        submitRef.current = false
+        navigate(`/oj/judge/${pendingId}`, { replace: true })
+        setError('评测连接已中断，正在通过提交记录继续跟踪状态')
+        return
+      }
       setError('评测请求失败')
       setStage('fail')
       setShowResults(true)
@@ -720,6 +765,17 @@ export default function OjJudgePage() {
             </div>
           )}
         </div>
+      </Panel>
+
+      <Panel className="judge-timeline-panel">
+        <div className="judge-panel-head">
+          <div>
+            <div className="judge-panel-kicker">Timeline</div>
+            <h3>评测时间线</h3>
+          </div>
+          {submission?.attempts ? <span>第 {submission.attempts} 次评测尝试</span> : null}
+        </div>
+        <JudgeTimeline submission={submission} stage={stage} />
       </Panel>
 
       {showResults && stage !== 'success' && firstFailedCase && (

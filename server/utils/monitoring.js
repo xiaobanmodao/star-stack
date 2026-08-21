@@ -3,6 +3,9 @@ import path from 'node:path'
 
 const DEFAULT_BACKUP_DIR = '/www/backup/starstack'
 const BACKUP_MAX_AGE_SECONDS = 26 * 60 * 60
+const DEFAULT_DB_PATH = path.resolve(process.env.DB_PATH || path.join(process.cwd(), 'server', 'data', 'starstack.sqlite'))
+const DATABASE_HEALTH_CACHE_MS = 60 * 1000
+const databaseHealthCache = new WeakMap()
 
 export const formatBytes = (value) => {
   const bytes = Number(value) || 0
@@ -37,14 +40,58 @@ export const getBackupHealth = async (backupDir = process.env.BACKUP_DIR || DEFA
   }
 }
 
+const formatPercent = (value) => `${Math.round(Math.max(0, Math.min(100, value)))}%`
+
+export const getDiskHealth = async (targetPath = process.env.DISK_CHECK_PATH || path.dirname(DEFAULT_DB_PATH)) => {
+  try {
+    if (typeof fs.statfs !== 'function') return { path: targetPath, available: false, healthy: true }
+    const stats = await fs.statfs(targetPath)
+    const blockSize = Number(stats.bsize || stats.frsize || 0)
+    const totalBytes = Number(stats.blocks || 0) * blockSize
+    const freeBytes = Number(stats.bavail || stats.bfree || 0) * blockSize
+    const usedPercent = totalBytes > 0 ? ((totalBytes - freeBytes) / totalBytes) * 100 : 0
+    return {
+      path: targetPath,
+      available: true,
+      totalBytes,
+      freeBytes,
+      total: formatBytes(totalBytes),
+      free: formatBytes(freeBytes),
+      usedPercent: formatPercent(usedPercent),
+      healthy: usedPercent < 90,
+    }
+  } catch {
+    return { path: targetPath, available: false, healthy: false }
+  }
+}
+
+export const getDatabaseHealth = async (db) => {
+  const cached = databaseHealthCache.get(db)
+  if (cached && Date.now() - cached.checkedAt < DATABASE_HEALTH_CACHE_MS) return cached.value
+  try {
+    const result = await db.get('PRAGMA integrity_check')
+    const integrity = String(result?.integrity_check || '').toLowerCase()
+    const value = { integrity: integrity || 'unknown', healthy: integrity === 'ok' }
+    databaseHealthCache.set(db, { checkedAt: Date.now(), value })
+    return value
+  } catch {
+    const value = { integrity: 'unavailable', healthy: false }
+    databaseHealthCache.set(db, { checkedAt: Date.now(), value })
+    return value
+  }
+}
+
 export const collectSystemMetrics = async ({ db, judge }) => {
-  const [submissionStatus, users, problems, revisions, history, backup] = await Promise.all([
+  const [submissionStatus, users, problems, revisions, history, backup, disk, database, clientErrors] = await Promise.all([
     db.all(`SELECT status, COUNT(*) AS count FROM submissions GROUP BY status`),
     db.get(`SELECT COUNT(*) AS count FROM users`),
     db.get(`SELECT COUNT(*) AS count FROM problems`),
     db.get(`SELECT COUNT(*) AS count FROM problem_revisions`),
     db.get(`SELECT COUNT(*) AS count FROM problem_status_history`),
     getBackupHealth(),
+    getDiskHealth(),
+    getDatabaseHealth(db),
+    db.get(`SELECT COUNT(*) AS count FROM client_errors WHERE created_at >= ?`, new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()),
   ])
   const memory = process.memoryUsage()
   return {
@@ -61,9 +108,12 @@ export const collectSystemMetrics = async ({ db, judge }) => {
       revisions: revisions?.count || 0,
       statusHistory: history?.count || 0,
       submissions: Object.fromEntries(submissionStatus.map((row) => [row.status, row.count])),
+      ...database,
     },
     judge,
     backup,
+    disk,
+    clientErrors24h: clientErrors?.count || 0,
   }
 }
 

@@ -149,6 +149,12 @@ export type AuthResponse = {
   captchaRequired?: boolean
 }
 
+export type AuthSession = {
+  id: string
+  createdAt: string
+  current: boolean
+}
+
 export type UserResponse = {
   user: UserRecord
   message?: string
@@ -535,6 +541,20 @@ export type AdminAuditLog = {
   createdAt: string
 }
 
+export type AdminClientError = {
+  id: number
+  userId?: string | null
+  userName?: string | null
+  message: string
+  source?: string | null
+  line?: number | null
+  column?: number | null
+  stack?: string | null
+  url?: string | null
+  userAgent?: string | null
+  createdAt: string
+}
+
 export type AdminStatsResponse = {
   stats: {
     users: number
@@ -561,6 +581,8 @@ export type AdminMetricsResponse = {
       revisions: number
       statusHistory: number
       submissions: Record<string, number>
+      integrity: string
+      healthy: boolean
     }
     judge: {
       activeJudges: number
@@ -578,6 +600,14 @@ export type AdminMetricsResponse = {
       healthy: boolean
       retentionCount: number
     }
+    disk: {
+      path: string
+      total?: string
+      free?: string
+      usedPercent?: string
+      healthy: boolean
+    }
+    clientErrors24h: number
   }
 }
 

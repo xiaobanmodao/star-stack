@@ -19,6 +19,7 @@ import {
   deleteAdminDiscussion,
   deleteAdminComment,
   listAdminAuditLogs,
+  listAdminClientErrors,
 } from '../controllers/adminController.js'
 import { requireAdminMiddleware } from '../middleware/auth.js'
 
@@ -57,5 +58,6 @@ router.delete('/discussions/comments/:id', deleteAdminComment)
 
 // Audit log
 router.get('/audit-logs', listAdminAuditLogs)
+router.get('/client-errors', listAdminClientErrors)
 
 export default router

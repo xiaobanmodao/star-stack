@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs'
-import { randomBytes } from 'crypto'
+import { createHash, randomBytes } from 'crypto'
 import { getDb } from '../db.js'
 import { getAuthToken, getUserByToken, requireUser } from '../middleware/auth.js'
 import { serializeUser } from '../utils/userHelpers.js'
@@ -19,6 +19,7 @@ import {
 } from '../utils/emailVerification.js'
 
 const createToken = () => randomBytes(24).toString('hex')
+export const getSessionFingerprint = (token) => createHash('sha256').update(String(token)).digest('hex').slice(0, 16)
 const emailCodeIpLimits = new Map()
 const EMAIL_CODE_IP_WINDOW_MS = 60 * 60 * 1000
 const EMAIL_CODE_IP_MAX_REQUESTS = 10
@@ -366,6 +367,49 @@ export const logout = async (req, res) => {
   return res.status(204).end()
 }
 
+export const listSessions = async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const token = getAuthToken(req)
+  const rows = await auth.db.all(
+    `SELECT token, created_at FROM sessions WHERE user_id = ? ORDER BY created_at DESC`,
+    auth.user.id,
+  )
+  return res.json({
+    sessions: rows.map((row) => ({
+      id: getSessionFingerprint(row.token),
+      createdAt: row.created_at,
+      current: row.token === token,
+    })),
+  })
+}
+
+export const revokeOtherSessions = async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const token = getAuthToken(req)
+  const result = await auth.db.run(
+    `DELETE FROM sessions WHERE user_id = ? AND token != ?`,
+    auth.user.id,
+    token,
+  )
+  return res.json({ ok: true, revoked: result.changes || 0 })
+}
+
+export const revokeSession = async (req, res) => {
+  const auth = await requireUser(req, res)
+  if (!auth) return
+  const token = getAuthToken(req)
+  const sessionId = String(req.params.id || '')
+  if (!/^[a-f0-9]{16}$/.test(sessionId)) return res.status(400).json({ message: '无效的会话编号' })
+  const rows = await auth.db.all(`SELECT token FROM sessions WHERE user_id = ?`, auth.user.id)
+  const target = rows.find((row) => getSessionFingerprint(row.token) === sessionId)
+  if (!target) return res.status(404).json({ message: '会话不存在或已经失效' })
+  if (target.token === token) return res.status(400).json({ message: '当前会话请使用退出登录' })
+  await auth.db.run(`DELETE FROM sessions WHERE token = ? AND user_id = ?`, target.token, auth.user.id)
+  return res.json({ ok: true })
+}
+
 export const updateName = async (req, res) => {
   const token = getAuthToken(req)
   if (!token) {
@@ -416,7 +460,9 @@ export const updatePassword = async (req, res) => {
   }
   const passwordHash = await bcrypt.hash(newPassword, 10)
   await db.run(`UPDATE users SET password_hash = ? WHERE id = ?`, passwordHash, user.id)
-  return res.json({ ok: true })
+  // 密码变更后注销其他设备，当前会话保持有效，避免旧 Token 继续可用。
+  await db.run(`DELETE FROM sessions WHERE user_id = ? AND token != ?`, user.id, token)
+  return res.json({ ok: true, revokedOtherSessions: true })
 }
 
 export const updateAvatar = async (req, res) => {

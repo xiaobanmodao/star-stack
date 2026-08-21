@@ -5,7 +5,10 @@ const checks = [
   ['GET', '/api/health', 200],
   ['GET', '/api/oj/problems', 200],
   ['GET', '/api/admin/metrics', 401],
+  ['GET', '/api/admin/client-errors', 401],
   ['GET', '/api/me/export', 404],
+  ['GET', '/api/me/sessions', 401],
+  ['POST', '/api/me/sessions/revoke-others', 401],
   ['POST', '/api/oj/submissions/1/cancel', 401],
 ]
 
@@ -16,6 +19,13 @@ for (const [method, path, expected] of checks) {
   }
   console.log(`ok ${path} -> ${response.status}`)
 }
+
+const healthResponse = await fetch(`${baseUrl}/api/health`)
+const healthBody = await healthResponse.json()
+if (healthResponse.status !== 200 || healthBody.ok !== true || healthBody.database?.integrity !== 'ok' || healthBody.disk?.healthy !== true) {
+  throw new Error('健康接口未返回完整的数据库/磁盘健康状态')
+}
+console.log('ok /api/health payload -> database and disk healthy')
 
 const paginatedResponse = await fetch(`${baseUrl}/api/oj/problems?page=1&pageSize=2`)
 if (paginatedResponse.status !== 200) {

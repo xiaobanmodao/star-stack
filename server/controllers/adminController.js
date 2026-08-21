@@ -28,8 +28,10 @@ export const listAdminUsers = async (req, res) => {
   const auth = await requireAdmin(req, res)
   if (!auth) return
   const { db } = auth
+  const limit = Math.min(500, Math.max(1, parsePositiveInteger(req.query.limit) || 200))
   const users = await db.all(
-    `SELECT id, name, email, is_admin, is_banned, created_at FROM users ORDER BY created_at DESC`
+    `SELECT id, name, email, is_admin, is_banned, created_at FROM users ORDER BY created_at DESC LIMIT ?`,
+    limit,
   )
   return res.json({
     users: users.map((item) => ({
@@ -595,5 +597,38 @@ export const listAdminAuditLogs = async (req, res) => {
   } catch (error) {
     console.error('Failed to list admin audit logs:', error)
     return res.status(500).json({ message: '获取操作日志失败' })
+  }
+}
+
+export const listAdminClientErrors = async (req, res) => {
+  const auth = await requireAdmin(req, res)
+  if (!auth) return
+  try {
+    const limit = Math.min(200, Math.max(1, parsePositiveInteger(req.query.limit) || 100))
+    const rows = await auth.db.all(
+      `SELECT ce.id, ce.user_id, u.name AS user_name, ce.message, ce.source, ce.line, ce.column,
+              ce.stack, ce.url, ce.user_agent, ce.created_at
+       FROM client_errors ce LEFT JOIN users u ON u.id = ce.user_id
+       ORDER BY ce.created_at DESC, ce.id DESC LIMIT ?`,
+      limit,
+    )
+    return res.json({
+      errors: rows.map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        userName: row.user_name,
+        message: row.message,
+        source: row.source,
+        line: row.line,
+        column: row.column,
+        stack: row.stack,
+        url: row.url,
+        userAgent: row.user_agent,
+        createdAt: row.created_at,
+      })),
+    })
+  } catch (error) {
+    console.error('Failed to list client errors:', error)
+    return res.status(500).json({ message: '获取前端错误记录失败' })
   }
 }

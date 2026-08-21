@@ -74,6 +74,69 @@
   padding: 6px;
 }
 
+.judge-timeline-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.judge-timeline {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.judge-timeline-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  color: var(--ss-color-text-subtle);
+}
+
+.judge-timeline-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  margin-top: 4px;
+  border: 2px solid var(--ss-color-border-strong);
+  border-radius: 50%;
+  background: var(--ss-bg-panel);
+}
+
+.judge-timeline-item.active .judge-timeline-dot {
+  border-color: var(--ss-color-accent);
+  background: var(--ss-color-accent);
+  box-shadow: 0 0 0 4px var(--ss-accent-bg);
+}
+
+.judge-timeline-item > div {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 3px;
+}
+
+.judge-timeline-item strong {
+  color: var(--ss-color-text);
+  font-size: 13px;
+}
+
+.judge-timeline-item time {
+  font-size: 11px;
+}
+
+.judge-timeline-line {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  z-index: 0;
+  width: calc(100% - 2px);
+  height: 1px;
+  transform: translateX(8px);
+  background: var(--ss-color-border);
+}
+
 .judge-overview-main .ui-badge {
   justify-self: start;
 }
@@ -389,6 +452,19 @@
   .judge-live-progress,
   .judge-first-fail-panel {
     padding: 12px !important;
+  }
+
+  .judge-timeline {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .judge-timeline-line {
+    top: 14px;
+    left: 4px;
+    width: 1px;
+    height: calc(100% + 10px);
+    transform: translateY(8px);
   }
 
   .judge-results-panel .submit-results-grid {

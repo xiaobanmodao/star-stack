@@ -7,6 +7,9 @@ import {
   login,
   getMe,
   logout,
+  listSessions,
+  revokeOtherSessions,
+  revokeSession,
   updateName,
   updatePassword,
   updateAvatar,
@@ -25,6 +28,9 @@ router.patch('/me/email', updateEmail)
 router.post('/login', loginLimiter, login)
 router.get('/me', getMe)
 router.post('/logout', logout)
+router.get('/me/sessions', listSessions)
+router.post('/me/sessions/revoke-others', revokeOtherSessions)
+router.delete('/me/sessions/:id', revokeSession)
 router.patch('/me/name', updateName)
 router.post('/me/password', updatePassword)
 router.post('/me/avatar', updateAvatar)

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
-import type { ApiResponse, UserResponse } from '../types'
+import type { ApiResponse, AuthSession, UserResponse } from '../types'
 import { fetchJson } from '../utils'
 import { Button, PageHeader, Panel } from '../components/ui'
 import './ProfileEditPage.css'
@@ -21,6 +21,12 @@ export default function ProfileEditPage() {
   const [emailSaving, setEmailSaving] = useState(false)
   const [emailCooldown, setEmailCooldown] = useState(0)
   const [uploading, setUploading] = useState(false)
+  const [sessions, setSessions] = useState<AuthSession[]>([])
+  const [sessionActionBusy, setSessionActionBusy] = useState('')
+  const [oldPassword, setOldPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordSaving, setPasswordSaving] = useState(false)
   const [editError, setEditError] = useState('')
   const [editSuccess, setEditSuccess] = useState('')
 
@@ -31,6 +37,15 @@ export default function ProfileEditPage() {
     }, 1000)
     return () => window.clearInterval(timer)
   }, [emailCooldown])
+
+  useEffect(() => {
+    if (!currentUser) return
+    let cancelled = false
+    void fetchJson<{ sessions: AuthSession[] }>('/api/me/sessions').then(({ response, data }) => {
+      if (!cancelled && response.ok) setSessions(data?.sessions || [])
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [currentUser])
 
   if (!currentUser) return <Navigate to="/auth" replace />
 
@@ -169,6 +184,64 @@ export default function ProfileEditPage() {
     reader.readAsDataURL(file)
   }
 
+  const handleRevokeOtherSessions = async () => {
+    if (sessionActionBusy || !sessions.some((session) => !session.current)) return
+    setSessionActionBusy('others')
+    setEditError('')
+    const { response, data } = await fetchJson<ApiResponse<{ revoked?: number }>>('/api/me/sessions/revoke-others', { method: 'POST' })
+    setSessionActionBusy('')
+    if (!response.ok) {
+      setEditError(data?.message || '其他会话注销失败，请重试。')
+      return
+    }
+    setSessions((current) => current.filter((session) => session.current))
+    setEditSuccess(`已注销 ${data?.revoked || 0} 个其他登录会话。`)
+  }
+
+  const handleRevokeSession = async (session: AuthSession) => {
+    if (session.current || sessionActionBusy) return
+    setSessionActionBusy(session.id)
+    setEditError('')
+    const { response, data } = await fetchJson<ApiResponse>(`/api/me/sessions/${session.id}`, { method: 'DELETE' })
+    setSessionActionBusy('')
+    if (!response.ok) {
+      setEditError(data?.message || '会话注销失败，请重试。')
+      return
+    }
+    setSessions((current) => current.filter((item) => item.id !== session.id))
+    setEditSuccess('已注销选中的登录会话。')
+  }
+
+  const handleSavePassword = async () => {
+    if (!oldPassword || newPassword.length < 6) {
+      setEditError('请填写旧密码，新密码至少 6 位。')
+      setEditSuccess('')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setEditError('两次新密码不一致。')
+      setEditSuccess('')
+      return
+    }
+    setPasswordSaving(true)
+    setEditError('')
+    setEditSuccess('')
+    const { response, data } = await fetchJson<ApiResponse>('/api/me/password', {
+      method: 'POST',
+      body: JSON.stringify({ oldPassword, newPassword }),
+    })
+    setPasswordSaving(false)
+    if (!response.ok) {
+      setEditError(data?.message || '密码修改失败，请重试。')
+      return
+    }
+    setOldPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
+    setEditSuccess('密码已更新，其他登录设备已注销。')
+    setSessions((current) => current.filter((session) => session.current))
+  }
+
   return (
     <div className="profile-edit-page">
       <PageHeader
@@ -264,6 +337,59 @@ export default function ProfileEditPage() {
             <Button variant="primary" onClick={handleSaveEmail} loading={emailSaving}>
               确认换绑
             </Button>
+          </div>
+        </section>
+
+        <section className="profile-edit-section profile-edit-sessions-section">
+          <div className="profile-edit-section-copy">
+            <h2>登录会话</h2>
+            <p>查看当前账号的登录记录。发现异常设备时，可以立即注销其他会话。</p>
+          </div>
+          <div className="profile-edit-sessions-content">
+            <div className="profile-edit-sessions-head">
+              <span>{sessions.length || 0} 个会话</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void handleRevokeOtherSessions()}
+                loading={sessionActionBusy === 'others'}
+                disabled={!sessions.some((session) => !session.current)}
+              >
+                注销其他会话
+              </Button>
+            </div>
+            <div className="profile-edit-sessions-list">
+              {sessions.length === 0 ? (
+                <span className="profile-edit-session-empty">暂时无法读取会话信息</span>
+              ) : sessions.map((session) => (
+                <div className="profile-edit-session-item" key={session.id}>
+                  <div>
+                    <strong>{session.current ? '当前设备' : '其他登录设备'}</strong>
+                    <time dateTime={session.createdAt}>登录于 {new Date(session.createdAt).toLocaleString('zh-CN')}</time>
+                  </div>
+                  {session.current ? (
+                    <span className="profile-edit-session-current">当前使用中</span>
+                  ) : (
+                    <Button variant="ghost" size="sm" onClick={() => void handleRevokeSession(session)} loading={sessionActionBusy === session.id}>
+                      注销
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="profile-edit-section profile-edit-password-section">
+          <div className="profile-edit-section-copy">
+            <h2>修改密码</h2>
+            <p>修改后会自动注销其他设备上的登录会话。</p>
+          </div>
+          <div className="profile-edit-password-form">
+            <input className="auth-input" type="password" value={oldPassword} onChange={(event) => setOldPassword(event.target.value)} placeholder="当前密码" autoComplete="current-password" aria-label="当前密码" />
+            <input className="auth-input" type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="新密码（至少 6 位）" autoComplete="new-password" aria-label="新密码" />
+            <input className="auth-input" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="确认新密码" autoComplete="new-password" aria-label="确认新密码" />
+            <Button variant="ghost" onClick={() => void handleSavePassword()} loading={passwordSaving}>保存密码</Button>
           </div>
         </section>
 

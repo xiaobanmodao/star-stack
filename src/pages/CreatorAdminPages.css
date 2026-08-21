@@ -742,6 +742,53 @@
   overflow-wrap: anywhere;
 }
 
+.admin-console-v2 .admin-subsection-head {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ss-color-border);
+}
+
+.admin-console-v2 .admin-client-error-list {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-console-v2 .admin-client-error-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-bg-input);
+}
+
+.admin-console-v2 .admin-client-error-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-console-v2 .admin-client-error-head strong {
+  min-width: 0;
+  color: var(--ss-color-danger);
+  overflow-wrap: anywhere;
+}
+
+.admin-console-v2 .admin-client-error-item > span,
+.admin-console-v2 .admin-client-error-item time {
+  color: var(--ss-color-text-subtle);
+  font-size: 12px;
+}
+
+.admin-console-v2 .admin-client-error-item code {
+  max-height: 100px;
+  overflow: auto;
+  color: var(--ss-color-text-subtle);
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 680px) {
   .admin-console-v2 .admin-filter-row {
     align-items: stretch;

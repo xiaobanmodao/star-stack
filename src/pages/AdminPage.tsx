@@ -4,7 +4,7 @@ import { useAppContext } from '../context/AppContext'
 import { useToast } from '../components/ui/ToastContext'
 import { Badge, Button, EmptyState, ErrorState, LoadingState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
-import type { AdminAuditLog, AdminMetricsResponse, AdminProblem, AdminReport, AdminStatsResponse, UserRecord, ApiResponse } from '../types'
+import type { AdminAuditLog, AdminClientError, AdminMetricsResponse, AdminProblem, AdminReport, AdminStatsResponse, UserRecord, ApiResponse } from '../types'
 import './CreatorAdminPages.css'
 
 export default function AdminPage() {
@@ -36,7 +36,7 @@ export default function AdminPage() {
     setAdminLoading(true)
     setAdminError('')
     try {
-      const { response, data } = await fetchJson<{ users: UserRecord[]; message?: string }>('/api/admin/users')
+      const { response, data } = await fetchJson<{ users: UserRecord[]; message?: string }>('/api/admin/users?limit=200')
       if (!response.ok) {
         setAdminError(data?.message || '无法加载用户')
         return
@@ -778,6 +778,7 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
 
 function AdminAuditLogsSection() {
   const [logs, setLogs] = useState<AdminAuditLog[]>([])
+  const [clientErrors, setClientErrors] = useState<AdminClientError[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -785,12 +786,16 @@ function AdminAuditLogsSection() {
     setLoading(true)
     setError('')
     try {
-      const { response, data } = await fetchJson<{ logs: AdminAuditLog[]; message?: string }>('/api/admin/audit-logs?limit=100')
-      if (!response.ok) {
-        setError(data?.message || '操作日志加载失败')
+      const [logsResult, errorsResult] = await Promise.all([
+        fetchJson<{ logs: AdminAuditLog[]; message?: string }>('/api/admin/audit-logs?limit=100'),
+        fetchJson<{ errors: AdminClientError[]; message?: string }>('/api/admin/client-errors?limit=100'),
+      ])
+      if (!logsResult.response.ok) {
+        setError(logsResult.data?.message || '操作日志加载失败')
         return
       }
-      setLogs(data?.logs || [])
+      setLogs(logsResult.data?.logs || [])
+      if (errorsResult.response.ok) setClientErrors(errorsResult.data?.errors || [])
     } catch {
       setError('网络异常，暂时无法加载操作日志')
     } finally {
@@ -828,6 +833,29 @@ function AdminAuditLogsSection() {
               </div>
               <time dateTime={log.createdAt}>{new Date(log.createdAt).toLocaleString('zh-CN')}</time>
               {log.detail && <code>{log.detail}</code>}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="admin-list-header admin-subsection-head">
+        <div>
+          <Badge tone={clientErrors.length > 0 ? 'warning' : 'success'}>Frontend Errors</Badge>
+          <strong>前端错误记录</strong>
+        </div>
+        <span>最近 {clientErrors.length} 条</span>
+      </div>
+      {clientErrors.length === 0 ? (
+        <EmptyState title="暂无前端错误" description="页面运行时错误会自动上报到这里，便于定位白屏和异常交互。" />
+      ) : (
+        <div className="admin-client-error-list">
+          {clientErrors.map((item) => (
+            <div className="admin-client-error-item" key={item.id}>
+              <div className="admin-client-error-head">
+                <strong>{item.message}</strong>
+                <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString('zh-CN')}</time>
+              </div>
+              <span>{item.userName || item.userId || '未登录用户'} · {item.url || '未知页面'}</span>
+              {item.stack && <code>{item.stack.slice(0, 800)}</code>}
             </div>
           ))}
         </div>
@@ -1084,8 +1112,13 @@ function AdminStatsSection() {
               </Panel>
               <Panel className="admin-system-metric-card">
                 <span>数据库</span>
-                <strong>{metrics.database.submissions.Accepted || 0} AC</strong>
-                <small>{metrics.database.users} 用户 · {metrics.database.problems} 题目</small>
+                <strong>{metrics.database.healthy ? '正常' : '需检查'}</strong>
+                <small>{metrics.database.users} 用户 · {metrics.database.problems} 题目 · {metrics.database.integrity}</small>
+              </Panel>
+              <Panel className={`admin-system-metric-card ${metrics.disk.healthy ? 'healthy' : 'unhealthy'}`}>
+                <span>磁盘空间</span>
+                <strong>{metrics.disk.healthy ? metrics.disk.usedPercent || '正常' : '需检查'}</strong>
+                <small>{metrics.disk.free || '不可用'} 可用 · 近 24h 前端错误 {metrics.clientErrors24h}</small>
               </Panel>
               <Panel className={`admin-system-metric-card ${metrics.backup.healthy ? 'healthy' : 'unhealthy'}`}>
                 <span>数据库备份</span>

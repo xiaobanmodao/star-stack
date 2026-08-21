@@ -53,6 +53,12 @@ const registerPersistedJudgeTask = (submissionId, task) => {
   )
 }
 
+const getLiveQueuePosition = (submissionId, status, fallback) => {
+  if (status !== 'Queued') return null
+  const task = persistedJudgeTasks.get(Number(submissionId))
+  return task?.getPosition?.() || fallback || null
+}
+
 const beginSandboxRun = (userId, res) => {
   if (runRateLimits.has(userId)) {
     res.setHeader('Retry-After', '1')
@@ -216,6 +222,7 @@ export const getSubmission = async (req, res) => {
   if (!row) return res.status(404).json({ message: '提交不存在' })
 
   const canViewCode = row.user_id === user.id
+  const liveQueuePosition = getLiveQueuePosition(row.id, row.status, row.queue_position)
   return res.json({
     submission: {
       id: row.id, problemId: row.problem_id, problemTitle: row.problem_title,
@@ -224,7 +231,7 @@ export const getSubmission = async (req, res) => {
       message: canViewCode ? row.message : null, score: row.score ?? 0,
       code: canViewCode ? row.code : null, canViewCode,
       results: canViewCode ? parseResults(row.results_json) : [],
-      createdAt: row.created_at, queuePosition: row.queue_position,
+      createdAt: row.created_at, queuePosition: liveQueuePosition,
       startedAt: row.started_at, finishedAt: row.finished_at,
       attempts: row.attempts || 0, updatedAt: row.updated_at,
     },
@@ -300,6 +307,19 @@ const _saveSubmission = async (db, { submissionId, problemId, userId, language, 
 const _loadSubmissionTestcases = async (db, problemId) => db.all(
   `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? ORDER BY id ASC`,
   problemId,
+)
+
+const _findActiveDuplicate = async (db, { userId, problemId, language, code }) => db.get(
+  `SELECT id, status, queue_position
+   FROM submissions
+   WHERE user_id = ? AND problem_id = ? AND language = ? AND code = ?
+     AND status IN ('Queued', 'Judging') AND created_at >= ?
+   ORDER BY id DESC LIMIT 1`,
+  userId,
+  problemId,
+  language,
+  code,
+  new Date(Date.now() - 10 * 60 * 1000).toISOString(),
 )
 
 const _enqueuePersistedSubmission = (db, { submissionId, problemId, userId, language, code, testcases, onStart, onTestCase }) => {
@@ -431,6 +451,21 @@ export const submitSolution = async (req, res) => {
   )
   if (testcases.length === 0) return res.status(400).json({ message: '该题暂无测试用例' })
 
+  const duplicate = await _findActiveDuplicate(db, {
+    userId: user.id,
+    problemId: Number(problemId),
+    language,
+    code: String(code),
+  })
+  if (duplicate) {
+    return res.status(409).json({
+      message: '相同代码已经在评测中，正在使用已有提交记录',
+      submissionId: duplicate.id,
+      status: duplicate.status,
+      queuePosition: duplicate.queue_position,
+    })
+  }
+
   if (judgeRateLimits.has(user.id)) {
     res.setHeader('Retry-After', '10')
     return res.status(429).json({ message: '提交过于频繁，请稍后再试' })
@@ -497,6 +532,21 @@ export const streamSubmission = async (req, res) => {
   )
   if (testcases.length === 0) return res.status(400).json({ message: '该题暂无测试用例' })
 
+  const duplicate = await _findActiveDuplicate(db, {
+    userId: user.id,
+    problemId: Number(problemId),
+    language,
+    code: String(code),
+  })
+  if (duplicate) {
+    return res.status(409).json({
+      message: '相同代码已经在评测中，正在使用已有提交记录',
+      submissionId: duplicate.id,
+      status: duplicate.status,
+      queuePosition: duplicate.queue_position,
+    })
+  }
+
   if (judgeRateLimits.has(user.id)) {
     res.setHeader('Retry-After', '10')
     return res.status(429).json({ message: '提交过于频繁，请稍后再试' })
@@ -525,8 +575,8 @@ export const streamSubmission = async (req, res) => {
   let queuedSubmission
   req.on('close', () => {
     closed = true
-    // 仅取消还未开始的任务；运行中的评测由沙箱自身超时与回收，避免残留孤儿进程。
-    judgeTask?.cancel()
+    // SSE 断开不代表用户取消评测：网络切换、页面刷新和反向代理都可能触发 close。
+    // 评测任务已持久化，客户端可通过提交详情轮询恢复；只有显式调用 cancel 接口才取消排队任务。
   })
   const sendEvent = (event, data) => {
     if (closed) return
