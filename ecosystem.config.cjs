@@ -8,6 +8,9 @@ module.exports = {
       cwd: __dirname,
       script: 'server/index.js',
       instances: 1,
+      // 生产环境必须使用专用非 root 用户；启动前设置 PM2_USER/PM2_GROUP。
+      uid: process.env.PM2_USER || undefined,
+      gid: process.env.PM2_GROUP || process.env.PM2_USER || undefined,
       autorestart: true,
       watch: false,
       max_memory_restart: '500M',

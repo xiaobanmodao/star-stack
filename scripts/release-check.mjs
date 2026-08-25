@@ -23,6 +23,8 @@ const checks = [
   ['lint', 'npm', ['run', 'lint']],
   ['unit tests', 'npm', ['test', '--', '--run']],
   ['production build', 'npm', ['run', 'build']],
+  ['dependency audit', 'npm', ['run', 'audit:deps']],
+  ['database integrity', 'npm', ['run', 'db:verify']],
 ]
 
 try {
@@ -36,8 +38,42 @@ try {
       STRESS_CONCURRENCY: process.env.RELEASE_STRESS_CONCURRENCY || '10',
       STRESS_CONFIRM: /localhost|127\.0\.0\.1/.test(process.env.RELEASE_BASE_URL) ? '' : 'YES',
     })
+    if (process.env.RELEASE_ADMIN_TOKEN) {
+      await run('admin stress', 'npm', ['run', 'stress', '--', 'admin'], {
+        STRESS_TARGET: process.env.RELEASE_BASE_URL,
+        STRESS_TOKEN: process.env.RELEASE_ADMIN_TOKEN,
+        STRESS_REQUESTS: process.env.RELEASE_STRESS_REQUESTS || '50',
+        STRESS_CONCURRENCY: process.env.RELEASE_STRESS_CONCURRENCY || '10',
+        STRESS_CONFIRM: /localhost|127\.0\.0\.1/.test(process.env.RELEASE_BASE_URL) ? '' : 'YES',
+      })
+    } else {
+      console.log('[release] admin stress skipped: set RELEASE_ADMIN_TOKEN to include it')
+    }
+    if (process.env.RELEASE_JUDGE_TOKEN && process.env.RELEASE_PROBLEM_ID && process.env.RELEASE_ALLOW_JUDGE === 'YES') {
+      await run('judge stress', 'npm', ['run', 'stress', '--', 'judge'], {
+        STRESS_TARGET: process.env.RELEASE_BASE_URL,
+        STRESS_TOKEN: process.env.RELEASE_JUDGE_TOKEN,
+        STRESS_PROBLEM_ID: process.env.RELEASE_PROBLEM_ID,
+        STRESS_ALLOW_JUDGE: 'YES',
+        STRESS_REQUESTS: process.env.RELEASE_STRESS_REQUESTS || '10',
+        STRESS_CONCURRENCY: process.env.RELEASE_STRESS_CONCURRENCY || '2',
+        STRESS_CONFIRM: /localhost|127\.0\.0\.1/.test(process.env.RELEASE_BASE_URL) ? '' : 'YES',
+      })
+    } else {
+      console.log('[release] judge stress skipped: requires RELEASE_JUDGE_TOKEN, RELEASE_PROBLEM_ID and RELEASE_ALLOW_JUDGE=YES')
+    }
   } else {
-    console.log('\n[release] API smoke / stress skipped: set RELEASE_BASE_URL to a running local API')
+    if (process.env.RELEASE_ALLOW_SKIP_API === '1') {
+      console.log('\n[release] API smoke / stress explicitly skipped by RELEASE_ALLOW_SKIP_API=1')
+    } else {
+      throw new Error('缺少 RELEASE_BASE_URL；如需跳过 API 检查，必须显式设置 RELEASE_ALLOW_SKIP_API=1')
+    }
+  }
+
+  if (process.env.BACKUP_FILE) {
+    await run('backup restore verification', 'npm', ['run', 'db:verify-backup'], { BACKUP_FILE: process.env.BACKUP_FILE })
+  } else {
+    console.log('[release] backup restore verification skipped: set BACKUP_FILE to a .db.gz backup')
   }
 
   if (process.env.RELEASE_RUN_AUDIT === '1') {

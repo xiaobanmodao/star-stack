@@ -356,47 +356,60 @@ const _enqueuePersistedSubmission = (db, { submissionId, problemId, userId, lang
   return task
 }
 
+const waitForRecoveryQueueCapacity = async (userId) => {
+  while (judgeQueue.isFullFor(userId)) {
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+}
+
 export const recoverPendingSubmissions = async () => {
   const db = await getDb()
-  const rows = await db.all(
-    `SELECT s.id, s.problem_id, s.user_id, s.language, s.code, s.status, p.status AS problem_status
-     FROM submissions s
-     JOIN problems p ON p.id = s.problem_id
-     WHERE s.status IN ('Queued', 'Judging')
-     ORDER BY s.id ASC LIMIT 50`,
+  const latest = await db.get(
+    `SELECT COALESCE(MAX(id), 0) AS max_id FROM submissions WHERE status IN ('Queued', 'Judging')`,
   )
+  const maxSubmissionId = Number(latest?.max_id || 0)
+  let lastId = 0
   let recovered = 0
-  for (const row of rows) {
-    if (row.problem_status !== 'published') {
-      await _markSubmissionTerminal(db, row.id, 'Failed', '题目已下架，未继续评测')
-      continue
+  while (lastId < maxSubmissionId) {
+    const rows = await db.all(
+      `SELECT s.id, s.problem_id, s.user_id, s.language, s.code, s.status, p.status AS problem_status
+       FROM submissions s
+       JOIN problems p ON p.id = s.problem_id
+       WHERE s.id > ? AND s.id <= ? AND s.status IN ('Queued', 'Judging')
+       ORDER BY s.id ASC LIMIT 100`,
+      lastId, maxSubmissionId,
+    )
+    if (rows.length === 0) break
+    for (const row of rows) {
+      lastId = row.id
+      if (row.problem_status !== 'published') {
+        await _markSubmissionTerminal(db, row.id, 'Failed', '题目已下架，未继续评测')
+        continue
+      }
+      const testcases = await _loadSubmissionTestcases(db, row.problem_id)
+      if (testcases.length === 0) {
+        await _markSubmissionTerminal(db, row.id, 'Failed', '该题暂无测试用例')
+        continue
+      }
+      await waitForRecoveryQueueCapacity(row.user_id)
+      const task = _enqueuePersistedSubmission(db, {
+        submissionId: row.id,
+        problemId: row.problem_id,
+        userId: row.user_id,
+        language: row.language,
+        code: row.code,
+        testcases,
+      })
+      registerPersistedJudgeTask(row.id, task)
+      if (!task.accepted) {
+        void task.promise.catch(() => undefined)
+        await _markSubmissionTerminal(db, row.id, 'Failed', '服务重启后评测队列容量不足，请重新提交')
+        continue
+      }
+      await _setSubmissionQueuePosition(db, row.id, task.getPosition())
+      void task.promise.catch((error) => console.error('[judge] recovered submission failed:', row.id, error?.message || error))
+      recovered += 1
     }
-    const testcases = await _loadSubmissionTestcases(db, row.problem_id)
-    if (testcases.length === 0) {
-      await _markSubmissionTerminal(db, row.id, 'Failed', '该题暂无测试用例')
-      continue
-    }
-    if (judgeQueue.isFullFor(row.user_id)) {
-      await _markSubmissionTerminal(db, row.id, 'Failed', '服务重启后评测队列容量不足，请重新提交')
-      continue
-    }
-  const task = _enqueuePersistedSubmission(db, {
-      submissionId: row.id,
-      problemId: row.problem_id,
-      userId: row.user_id,
-      language: row.language,
-      code: row.code,
-      testcases,
-    })
-    registerPersistedJudgeTask(row.id, task)
-    if (!task.accepted) {
-      void task.promise.catch(() => undefined)
-      await _markSubmissionTerminal(db, row.id, 'Failed', '服务重启后评测队列容量不足，请重新提交')
-      continue
-    }
-    await _setSubmissionQueuePosition(db, row.id, task.getPosition())
-    void task.promise.catch((error) => console.error('[judge] recovered submission failed:', row.id, error?.message || error))
-    recovered += 1
   }
   if (recovered > 0) console.log(`[judge] recovered ${recovered} pending submission(s)`)
   return recovered
@@ -420,15 +433,33 @@ export const cancelSubmission = async (req, res) => {
 }
 
 const _postSubmitHooks = async (db, userId, submissionId, problemId, status, createdAt) => {
-  try {
-    await updateUserStats(db, userId, { id: submissionId, problemId, status, createdAt })
-    await checkAndUnlockAchievements(db, userId, { id: submissionId, problemId, status, createdAt })
-    await updateRankings(db)
-    if (status === 'Accepted' && _queueLeaderboardHistorySave) {
-      _queueLeaderboardHistorySave()
+  const runHook = async (name, hook) => {
+    let lastError
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await hook()
+        return
+      } catch (error) {
+        lastError = error
+        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 250))
+      }
     }
-  } catch (error) {
-    console.error('Failed to update stats:', error)
+    console.error(`[stats] failed to update ${name} after retries:`, lastError)
+  }
+  const hooks = [
+    ['user stats', () => updateUserStats(db, userId)],
+    ['achievements', () => checkAndUnlockAchievements(db, userId, { id: submissionId, problemId, status, createdAt })],
+    ['rankings', () => updateRankings(db)],
+  ]
+  for (const [name, hook] of hooks) {
+    await runHook(name, hook)
+  }
+  if (status === 'Accepted' && _queueLeaderboardHistorySave) {
+    try {
+      _queueLeaderboardHistorySave()
+    } catch (error) {
+      console.error('[stats] failed to queue leaderboard history:', error)
+    }
   }
 }
 

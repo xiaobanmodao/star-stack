@@ -10,6 +10,8 @@ const checks = [
   ['GET', '/api/me/sessions', 401],
   ['POST', '/api/me/sessions/revoke-others', 401],
   ['POST', '/api/oj/submissions/1/cancel', 401],
+  ['GET', '/api/messages/conversations', 401],
+  ['GET', '/api/chat/rooms', 401],
 ]
 
 for (const [method, path, expected] of checks) {
@@ -24,6 +26,9 @@ const healthResponse = await fetch(`${baseUrl}/api/health`)
 const healthBody = await healthResponse.json()
 if (healthResponse.status !== 200 || healthBody.ok !== true || healthBody.database?.integrity !== 'ok' || healthBody.disk?.healthy !== true || !('backup' in healthBody)) {
   throw new Error('健康接口未返回完整的数据库/磁盘健康状态')
+}
+if ('path' in (healthBody.disk || {}) || 'directory' in (healthBody.backup || {})) {
+  throw new Error('健康接口不应暴露服务器绝对路径')
 }
 console.log('ok /api/health payload -> database, disk and backup status present')
 

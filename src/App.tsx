@@ -420,11 +420,17 @@ function App() {
 
   const loadProblemPlan = useCallback(async () => {
     if (!currentUser) return
-    const { response, data } = await fetchJson<{ plans: ProblemPlan[] }>('/api/problem-plan')
-    if (response.ok) {
-      setProblemPlan(data?.plans || [])
+    try {
+      const { response, data } = await fetchJson<{ plans: ProblemPlan[] }>('/api/problem-plan')
+      if (response.ok) {
+        setProblemPlan(data?.plans || [])
+      }
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'ABORTED')) {
+        showToast('刷题计划加载失败，请稍后重试', 'error')
+      }
     }
-  }, [currentUser])
+  }, [currentUser, showToast])
 
   const addToPlan = useCallback(async (problemId: number) => {
     const { response, data } = await fetchJson<ApiResponse>('/api/problem-plan', {

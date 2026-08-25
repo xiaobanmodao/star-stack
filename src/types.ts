@@ -282,6 +282,13 @@ export type Conversation = {
 
 export type ConversationsResponse = {
   conversations: Conversation[]
+  unreadCount?: number
+  pagination?: {
+    page: number
+    pageSize: number
+    total: number
+    totalPages: number
+  }
 }
 
 export type MessagesResponse = {
@@ -372,6 +379,13 @@ export type ChatRoomDetail = ChatRoom & {
 
 export type ChatRoomsResponse = {
   rooms: ChatRoom[]
+  unreadCount?: number
+  pagination?: {
+    page: number
+    pageSize: number
+    total: number
+    totalPages: number
+  }
 }
 
 export type ChatRoomResponse = {

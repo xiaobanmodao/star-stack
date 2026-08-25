@@ -16,25 +16,36 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
   const [searchResults, setSearchResults] = useState<{ id: string; name: string; avatar?: string }[]>([])
   const [searching, setSearching] = useState(false)
   const [loadError, setLoadError] = useState('')
+  const [unreadTotal, setUnreadTotal] = useState(0)
+  const [pagination, setPagination] = useState<ConversationsResponse['pagination']>()
+  const pageRef = useRef(1)
+  const hasConversationDataRef = useRef(false)
   const conversationControllerRef = useRef<AbortController | null>(null)
   const searchControllerRef = useRef<AbortController | null>(null)
   const newChatDialogRef = useModalFocus(showNewChat, () => setShowNewChat(false))
 
-  const loadConversations = useCallback(async () => {
+  const loadConversations = useCallback(async (requestedPage = pageRef.current) => {
     conversationControllerRef.current?.abort()
     const controller = new AbortController()
     conversationControllerRef.current = controller
+    pageRef.current = requestedPage
     try {
-      const { response, data } = await fetchJson<ConversationsResponse>('/api/messages/conversations', { signal: controller.signal })
+      const { response, data } = await fetchJson<ConversationsResponse>(
+        `/api/messages/conversations?page=${requestedPage}&pageSize=30`,
+        { signal: controller.signal },
+      )
       if (response.ok && data) {
         setConversations(data.conversations || [])
+        setPagination(data.pagination)
+        setUnreadTotal(data.unreadCount ?? data.conversations.reduce((total, conversation) => total + conversation.unreadCount, 0))
+        hasConversationDataRef.current = true
         setLoadError('')
       } else {
-        setLoadError('会话列表加载失败，请重试。')
+        if (!hasConversationDataRef.current) setLoadError('会话列表加载失败，请重试。')
       }
     } catch (error) {
       if (error instanceof ApiRequestError && error.code === 'ABORTED') return
-      setLoadError('网络异常，会话列表暂时不可用。')
+      if (!hasConversationDataRef.current) setLoadError('网络异常，会话列表暂时不可用。')
     } finally {
       if (!controller.signal.aborted) setLoading(false)
     }
@@ -42,7 +53,7 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
 
   useEffect(() => {
     setLoading(true)
-    void loadConversations()
+    void loadConversations(1)
   }, [loadConversations])
 
   useEffect(() => {
@@ -119,7 +130,6 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
     return date.toLocaleDateString('zh-CN')
   }
 
-  const unreadTotal = conversations.reduce((total, conversation) => total + conversation.unreadCount, 0)
   const latestConversation = conversations[0]
 
   return (
@@ -138,7 +148,7 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
       <div className="ops-summary-grid message-summary-grid">
         <Panel>
           <span>会话数</span>
-          <strong>{conversations.length}</strong>
+          <strong>{pagination?.total ?? conversations.length}</strong>
         </Panel>
         <Panel>
           <span>未读消息</span>
@@ -174,47 +184,67 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
           </div>
           <div className="conversation-list">
             {conversations.map((conversation) => (
-              <button
+              <div
                 key={conversation.conversationId}
-                type="button"
                 className={`conversation-card ${conversation.unreadCount > 0 ? 'unread' : ''}`}
-                onClick={() => navigate(`${basePath}/${conversation.otherUser.id}`)}
               >
-                <span
-                  className="conversation-avatar"
-                  role="button"
+                <button
+                  type="button"
+                  className="conversation-avatar conversation-avatar-link"
                   title="查看个人主页"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    navigate(`/user/${conversation.otherUser.id}`)
-                  }}
+                  aria-label={`查看 ${conversation.otherUser.name} 的个人主页`}
+                  onClick={() => navigate(`/user/${conversation.otherUser.id}`)}
                 >
                   {conversation.otherUser.avatar ? (
                     <img src={conversation.otherUser.avatar} alt={conversation.otherUser.name} loading="lazy" decoding="async" width="44" height="44" />
                   ) : (
                     <span>{conversation.otherUser.name.charAt(0).toUpperCase()}</span>
                   )}
-                </span>
-                <span className="conversation-content">
-                  <span className="conversation-header">
-                    <strong className="conversation-name">{conversation.otherUser.name}</strong>
-                    <span className="conversation-time">{formatTime(conversation.lastMessageAt)}</span>
-                  </span>
-                  {conversation.lastMessage ? (
-                    <span className="conversation-preview">
-                      {htmlToPlainText(conversation.lastMessage.content).substring(0, 70)}
-                      {htmlToPlainText(conversation.lastMessage.content).length > 70 ? '...' : ''}
+                </button>
+                <button
+                  type="button"
+                  className="conversation-card-main"
+                  aria-label={`打开与 ${conversation.otherUser.name} 的聊天`}
+                  onClick={() => navigate(`${basePath}/${conversation.otherUser.id}`)}
+                >
+                  <span className="conversation-content">
+                    <span className="conversation-header">
+                      <strong className="conversation-name">{conversation.otherUser.name}</strong>
+                      <span className="conversation-time">{formatTime(conversation.lastMessageAt)}</span>
                     </span>
-                  ) : (
-                    <span className="conversation-preview">暂无消息内容</span>
-                  )}
-                </span>
+                    {conversation.lastMessage ? (
+                      <span className="conversation-preview">
+                        {htmlToPlainText(conversation.lastMessage.content).substring(0, 70)}
+                        {htmlToPlainText(conversation.lastMessage.content).length > 70 ? '...' : ''}
+                      </span>
+                    ) : (
+                      <span className="conversation-preview">暂无消息内容</span>
+                    )}
+                  </span>
+                </button>
                 {conversation.unreadCount > 0 && (
                   <span className="conversation-unread">{conversation.unreadCount > 99 ? '99+' : conversation.unreadCount}</span>
                 )}
-              </button>
+              </div>
             ))}
           </div>
+          {pagination && pagination.totalPages > 1 && (
+            <div className="pagination" aria-label="私信分页">
+              <button
+                type="button"
+                className="pagination-btn"
+                disabled={pagination.page <= 1 || loading}
+                onClick={() => { setLoading(true); void loadConversations(pagination.page - 1) }}
+              >上一页</button>
+              <span aria-live="polite">第 {pagination.page} / {pagination.totalPages} 页</span>
+              <button
+                type="button"
+                className="pagination-btn"
+                disabled={pagination.page >= pagination.totalPages || loading}
+                onClick={() => { setLoading(true); void loadConversations(pagination.page + 1) }}
+              >下一页</button>
+            </div>
+          )}
         </Panel>
       )}
 

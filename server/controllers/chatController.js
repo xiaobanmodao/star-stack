@@ -223,21 +223,40 @@ export const listRooms = async (req, res) => {
   if (!auth) return
   const { db, user } = auth
   try {
+    const page = Math.max(1, Number(req.query.page) || 1)
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 50))
+    const offset = (page - 1) * pageSize
+    const visibilitySql = `cr.type = 'public' OR EXISTS (
+      SELECT 1 FROM chat_room_members m WHERE m.room_id = cr.id AND m.user_id = ?
+    )`
+    const totalResult = await db.get(
+      `SELECT COUNT(*) AS count FROM chat_rooms cr WHERE ${visibilitySql}`,
+      user.id,
+    )
     const rooms = await db.all(
       `SELECT cr.*, u.name as owner_name, (SELECT COUNT(*) FROM chat_room_members m WHERE m.room_id = cr.id) as member_count
        FROM chat_rooms cr LEFT JOIN users u ON cr.owner_id = u.id
-       WHERE cr.type = 'public' OR EXISTS (SELECT 1 FROM chat_room_members m WHERE m.room_id = cr.id AND m.user_id = ?)
-       ORDER BY cr.created_at DESC`, user.id
+       WHERE ${visibilitySql}
+       ORDER BY cr.created_at DESC
+       LIMIT ? OFFSET ?`, user.id, pageSize, offset,
     )
     const unread = await getChatUnreadForUser(db, user)
     const members = await db.all(`SELECT room_id, user_id FROM chat_room_members WHERE user_id = ?`, user.id)
     const joinedIds = new Set(members.map((m) => m.room_id))
+    const roomUnreadCount = Object.values(unread.rooms).reduce((sum, count) => sum + Number(count || 0), 0)
     return res.json({
       rooms: rooms.map((r) => ({
         id: r.id, name: r.name, description: r.description, type: r.type,
         ownerId: r.owner_id, ownerName: r.owner_name, memberCount: r.member_count,
         createdAt: r.created_at, joined: joinedIds.has(r.id), unread: unread.rooms[r.id] || 0,
       })),
+      unreadCount: roomUnreadCount,
+      pagination: {
+        page,
+        pageSize,
+        total: totalResult?.count || 0,
+        totalPages: Math.ceil((totalResult?.count || 0) / pageSize),
+      },
     })
   } catch (error) {
     console.error('Failed to list rooms:', error)

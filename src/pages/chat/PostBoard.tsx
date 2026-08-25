@@ -47,7 +47,7 @@ function CreatePostModal({ defaultModule, initialProblemId, onClose, onCreated }
           setProblemId(data.problem.id)
           setProblemTitle(data.problem.title)
         }
-      })
+      }).catch(() => setProblemTitle(''))
     }, 0)
     return () => window.clearTimeout(timer)
   }, [initialProblemId])
@@ -174,7 +174,7 @@ export default function PostBoard({ module = 'all' }: { module?: ChatModuleKey |
     const timer = window.setTimeout(() => {
       void fetchJson<{ problem?: { id: number; title: string } }>(`/api/oj/problems/${problemIdParam}`).then(({ response, data }) => {
         if (response.ok && data?.problem) setProblemTitle(data.problem.title)
-      })
+      }).catch(() => setProblemTitle(''))
     }, 0)
     return () => window.clearTimeout(timer)
   }, [problemIdParam])

@@ -162,6 +162,8 @@ export default function AccountPage() {
     const timer = window.setTimeout(() => {
       void fetchJson<UserProfileResponse>(`/api/users/${currentUser.id}/profile`).then(({ response, data }) => {
         if (response.ok && data) setRelations(data.relations)
+      }).catch(() => {
+        setProfileError('关注关系加载失败，其他内容仍可正常使用。')
       })
     }, 0)
     return () => window.clearTimeout(timer)
@@ -173,6 +175,9 @@ export default function AccountPage() {
       void fetchJson<{ problems: { id: number; title: string; difficulty?: string; createdAt: string }[] }>('/api/bookmarks?targetType=problem')
         .then(({ response, data }) => {
           if (response.ok && data) setProblemBookmarks(data.problems || [])
+        })
+        .catch(() => {
+          setProfileError('题目收藏加载失败，其他内容仍可正常使用。')
         })
     }, 0)
     return () => window.clearTimeout(timer)
@@ -186,6 +191,8 @@ export default function AccountPage() {
         '/api/bookmarks?targetType=post'
       ).then(({ response, data }) => {
         if (response.ok && data) setBookmarks(data.posts || [])
+      }).catch(() => {
+        setProfileError('帖子收藏加载失败，其他内容仍可正常使用。')
       })
     }, 0)
     return () => window.clearTimeout(timer)
@@ -198,6 +205,8 @@ export default function AccountPage() {
     void fetchJson<CheckinResponse>('/api/me/checkin').then(({ response, data }) => {
       if (mounted && response.ok && data) setCheckin(data)
       else if (mounted) setCheckinError(data?.message || '签到状态加载失败，请重试。')
+    }).catch(() => {
+      if (mounted) setCheckinError('网络异常，签到状态暂时无法加载，请重试。')
     })
     return () => {
       mounted = false

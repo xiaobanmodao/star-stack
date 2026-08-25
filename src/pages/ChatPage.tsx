@@ -85,6 +85,8 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
         } else if (response.status === 403) {
           setBlockHint(data?.message || '对方已屏蔽你，无法发送消息')
         }
+      }).catch(() => {
+        setBlockHint('对方关系暂时无法加载，请稍后重试')
       })
     }, 0)
     return () => window.clearTimeout(timer)

@@ -179,7 +179,7 @@ export default function FriendsPane() {
                       void fetchJson(`/api/users/${user.id}/follow`, { method: 'POST' }).then(() => {
                         setSearchQuery('')
                         void loadList()
-                      })
+                      }).catch(() => undefined)
                     }}
                   >
                     关注

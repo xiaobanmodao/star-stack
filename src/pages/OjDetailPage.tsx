@@ -142,7 +142,7 @@ export default function OjDetailPage() {
     }
     void fetchJson<{ bookmarked: boolean }>(`/api/bookmarks/status?targetType=problem&targetId=${id}`).then(({ response, data }) => {
       if (!cancelled && response.ok) setBookmarked(Boolean(data?.bookmarked))
-    })
+    }).catch(() => undefined)
     return () => { cancelled = true }
   }, [currentUser, id])
 

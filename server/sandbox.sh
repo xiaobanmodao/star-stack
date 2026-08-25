@@ -1,6 +1,6 @@
 #!/bin/bash
 # StarStack OJ 评测沙箱
-# 使用 Linux 内核特性隔离用户代码执行
+# 使用 Linux 用户、挂载和 PID namespace，并在最小 chroot 中执行用户代码。
 # 用法: sandbox.sh <work_dir> <time_limit_ms> <memory_limit_kb> <timing_marker> <cmd> [args...]
 
 set -euo pipefail
@@ -11,6 +11,18 @@ if ! command -v unshare >/dev/null 2>&1; then
 fi
 if ! command -v timeout >/dev/null 2>&1; then
   echo 'sandbox unavailable: timeout is required' >&2
+  exit 125
+fi
+if ! command -v mount >/dev/null 2>&1; then
+  echo 'sandbox unavailable: mount is required' >&2
+  exit 125
+fi
+if ! command -v chroot >/dev/null 2>&1; then
+  echo 'sandbox unavailable: chroot is required' >&2
+  exit 125
+fi
+if [[ "$(id -u)" == "0" ]]; then
+  echo 'sandbox unavailable: judge must run as a dedicated non-root user' >&2
   exit 125
 fi
 
@@ -45,14 +57,72 @@ ulimit -c 0 2>/dev/null || true
 # 最大打开文件数
 ulimit -n 64 2>/dev/null || true
 
-# 使用 unshare 隔离网络、挂载和进程命名空间。
+# 在新的用户 namespace 中把当前非 root 用户映射为 namespace 内 root。
+# 这只授予 namespace 内的挂载权限，不会授予宿主机 root 权限。
 # 沙箱能力不足时直接失败，不能回退到无隔离执行。
-if [[ -n "$TIMING_MARKER" && -x /usr/bin/time ]]; then
-  exec unshare --net --mount --pid --fork --mount-proc --kill-child -- \
-    timeout --signal=KILL "${TIME_LIMIT_SECONDS}s" \
-    /usr/bin/time -f "${TIMING_MARKER} %U %S" \
-    "$@"
+exec unshare --user --map-root-user --net --mount --pid --fork --mount-proc --kill-child -- \
+  /bin/bash -s -- "$WORK_DIR" "$TIME_LIMIT_SECONDS" "$TIMING_MARKER" "$@" <<'SANDBOX_NAMESPACE_SCRIPT'
+set -euo pipefail
+
+WORK_DIR="$1"
+TIME_LIMIT_SECONDS="$2"
+TIMING_MARKER="$3"
+shift 3
+
+if [[ ! -d "$WORK_DIR" ]]; then
+  echo 'sandbox unavailable: work directory does not exist' >&2
+  exit 125
 fi
-exec unshare --net --mount --pid --fork --mount-proc --kill-child -- \
-  timeout --signal=KILL "${TIME_LIMIT_SECONDS}s" \
-  "$@"
+
+ROOT_DIR="$(mktemp -d /tmp/starstack-sandbox.XXXXXX)"
+cleanup() {
+  umount -R "$ROOT_DIR" 2>/dev/null || true
+  rm -rf "$ROOT_DIR" 2>/dev/null || true
+}
+trap cleanup EXIT HUP INT TERM
+
+mount --make-rprivate /
+mount -t tmpfs -o size=64m,mode=755 tmpfs "$ROOT_DIR"
+
+# 编译器、解释器和动态链接器只以只读方式暴露；不暴露 /home、/root、/opt、/var 等目录。
+for system_dir in usr bin sbin lib lib64 etc; do
+  if [[ -e "/$system_dir" ]]; then
+    mkdir -p "$ROOT_DIR/$system_dir"
+    mount --rbind "/$system_dir" "$ROOT_DIR/$system_dir"
+    mount --make-rslave "$ROOT_DIR/$system_dir"
+    mount -o remount,bind,ro "$ROOT_DIR/$system_dir" 2>/dev/null || true
+  fi
+done
+
+mkdir -p "$ROOT_DIR/work" "$ROOT_DIR/tmp" "$ROOT_DIR/proc" "$ROOT_DIR/dev"
+mount --bind "$WORK_DIR" "$ROOT_DIR/work"
+mount -t tmpfs -o size=128m,mode=1777 tmpfs "$ROOT_DIR/tmp"
+mount -t proc proc "$ROOT_DIR/proc"
+
+# 仅提供程序常用的四个设备，避免直接暴露宿主机设备树。
+for device in null zero random urandom; do
+  touch "$ROOT_DIR/dev/$device"
+  mount --bind "/dev/$device" "$ROOT_DIR/dev/$device"
+done
+
+export HOME=/tmp
+export TMPDIR=/tmp
+export PATH=/usr/local/bin:/usr/bin:/bin
+
+# 将 Node 传入的工作目录绝对路径映射为 chroot 内的 /work 路径。
+COMMAND=("$@")
+for index in "${!COMMAND[@]}"; do
+  if [[ "${COMMAND[$index]}" == "$WORK_DIR" || "${COMMAND[$index]}" == "$WORK_DIR/"* ]]; then
+    COMMAND[$index]="/work${COMMAND[$index]:${#WORK_DIR}}"
+  fi
+done
+
+if [[ -n "$TIMING_MARKER" && -x /usr/bin/time ]]; then
+  exec chroot "$ROOT_DIR" /bin/bash -c \
+    'cd /work && exec /usr/bin/timeout --signal=KILL "$1" /usr/bin/time -f "$2 %U %S" "${@:3}"' \
+    starstack "$TIME_LIMIT_SECONDS" "$TIMING_MARKER" "${COMMAND[@]}"
+fi
+exec chroot "$ROOT_DIR" /bin/bash -c \
+  'cd /work && exec /usr/bin/timeout --signal=KILL "$1" "${@:2}"' \
+  starstack "$TIME_LIMIT_SECONDS" "${COMMAND[@]}"
+SANDBOX_NAMESPACE_SCRIPT

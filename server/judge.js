@@ -15,6 +15,9 @@ const IS_WIN = process.platform === 'win32'
 const IS_LINUX = process.platform === 'linux'
 const WORK_ROOT = IS_WIN ? path.join('C:\\', 'Temp', 'starstack-oj') : path.join(os.tmpdir(), 'starstack-oj')
 const CACHE_ROOT = path.join(WORK_ROOT, 'cache')
+const CACHE_MAX_FILES = Math.max(20, Number(process.env.JUDGE_CACHE_MAX_FILES) || 200)
+const CACHE_MAX_BYTES = Math.max(64 * 1024 * 1024, Number(process.env.JUDGE_CACHE_MAX_BYTES) || 512 * 1024 * 1024)
+const CACHE_MAX_AGE_MS = Math.max(60 * 60 * 1000, Number(process.env.JUDGE_CACHE_MAX_AGE_MS) || 14 * 24 * 60 * 60 * 1000)
 const configuredMemoryLimit = Number(process.env.JUDGE_MEMORY_LIMIT_KB)
 const MEMORY_LIMIT_KB = Number.isFinite(configuredMemoryLimit) && configuredMemoryLimit >= 64 * 1024
   ? Math.min(configuredMemoryLimit, 512 * 1024)
@@ -48,6 +51,61 @@ class CompileCache {
 }
 
 const compileCache = new CompileCache(200)
+
+let cachePrunePromise = null
+const pruneCompileCache = async () => {
+  if (cachePrunePromise) return cachePrunePromise
+  cachePrunePromise = (async () => {
+    try {
+      await fs.promises.mkdir(CACHE_ROOT, { recursive: true })
+      const entries = await fs.promises.readdir(CACHE_ROOT, { withFileTypes: true })
+      const files = []
+      for (const entry of entries) {
+        if (!entry.isFile() || !/^[a-f0-9]{64}(?:\.exe|\.class)?$/.test(entry.name)) continue
+        try {
+          const filePath = path.join(CACHE_ROOT, entry.name)
+          const stat = await fs.promises.stat(filePath)
+          files.push({ path: filePath, size: stat.size, mtimeMs: stat.mtimeMs })
+        } catch {
+          // 文件可能在扫描期间被清理，忽略即可。
+        }
+      }
+      files.sort((a, b) => b.mtimeMs - a.mtimeMs)
+      const cutoff = Date.now() - CACHE_MAX_AGE_MS
+      let keptBytes = 0
+      const removals = []
+      files.forEach((file, index) => {
+        const overLimit = index >= CACHE_MAX_FILES || keptBytes + file.size > CACHE_MAX_BYTES
+        const expired = file.mtimeMs < cutoff
+        if (overLimit || expired) removals.push(file.path)
+        else keptBytes += file.size
+      })
+      await Promise.all(removals.map((filePath) => fs.promises.unlink(filePath).catch(() => undefined)))
+    } catch {
+      // 缓存清理失败不影响评测，下一轮继续尝试。
+    } finally {
+      cachePrunePromise = null
+    }
+  })()
+  return cachePrunePromise
+}
+
+const cleanupStaleWorkspaces = async () => {
+  try {
+    await fs.promises.mkdir(WORK_ROOT, { recursive: true })
+    const entries = await fs.promises.readdir(WORK_ROOT, { withFileTypes: true })
+    await Promise.all(entries
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith('run-'))
+      .map((entry) => fs.promises.rm(path.join(WORK_ROOT, entry.name), { recursive: true, force: true }).catch(() => undefined)))
+  } catch {
+    // 残留目录清理失败不影响评测，当前任务仍会使用新的随机工作目录。
+  }
+}
+
+const cacheCleanupTimer = setInterval(() => { void pruneCompileCache() }, 30 * 60 * 1000)
+cacheCleanupTimer.unref?.()
+void cleanupStaleWorkspaces()
+void pruneCompileCache()
 
 // 计算代码的hash值（使用 SHA-256 替代 MD5 避免碰撞）
 const getCodeHash = (language, code) => {
@@ -90,17 +148,19 @@ const hasCommand = (command) => {
   return result.status === 0
 }
 
-// 不仅检查脚本文件，还要在启动时验证 namespace 能力。
-// 生产环境如果当前内核/容器不允许 unshare，必须拒绝执行用户代码。
+// 不仅检查脚本文件，还要在启动时验证完整沙箱能力。
+// 生产环境如果当前内核/容器不允许用户 namespace、挂载或 chroot，必须拒绝执行用户代码。
 const canCreateSandbox = () => {
   if (!IS_LINUX || !fs.existsSync(SANDBOX_SH)) return false
-  if (!hasCommand('unshare') || !hasCommand('timeout')) return false
-  const probe = spawnSync('unshare', [
-    '--net', '--mount', '--pid', '--fork', '--mount-proc', '--kill-child', '--', 'true',
+  if (!hasCommand('unshare') || !hasCommand('timeout') || !hasCommand('mount') || !hasCommand('chroot')) return false
+  const probeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'starstack-sandbox-probe-'))
+  const probe = spawnSync('/bin/bash', [
+    SANDBOX_SH, probeRoot, '100', '65536', '-', '/bin/true',
   ], {
     stdio: 'ignore',
     timeout: 3000,
   })
+  try { fs.rmSync(probeRoot, { recursive: true, force: true }) } catch {}
   return probe.status === 0
 }
 
@@ -119,7 +179,7 @@ if (!sandboxAvailable && !allowUnsafeJudge) {
   console.error('Refusing to judge: sandbox unavailable in production mode')
 }
 
-// 在 Linux 上通过沙箱执行命令，限制网络/内存/进程数
+// 在 Linux 上通过沙箱执行命令，限制网络/文件系统/内存/进程数。
 const runCommand = (cmd, args, options = {}) =>
   new Promise((resolve) => {
     // 生产环境无沙箱：拒绝执行
@@ -448,6 +508,7 @@ const compileSource = async (language, code, workspace) => {
       const cachedExec = path.join(CACHE_ROOT, `${codeHash}${IS_WIN ? '.exe' : ''}`)
       await fs.promises.copyFile(workspace.exec, cachedExec)
       compileCache.set(codeHash, cachedExec)
+      void pruneCompileCache()
     } catch (e) {
       // 缓存失败不影响判题
     }
@@ -490,6 +551,7 @@ const compileSource = async (language, code, workspace) => {
       const compiledClass = path.join(workspace.root, 'Main.class')
       await fs.promises.copyFile(compiledClass, cachedClass)
       compileCache.set(codeHash, cachedClass)
+      void pruneCompileCache()
     } catch (e) {
       // 缓存失败不影响判题
     }
@@ -649,9 +711,8 @@ export const judgeSubmission = async ({ language, code, testcases, onTestCase })
     }
   } finally {
     if (workspace?.root) {
-      fs.promises.rm(workspace.root, { recursive: true, force: true }).catch(() => undefined)
+      await fs.promises.rm(workspace.root, { recursive: true, force: true }).catch(() => undefined)
     }
-    // 注意：不删除编译缓存，让缓存继续有效以提高性能
   }
 }
 export const runSample = async ({ language, code, input, timeLimitMs = TIME_LIMIT_MS }) => {
@@ -770,9 +831,8 @@ export const runSample = async ({ language, code, input, timeLimitMs = TIME_LIMI
     }
   } finally {
     if (workspace?.root) {
-      fs.promises.rm(workspace.root, { recursive: true, force: true }).catch(() => undefined)
+      await fs.promises.rm(workspace.root, { recursive: true, force: true }).catch(() => undefined)
     }
-    // 注意：不删除编译缓存，让缓存继续有效以提高性能
   }
 }
 
@@ -878,7 +938,7 @@ export const runSamples = async ({ language, code, inputs }) => {
     }
   } finally {
     if (workspace?.root) {
-      fs.promises.rm(workspace.root, { recursive: true, force: true }).catch(() => undefined)
+      await fs.promises.rm(workspace.root, { recursive: true, force: true }).catch(() => undefined)
     }
   }
 }

@@ -90,12 +90,16 @@ app.get('/api/health', async (req, res) => {
     ])
     const judge = getJudgeQueueSnapshot()
     const healthy = database.healthy && disk.healthy
+    const publicDisk = { ...disk }
+    delete publicDisk.path
+    const publicBackup = { ...backup }
+    delete publicBackup.directory
     return res.status(healthy ? 200 : 503).json({
       ok: healthy,
       service: 'star-stack-api',
       database,
-      disk,
-      backup,
+      disk: publicDisk,
+      backup: publicBackup,
       judge,
     })
   } catch (error) {
@@ -198,14 +202,16 @@ app.get('/api/oj/recommendations', async (req, res) => {
           userId
         )
         const acIds = acProblemIds.map(row => row.problem_id)
-        const placeholders = topTags.map(() => 'tags LIKE ?').join(' OR ')
+        const tagClause = topTags.length > 0
+          ? `AND (${topTags.map(() => 'tags LIKE ?').join(' OR ')})`
+          : ''
         const diffPlaceholders = targetDifficulties.map(() => '?').join(',')
         let query = `
           SELECT id, slug, title, difficulty, tags,
                  (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id AND status = 'Accepted') as ac_count,
                  (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id) as total_count
           FROM problems
-          WHERE status = 'published' AND (${placeholders}) AND difficulty IN (${diffPlaceholders})`
+          WHERE status = 'published' ${tagClause} AND difficulty IN (${diffPlaceholders})`
         const params = [...topTags.map(tag => `%${tag}%`), ...targetDifficulties]
         if (acIds.length > 0) {
           query += ` AND id NOT IN (${acIds.map(() => '?').join(',')})`
@@ -583,9 +589,11 @@ app.use(errorHandler)
 const PORT = Number(process.env.PORT) || 5174
 initDb()
   .then(async () => {
-    await recoverPendingSubmissions()
     app.listen(PORT, () => {
       console.log(`StarStack API running at http://localhost:${PORT}`)
+      void recoverPendingSubmissions().catch((error) => {
+        console.error('[judge] pending submission recovery failed:', error?.message || error)
+      })
       initPush()
       setLeaderboardSaveCallback(queueLeaderboardHistorySave)
       scheduleLeaderboardHistory()

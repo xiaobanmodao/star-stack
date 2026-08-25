@@ -28,7 +28,7 @@ export default function RoomPane() {
     const timer = window.setTimeout(() => {
       void fetchJson<FriendsResponse>('/api/me/friends').then(({ response, data }) => {
         if (response.ok && data) setFriends(data.friends)
-      })
+      }).catch(() => undefined)
     }, 0)
     return () => window.clearTimeout(timer)
   }, [])

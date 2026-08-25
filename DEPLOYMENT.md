@@ -81,7 +81,10 @@ python3 --version
 java -version
 command -v unshare
 command -v timeout
-unshare --net --mount --pid --fork --mount-proc --kill-child -- true
+command -v mount
+command -v chroot
+# 下面的检查必须以 starstack 账户执行；root 运行会被沙箱拒绝。
+sudo -u starstack /bin/bash server/sandbox.sh /tmp 100 65536 - /bin/true
 ```
 
 ### 2.2 获取代码并安装依赖
@@ -119,9 +122,12 @@ npm run build
 mkdir -p /var/www/starstack-dist
 rsync -a --delete dist/ /var/www/starstack-dist/
 
-pm2 start ecosystem.config.cjs
+# 评测服务不得以 root 运行。先创建一次专用账户，并确保项目和数据库归该账户所有。
+# useradd -r -m -s /usr/sbin/nologin starstack
+# chown -R starstack:starstack /opt/star-stack
+PM2_USER=starstack PM2_GROUP=starstack pm2 start ecosystem.config.cjs
 pm2 save
-pm2 startup systemd -u root --hp /root
+pm2 startup systemd -u starstack --hp /home/starstack
 # 按 pm2 输出的提示执行启动命令，然后再次保存进程列表：
 pm2 save
 

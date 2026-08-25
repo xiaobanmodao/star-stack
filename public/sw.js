@@ -1,4 +1,4 @@
-const CACHE_NAME = 'starstack-v2'
+const CACHE_NAME = 'starstack-v3'
 const STATIC_ASSETS = [
   '/',
   '/starstack.svg',
@@ -35,7 +35,18 @@ self.addEventListener('fetch', (event) => {
         }
         return response
       })
-      .catch(() => caches.match(request))
+      .catch(async () => {
+        const cached = await caches.match(request)
+        if (cached) return cached
+        if (request.mode === 'navigate') {
+          const fallback = await caches.match('/')
+          if (fallback) return fallback
+        }
+        return new Response('离线状态下暂时无法加载该资源。', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        })
+      })
   )
 })
 

@@ -5,7 +5,7 @@ import { floatRoom } from '../../utils/floatRoom'
 import { MessageCircle } from 'lucide-react'
 import type { ChatRoom, ChatRoomsResponse } from '../../types'
 import CreateRoomModal from './CreateRoomModal'
-import { EmptyState, LoadingState } from '../../components/ui'
+import { EmptyState, ErrorState, LoadingState } from '../../components/ui'
 import './ChatHub.css'
 
 const formatRoomTime = (iso: string) => {
@@ -22,20 +22,33 @@ export default function RoomsGallery() {
   const navigate = useNavigate()
   const [rooms, setRooms] = useState<ChatRoom[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [showCreate, setShowCreate] = useState(false)
+  const [pagination, setPagination] = useState<ChatRoomsResponse['pagination']>()
+  const pageRef = useRef(1)
   const requestAbortRef = useRef<AbortController | null>(null)
 
-  const loadRooms = useCallback(async () => {
+  const loadRooms = useCallback(async (requestedPage = pageRef.current) => {
     requestAbortRef.current?.abort()
     const controller = new AbortController()
     requestAbortRef.current = controller
+    pageRef.current = requestedPage
     setLoading(true)
     try {
-      const { response, data } = await fetchJson<ChatRoomsResponse>('/api/chat/rooms', { signal: controller.signal })
+      const { response, data } = await fetchJson<ChatRoomsResponse>(
+        `/api/chat/rooms?page=${requestedPage}&pageSize=50`,
+        { signal: controller.signal },
+      )
       if (controller.signal.aborted) return
-      if (response.ok && data) setRooms(data.rooms)
+      if (response.ok && data) {
+        setRooms(data.rooms)
+        setPagination(data.pagination)
+        setLoadError('')
+      } else {
+        setLoadError('聊天室列表加载失败，请重试。')
+      }
     } catch {
-      // 忽略
+      if (!controller.signal.aborted) setLoadError('网络异常，聊天室列表暂时不可用。')
     } finally {
       if (!controller.signal.aborted) setLoading(false)
       if (requestAbortRef.current === controller) requestAbortRef.current = null
@@ -76,8 +89,10 @@ export default function RoomsGallery() {
       </header>
 
       <div className="rooms-gallery">
-        {loading ? (
+        {loading && rooms.length === 0 ? (
           <LoadingState variant="list" label="正在加载聊天室…" />
+        ) : loadError && rooms.length === 0 ? (
+          <ErrorState description={loadError} onRetry={() => void loadRooms(pageRef.current)} />
         ) : rooms.length === 0 ? (
           <EmptyState title="还没有聊天室" description="创建第一个聊天室吧 ✨" />
         ) : (
@@ -104,6 +119,24 @@ export default function RoomsGallery() {
           ))
         )}
       </div>
+
+      {pagination && pagination.totalPages > 1 && (
+        <div className="pagination" aria-label="聊天室分页">
+          <button
+            type="button"
+            className="pagination-btn"
+            disabled={pagination.page <= 1 || loading}
+            onClick={() => void loadRooms(pagination.page - 1)}
+          >上一页</button>
+          <span aria-live="polite">第 {pagination.page} / {pagination.totalPages} 页</span>
+          <button
+            type="button"
+            className="pagination-btn"
+            disabled={pagination.page >= pagination.totalPages || loading}
+            onClick={() => void loadRooms(pagination.page + 1)}
+          >下一页</button>
+        </div>
+      )}
 
       {showCreate && (
         <CreateRoomModal

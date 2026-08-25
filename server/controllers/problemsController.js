@@ -382,7 +382,7 @@ export const createSolution = async (req, res) => {
     const result = await db.run(
       `INSERT INTO discussion_posts (user_id, title, content, problem_id, module_key, is_solution, created_at, updated_at)
        VALUES (?, ?, ?, ?, 'oj', 1, ?, ?)`,
-      user.id, title.trim(), content, problemId, now, now
+      user.id, title.trim(), sanitizeProblemText(content), problemId, now, now
     )
     await addXp(db, user.id, 20)
     return res.json({ success: true, postId: result.lastID })

@@ -46,37 +46,6 @@ const ACHIEVEMENTS = {
   EARLY_BIRD: { id: 'early_bird', name: '早起鸟', icon: '🐦', desc: '在早晨6-9点提交' }
 }
 
-/**
- * Calculate rating increase based on problem difficulty
- * 入门: 0.05 per problem (2 problems = 0.1)
- * 普及-: 0.1 per problem
- * 普及: 0.2 per problem
- * 提高-: 0.3 per problem
- * 提高: 0.4 per problem
- * 省选: 0.5 per problem
- * noi: 0.6 per problem
- */
-function calculateRatingIncrease(difficulty) {
-  const ratingMap = {
-    '入门': 0.05,
-    '普及-': 0.1,
-    '普及': 0.2,
-    '提高-': 0.3,
-    '提高': 0.4,
-    '省选': 0.5,
-    'noi': 0.6
-  }
-  return ratingMap[difficulty] || 0.1
-}
-
-// 本地日期 YYYY-MM-DD（避免 UTC 时区错位导致连续天数/热力图日期串位）
-const localDay = (date = new Date()) => {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
-
 // 按本地时区解析 YYYY-MM-DD（new Date('2026-08-16') 是 UTC 解析，会差一天）
 const parseLocalDate = (str) => {
   const [y, m, d] = String(str).split('-').map(Number)
@@ -86,110 +55,69 @@ const parseLocalDate = (str) => {
 /**
  * Update user statistics after a submission
  */
-async function updateUserStats(db, userId, submission) {
-  const now = new Date().toISOString()
-  const today = localDay()
-
-  // Ensure user_stats record exists
-  let stats = await db.get(`SELECT * FROM user_stats WHERE user_id = ?`, userId)
-  if (!stats) {
-    await db.run(
-      `INSERT INTO user_stats (user_id, total_submissions, accepted_count, tried_problems, solved_problems, acceptance_rate, current_streak, max_streak, last_submission_date, rank)
-       VALUES (?, 0, 0, 0, 0, 0, 0, 0, NULL, 0)`,
-      userId
-    )
-    stats = await db.get(`SELECT * FROM user_stats WHERE user_id = ?`, userId)
-  }
-
-  // Update total submissions
+async function updateUserStats(db, userId) {
+  // 统计钩子可能因服务重启或网络重试重复触发，因此这里按提交记录重建聚合值，
+  // 不使用“+1”累加，避免统计、打卡和成就数据被重复计算。
   await db.run(
-    `UPDATE user_stats SET total_submissions = total_submissions + 1, last_submission_date = ? WHERE user_id = ?`,
-    now,
-    userId
-  )
-
-  // Update accepted count if submission is accepted
-  if (submission.status === 'Accepted') {
-    await db.run(
-      `UPDATE user_stats SET accepted_count = accepted_count + 1 WHERE user_id = ?`,
-      userId
-    )
-
-    // Check if this is the first time solving this problem
-    const existingSolve = await db.get(
-      `SELECT * FROM solved_problems WHERE user_id = ? AND problem_id = ?`,
-      userId,
-      submission.problemId
-    )
-
-    if (!existingSolve) {
-      // Get problem difficulty
-      const problem = await db.get(`SELECT difficulty FROM problems WHERE id = ?`, submission.problemId)
-      const difficulty = problem?.difficulty || 'Medium'
-
-      // 原子插入 + 按 changes 判断，避免并发首 AC 时重复计数/丢失
-      const insertResult = await db.run(
-        `INSERT OR IGNORE INTO solved_problems (user_id, problem_id, difficulty, first_solved_at)
-         VALUES (?, ?, ?, ?)`,
-        userId,
-        submission.problemId,
-        difficulty,
-        now
-      )
-
-      if (insertResult.changes > 0) {
-        await db.run(
-          `UPDATE user_stats SET solved_problems = solved_problems + 1 WHERE user_id = ?`,
-          userId
-        )
-      }
-
-      // Calculate and update rating based on difficulty
-      const ratingIncrease = calculateRatingIncrease(difficulty)
-      await db.run(
-        `UPDATE users SET rating = rating + ? WHERE id = ?`,
-        ratingIncrease,
-        userId
-      )
-    }
-  }
-
-  // Update tried problems count (distinct problems attempted)
-  const triedCount = await db.get(
-    `SELECT COUNT(DISTINCT problem_id) as count FROM submissions WHERE user_id = ?`,
-    userId
-  )
-  await db.run(
-    `UPDATE user_stats SET tried_problems = ? WHERE user_id = ?`,
-    triedCount.count,
-    userId
-  )
-
-  // Update acceptance rate
-  const updatedStats = await db.get(`SELECT * FROM user_stats WHERE user_id = ?`, userId)
-  const acceptanceRate = updatedStats.total_submissions > 0
-    ? (updatedStats.accepted_count / updatedStats.total_submissions) * 100
-    : 0
-  await db.run(
-    `UPDATE user_stats SET acceptance_rate = ? WHERE user_id = ?`,
-    acceptanceRate,
-    userId
-  )
-
-  // Update daily activity
-  await db.run(
-    `INSERT INTO daily_activity (user_id, activity_date, submission_count, accepted_count)
-     VALUES (?, ?, 1, ?)
-     ON CONFLICT(user_id, activity_date) DO UPDATE SET
-       submission_count = submission_count + 1,
-       accepted_count = accepted_count + ?`,
+    `INSERT OR IGNORE INTO user_stats (user_id, total_submissions, accepted_count, tried_problems, solved_problems, acceptance_rate, current_streak, max_streak, last_submission_date, rank)
+     VALUES (?, 0, 0, 0, 0, 0, 0, 0, NULL, 0)`,
     userId,
-    today,
-    submission.status === 'Accepted' ? 1 : 0,
-    submission.status === 'Accepted' ? 1 : 0
   )
 
-  // Calculate and update streak
+  await db.run(
+    `INSERT OR IGNORE INTO solved_problems (user_id, problem_id, difficulty, first_solved_at)
+     SELECT s.user_id, s.problem_id, COALESCE(p.difficulty, 'Medium'), MIN(s.created_at)
+     FROM submissions s
+     LEFT JOIN problems p ON p.id = s.problem_id
+     WHERE s.user_id = ? AND s.status = 'Accepted'
+     GROUP BY s.user_id, s.problem_id`,
+    userId,
+  )
+
+  const aggregate = await db.get(
+    `SELECT COUNT(*) AS total_submissions,
+            SUM(CASE WHEN status = 'Accepted' THEN 1 ELSE 0 END) AS accepted_count,
+            COUNT(DISTINCT problem_id) AS tried_problems,
+            MAX(created_at) AS last_submission_date
+     FROM submissions
+     WHERE user_id = ? AND status NOT IN ('Queued', 'Judging', 'Cancelled')`,
+    userId,
+  )
+  const triedProblems = aggregate?.tried_problems || 0
+  const solved = await db.get(`SELECT COUNT(*) AS count FROM solved_problems WHERE user_id = ?`, userId)
+  const acceptedCount = aggregate?.accepted_count || 0
+  const totalSubmissions = aggregate?.total_submissions || 0
+  const acceptanceRate = totalSubmissions > 0 ? (acceptedCount / totalSubmissions) * 100 : 0
+  const lastSubmissionDate = aggregate?.last_submission_date || null
+
+  await db.run(
+    `UPDATE user_stats
+     SET total_submissions = ?, accepted_count = ?, tried_problems = ?, solved_problems = ?,
+         acceptance_rate = ?, last_submission_date = ?
+     WHERE user_id = ?`,
+    totalSubmissions,
+    acceptedCount,
+    triedProblems,
+    solved?.count || 0,
+    acceptanceRate,
+    lastSubmissionDate,
+    userId,
+  )
+
+  // solved_problems 是首 AC 的唯一记录，按它重算 rating 也能修复历史重复累加。
+  await recalculateUserRating(db, userId)
+
+  await db.run(`DELETE FROM daily_activity WHERE user_id = ?`, userId)
+  await db.run(
+    `INSERT OR REPLACE INTO daily_activity (user_id, activity_date, submission_count, accepted_count)
+     SELECT user_id, strftime('%Y-%m-%d', created_at, 'localtime'), COUNT(*),
+            SUM(CASE WHEN status = 'Accepted' THEN 1 ELSE 0 END)
+     FROM submissions
+     WHERE user_id = ? AND status NOT IN ('Queued', 'Judging', 'Cancelled')
+     GROUP BY user_id, strftime('%Y-%m-%d', created_at, 'localtime')`,
+    userId,
+  )
+
   await calculateStreak(db, userId)
 }
 
@@ -381,7 +309,6 @@ const RANKING_THROTTLE_MS = 30000
 async function updateRankings(db) {
   const now = Date.now()
   if (now - _lastRankingUpdate < RANKING_THROTTLE_MS) return
-  _lastRankingUpdate = now
 
   // 单条 SQL 批量更新排名
   await db.run(
@@ -404,6 +331,7 @@ async function updateRankings(db) {
     `UPDATE user_stats SET rank = 0
      WHERE user_id IN (SELECT id FROM users WHERE is_banned = 1)`
   )
+  _lastRankingUpdate = now
 }
 
 /**

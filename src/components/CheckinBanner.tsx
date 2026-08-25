@@ -19,7 +19,7 @@ export default function CheckinBanner() {
     void fetchJson<CheckinResponse>('/api/me/checkin').then(({ response, data }) => {
       if (!mounted) return
       if (response.ok && data) setCheckin(data)
-    })
+    }).catch(() => undefined)
     return () => {
       mounted = false
     }

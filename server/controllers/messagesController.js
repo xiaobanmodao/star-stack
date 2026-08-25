@@ -38,6 +38,20 @@ export const listConversations = async (req, res) => {
   if (!auth) return
   const { db, user } = auth
   try {
+    const page = Math.max(1, Number(req.query.page) || 1)
+    const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 30))
+    const offset = (page - 1) * pageSize
+    const [totalResult, unreadResult] = await Promise.all([
+      db.get(`SELECT COUNT(*) AS count FROM conversations WHERE user1_id = ? OR user2_id = ?`, user.id, user.id),
+      db.get(
+        `SELECT COUNT(*) AS count
+         FROM messages m
+         JOIN conversations c ON m.conversation_id = c.id
+         LEFT JOIN message_deletions md ON m.id = md.message_id AND md.user_id = ?
+         WHERE (c.user1_id = ? OR c.user2_id = ?) AND m.sender_id != ? AND m.is_read = 0 AND md.id IS NULL`,
+        user.id, user.id, user.id, user.id,
+      ),
+    ])
     const conversations = await db.all(
       `SELECT
         c.id,
@@ -71,8 +85,9 @@ export const listConversations = async (req, res) => {
          GROUP BY m.conversation_id
        ) unread ON unread.conversation_id = c.id
        WHERE c.user1_id = ? OR c.user2_id = ?
-       ORDER BY c.last_message_at DESC`,
-      user.id, user.id, user.id, user.id, user.id, user.id, user.id, user.id
+       ORDER BY c.last_message_at DESC
+       LIMIT ? OFFSET ?`,
+      user.id, user.id, user.id, user.id, user.id, user.id, user.id, user.id, pageSize, offset,
     )
 
     return res.json({
@@ -86,6 +101,13 @@ export const listConversations = async (req, res) => {
         unreadCount: conv.unread_count,
         lastMessageAt: conv.last_message_at,
       })),
+      unreadCount: unreadResult?.count || 0,
+      pagination: {
+        page,
+        pageSize,
+        total: totalResult?.count || 0,
+        totalPages: Math.ceil((totalResult?.count || 0) / pageSize),
+      },
     })
   } catch (error) {
     console.error('Failed to get conversations:', error)
@@ -248,7 +270,11 @@ export const unreadStream = async (req, res) => {
   res.flushHeaders()
 
   let closed = false
-  req.on('close', () => { closed = true; clearInterval(timer) })
+  let timer = null
+  req.on('close', () => {
+    closed = true
+    if (timer !== null) clearInterval(timer)
+  })
 
   const pushCount = async () => {
     if (closed) return
@@ -265,7 +291,7 @@ export const unreadStream = async (req, res) => {
   }
 
   await pushCount()
-  const timer = setInterval(pushCount, 15000)
+  if (!closed) timer = setInterval(pushCount, 15000)
 }
 
 export const deleteMessage = async (req, res) => {

@@ -3,8 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { LayoutGrid, Mail, MessageCircle, Trophy, Users } from 'lucide-react'
 import { fetchJson } from '../../utils'
 import type {
-  ChatChannel, ChatChannelsResponse, ChatRoom, ChatRoomsResponse,
-  Conversation, ConversationsResponse,
+  ChatChannel, ChatChannelsResponse, ChatRoomsResponse, ConversationsResponse,
 } from '../../types'
 import './ChatHub.css'
 
@@ -15,8 +14,8 @@ function UnreadDot({ count }: { count: number }) {
 
 export default function ChatHubPage() {
   const [channels, setChannels] = useState<ChatChannel[]>([])
-  const [rooms, setRooms] = useState<ChatRoom[]>([])
-  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [roomsUnread, setRoomsUnread] = useState(0)
+  const [dmUnread, setDmUnread] = useState(0)
   const heartbeatTimerRef = useRef<number | null>(null)
   const loadAbortRef = useRef<AbortController | null>(null)
   const heartbeatAbortRef = useRef<AbortController | null>(null)
@@ -33,8 +32,12 @@ export default function ChatHubPage() {
       ])
       if (controller.signal.aborted) return
       if (channelRes.ok && channelData) setChannels(channelData.channels)
-      if (roomRes.ok && roomData) setRooms(roomData.rooms)
-      if (conversationRes.ok && conversationData) setConversations(conversationData.conversations)
+      if (roomRes.ok && roomData) {
+        setRoomsUnread(roomData.unreadCount ?? roomData.rooms.reduce((sum, room) => sum + room.unread, 0))
+      }
+      if (conversationRes.ok && conversationData) {
+        setDmUnread(conversationData.unreadCount ?? conversationData.conversations.reduce((sum, conversation) => sum + conversation.unreadCount, 0))
+      }
     } catch {
       // 忽略
     } finally {
@@ -85,9 +88,6 @@ export default function ChatHubPage() {
   }, [])
 
   const plazaUnread = channels.reduce((sum, channel) => sum + channel.unread, 0)
-  const roomsUnread = rooms.reduce((sum, room) => sum + room.unread, 0)
-  const dmUnread = conversations.reduce((sum, conversation) => sum + conversation.unreadCount, 0)
-
   return (
     <div className="chat-hub">
       <nav className="chat-topnav" aria-label="聊天导航">

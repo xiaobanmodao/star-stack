@@ -97,12 +97,29 @@ export const demoteUser = async (req, res) => {
   const { db } = auth
   const targetId = req.params.id
   if (targetId === auth.user.id) return res.status(400).json({ message: '不能降级自己的管理员权限' })
-  const target = await db.get(`SELECT id, is_admin FROM users WHERE id = ?`, targetId)
-  if (!target) return res.status(404).json({ message: '用户不存在' })
-  if (!target.is_admin) return res.json({ ok: true })
-  const adminCount = await db.get(`SELECT COUNT(*) as count FROM users WHERE is_admin = 1`)
-  if (adminCount?.count <= 1) return res.status(400).json({ message: '不能降级最后一个管理员' })
-  await db.run(`UPDATE users SET is_admin = 0 WHERE id = ?`, targetId)
+  try {
+    await db.exec('BEGIN IMMEDIATE')
+    const target = await db.get(`SELECT id, is_admin FROM users WHERE id = ?`, targetId)
+    if (!target) {
+      await db.exec('ROLLBACK')
+      return res.status(404).json({ message: '用户不存在' })
+    }
+    if (!target.is_admin) {
+      await db.exec('ROLLBACK')
+      return res.json({ ok: true })
+    }
+    const adminCount = await db.get(`SELECT COUNT(*) as count FROM users WHERE is_admin = 1`)
+    if (adminCount?.count <= 1) {
+      await db.exec('ROLLBACK')
+      return res.status(400).json({ message: '不能降级最后一个管理员' })
+    }
+    await db.run(`UPDATE users SET is_admin = 0 WHERE id = ?`, targetId)
+    await db.exec('COMMIT')
+  } catch (error) {
+    await db.exec('ROLLBACK').catch(() => undefined)
+    console.error('Failed to demote admin user:', error)
+    return res.status(500).json({ message: '管理员权限更新失败' })
+  }
   await recordAdminAction(db, {
     adminId: auth.user.id,
     adminName: getAdminName(auth.user),
@@ -139,17 +156,34 @@ export const banUser = async (req, res) => {
   const targetId = req.params.id
   const { banned } = req.body || {}
   const banValue = banned ? 1 : 0
-  const target = await db.get(`SELECT id, is_admin, is_banned FROM users WHERE id = ?`, targetId)
-  if (!target) return res.status(404).json({ message: '用户不存在' })
-  if (banValue === 1) {
-    if (targetId === adminUser.id) return res.status(400).json({ message: '不能封禁自己' })
-    if (target.is_admin) {
-      const adminCount = await db.get(`SELECT COUNT(*) as count FROM users WHERE is_admin = 1`)
-      if (adminCount?.count <= 1) return res.status(400).json({ message: '不能封禁最后一个管理员' })
+  try {
+    await db.exec('BEGIN IMMEDIATE')
+    const target = await db.get(`SELECT id, is_admin, is_banned FROM users WHERE id = ?`, targetId)
+    if (!target) {
+      await db.exec('ROLLBACK')
+      return res.status(404).json({ message: '用户不存在' })
     }
+    if (banValue === 1) {
+      if (targetId === adminUser.id) {
+        await db.exec('ROLLBACK')
+        return res.status(400).json({ message: '不能封禁自己' })
+      }
+      if (target.is_admin) {
+        const adminCount = await db.get(`SELECT COUNT(*) as count FROM users WHERE is_admin = 1`)
+        if (adminCount?.count <= 1) {
+          await db.exec('ROLLBACK')
+          return res.status(400).json({ message: '不能封禁最后一个管理员' })
+        }
+      }
+    }
+    await db.run(`UPDATE users SET is_banned = ? WHERE id = ?`, banValue, targetId)
+    if (banValue === 1) await db.run(`DELETE FROM sessions WHERE user_id = ?`, targetId)
+    await db.exec('COMMIT')
+  } catch (error) {
+    await db.exec('ROLLBACK').catch(() => undefined)
+    console.error('Failed to update user ban status:', error)
+    return res.status(500).json({ message: '用户状态更新失败' })
   }
-  await db.run(`UPDATE users SET is_banned = ? WHERE id = ?`, banValue, targetId)
-  if (banValue === 1) await db.run(`DELETE FROM sessions WHERE user_id = ?`, targetId)
   await recordAdminAction(db, {
     adminId: auth.user.id,
     adminName: getAdminName(auth.user),
@@ -165,14 +199,28 @@ export const deleteAdminUser = async (req, res) => {
   const { db, user: adminUser } = auth
   const targetId = req.params.id
   if (targetId === adminUser.id) return res.status(400).json({ message: '不能删除自己' })
-  const target = await db.get(`SELECT id, is_admin FROM users WHERE id = ?`, targetId)
-  if (!target) return res.status(404).json({ message: '用户不存在' })
-  if (target.is_admin) {
-    const adminCount = await db.get(`SELECT COUNT(*) as count FROM users WHERE is_admin = 1`)
-    if (adminCount?.count <= 1) return res.status(400).json({ message: '不能删除最后一个管理员' })
+  try {
+    await db.exec('BEGIN IMMEDIATE')
+    const target = await db.get(`SELECT id, is_admin FROM users WHERE id = ?`, targetId)
+    if (!target) {
+      await db.exec('ROLLBACK')
+      return res.status(404).json({ message: '用户不存在' })
+    }
+    if (target.is_admin) {
+      const adminCount = await db.get(`SELECT COUNT(*) as count FROM users WHERE is_admin = 1`)
+      if (adminCount?.count <= 1) {
+        await db.exec('ROLLBACK')
+        return res.status(400).json({ message: '不能删除最后一个管理员' })
+      }
+    }
+    await db.run(`DELETE FROM users WHERE id = ?`, targetId)
+    await db.run(`DELETE FROM sessions WHERE user_id = ?`, targetId)
+    await db.exec('COMMIT')
+  } catch (error) {
+    await db.exec('ROLLBACK').catch(() => undefined)
+    console.error('Failed to delete admin user:', error)
+    return res.status(500).json({ message: '用户删除失败' })
   }
-  await db.run(`DELETE FROM users WHERE id = ?`, targetId)
-  await db.run(`DELETE FROM sessions WHERE user_id = ?`, targetId)
   await recordAdminAction(db, {
     adminId: auth.user.id,
     adminName: getAdminName(auth.user),

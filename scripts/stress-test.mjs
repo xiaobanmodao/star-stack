@@ -82,4 +82,4 @@ console.log(JSON.stringify({
   successRate: `${Math.round((passed / requests) * 100)}%`,
   latencyMs: { p50: percentile(0.5), p95: percentile(0.95), p99: percentile(0.99), max: Math.round(durations.at(-1) || 0) },
 }, null, 2))
-if (failed > 0 && mode === 'health') process.exitCode = 1
+if (failed > 0) process.exitCode = 1

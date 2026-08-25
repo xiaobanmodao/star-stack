@@ -34,6 +34,7 @@ export default function FloatingChat() {
   const { currentUser } = useAppContext()
   const [windows, setWindows] = useState<FloatWindow[]>([])
   const [rooms, setRooms] = useState<ChatRoomsResponse['rooms']>([])
+  const [roomsComplete, setRoomsComplete] = useState(true)
   const dragRef = useRef<{ id: number; dx: number; dy: number } | null>(null)
   const roomsAbortRef = useRef<AbortController | null>(null)
   const [draggingId, setDraggingId] = useState<number | null>(null)
@@ -67,8 +68,11 @@ export default function FloatingChat() {
       roomsAbortRef.current?.abort()
       const controller = new AbortController()
       roomsAbortRef.current = controller
-      void fetchJson<ChatRoomsResponse>('/api/chat/rooms', { signal: controller.signal }).then(({ response, data }) => {
-        if (!controller.signal.aborted && response.ok && data) setRooms(data.rooms)
+      void fetchJson<ChatRoomsResponse>('/api/chat/rooms?page=1&pageSize=100', { signal: controller.signal }).then(({ response, data }) => {
+        if (!controller.signal.aborted && response.ok && data) {
+          setRooms(data.rooms)
+          setRoomsComplete(!data.pagination || data.pagination.total <= data.rooms.length)
+        }
       }).catch(() => undefined).finally(() => {
         if (roomsAbortRef.current === controller) roomsAbortRef.current = null
       })
@@ -109,7 +113,7 @@ export default function FloatingChat() {
 
   // 已不存在的房间自动移除浮窗
   useEffect(() => {
-    if (rooms.length === 0 || windows.length === 0) return
+    if (!roomsComplete || rooms.length === 0 || windows.length === 0) return
     const timer = window.setTimeout(() => {
       const validIds = new Set(rooms.map((r) => r.id))
       setWindows((prev) => {
@@ -118,7 +122,7 @@ export default function FloatingChat() {
       })
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [rooms, windows.length])
+  }, [rooms, roomsComplete, windows.length])
 
   if (!currentUser || windows.length === 0) return null
 

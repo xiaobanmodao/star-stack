@@ -360,17 +360,17 @@ OJ
 **问题：** 用户提交的代码通过 `child_process.spawn` 直接在服务器上执行，无任何隔离。可读取文件系统、发起网络请求、fork bomb。
 
 **修复：** 新增 `server/sandbox.sh`，在 Ubuntu 上通过 Linux 内核特性隔离：
-- `unshare --net --mount --pid --mount-proc`：隔离网络、挂载和进程命名空间，禁止网络访问并避免用户代码查看宿主机进程
+- `unshare --user --net --mount --pid --mount-proc` + 最小 `chroot`：隔离用户、网络、挂载和进程命名空间，不暴露项目目录、用户目录和宿主机进程
 - `ulimit -v`：内存限制 256MB
 - `ulimit -u 32`：最大进程数 32
 - `ulimit -f 51200`：最大文件大小 50MB
 - `ulimit -n 64`：最大文件描述符 64
 - `timeout --signal=KILL`：双重超时保险
-- 编译和执行步骤都走沙箱，生产启动时会预检 `unshare` / `timeout` 能力；能力不足时拒绝评测，不回退到无隔离执行
+- 编译和执行步骤都走沙箱，生产启动时会预检完整 user namespace / mount / chroot 能力；能力不足时拒绝评测，不回退到无隔离执行
 - stdout/stderr 加大小限制（10MB/1MB），防止内存爆炸
 - Windows 开发环境行为不变
 
-**部署要求：** Linux 主机需要可用的 `unshare`、`timeout` 和网络/挂载/进程 namespace 权限；部署时应先验证 `unshare --net --mount --pid --fork --mount-proc --kill-child -- true`。生产环境沙箱不可用时服务仍可启动，但会拒绝执行用户代码。
+**部署要求：** Linux 主机需要可用的 `unshare`、`timeout`、`mount`、`chroot` 和对应 namespace 权限；服务必须由专用非 root 用户运行。部署时应以该用户执行 `server/sandbox.sh` 探针。生产环境沙箱不可用时服务仍可启动，但会拒绝执行用户代码。
 
 **修改文件：** `server/judge.js`, `server/sandbox.sh`（新增）
 
