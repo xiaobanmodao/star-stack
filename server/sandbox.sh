@@ -58,8 +58,11 @@ ulimit -n 64 2>/dev/null || true
 # 在新的用户 namespace 中把当前非 root 用户映射为 namespace 内 root。
 # 这只授予 namespace 内的挂载权限，不会授予宿主机 root 权限。
 # 沙箱能力不足时直接失败，不能回退到无隔离执行。
-exec unshare --user --map-root-user --net --mount --pid --fork --mount-proc --kill-child -- \
-  /bin/bash -s -- "$WORK_DIR" "$TIME_LIMIT_SECONDS" "$TIMING_MARKER" "$@" <<'SANDBOX_NAMESPACE_SCRIPT'
+#
+# 这里不能使用 `bash -s <<EOF`：heredoc 会占用标准输入，导致用户输入无法
+# 继续传给最终程序。先把 namespace 脚本读入变量，再通过 bash -c 执行，保留
+# sandbox.sh 自身的 stdin 管道给被测程序。
+NAMESPACE_SCRIPT=$(cat <<'SANDBOX_NAMESPACE_SCRIPT'
 set -euo pipefail
 
 # namespace 建立后再限制用户代码的进程数，避免 PM2/Node 的宿主线程让 unshare fork 失败。
@@ -127,3 +130,7 @@ exec chroot "$ROOT_DIR" /bin/bash -c \
   'cd /work && exec /usr/bin/timeout --signal=KILL "$1" "${@:2}"' \
   starstack "$TIME_LIMIT_SECONDS" "${COMMAND[@]}"
 SANDBOX_NAMESPACE_SCRIPT
+)
+
+exec unshare --user --map-root-user --net --mount --pid --fork --mount-proc --kill-child -- \
+  /bin/bash -c "$NAMESPACE_SCRIPT" starstack "$WORK_DIR" "$TIME_LIMIT_SECONDS" "$TIMING_MARKER" "$@"
