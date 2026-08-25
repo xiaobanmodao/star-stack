@@ -7,6 +7,7 @@ module.exports = {
       name: 'star-stack-api',
       cwd: __dirname,
       script: 'server/index.js',
+      exec_mode: 'fork',
       instances: 1,
       // 生产环境必须使用专用非 root 用户；启动前设置 PM2_USER/PM2_GROUP。
       uid: process.env.PM2_USER || undefined,
