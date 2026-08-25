@@ -50,8 +50,6 @@ ulimit -v "$MEM_LIMIT_KB" 2>/dev/null || true
 ulimit -t "$TIME_LIMIT_SEC" 2>/dev/null || true
 # 最大文件大小 50MB
 ulimit -f 51200 2>/dev/null || true
-# 最大进程数
-ulimit -u 32 2>/dev/null || true
 # 禁止 core dump
 ulimit -c 0 2>/dev/null || true
 # 最大打开文件数
@@ -63,6 +61,9 @@ ulimit -n 64 2>/dev/null || true
 exec unshare --user --map-root-user --net --mount --pid --fork --mount-proc --kill-child -- \
   /bin/bash -s -- "$WORK_DIR" "$TIME_LIMIT_SECONDS" "$TIMING_MARKER" "$@" <<'SANDBOX_NAMESPACE_SCRIPT'
 set -euo pipefail
+
+# namespace 建立后再限制用户代码的进程数，避免 PM2/Node 的宿主线程让 unshare fork 失败。
+ulimit -u 32 2>/dev/null || true
 
 WORK_DIR="$1"
 TIME_LIMIT_SECONDS="$2"
