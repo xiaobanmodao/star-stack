@@ -10,6 +10,7 @@
 #
 # 可用环境变量：
 #   BACKUP_DIR      备份目录（默认 /www/backup/starstack）
+#   BACKUP_GROUP    允许服务进程读取备份元数据的用户组（默认 starstack）
 #   DB_PATH         数据库路径（默认 server/data/starstack.sqlite）
 #   KEEP_DAYS       保留最近 N 天（默认 7）
 #   CRON_SCHEDULE   cron 表达式（默认 0 2 * * *）
@@ -23,10 +24,16 @@ PROJECT_ROOT="$SCRIPT_DIR"
 SCRIPT_PATH="$PROJECT_ROOT/backup.sh"
 
 BACKUP_DIR="${BACKUP_DIR:-/www/backup/starstack}"
+BACKUP_GROUP="${BACKUP_GROUP:-starstack}"
 DB_PATH="${DB_PATH:-$PROJECT_ROOT/server/data/starstack.sqlite}"
 KEEP_DAYS="${KEEP_DAYS:-7}"
 CRON_SCHEDULE="${CRON_SCHEDULE:-0 2 * * *}"
 LOG_FILE="${LOG_FILE:-$PROJECT_ROOT/server/backup.log}"
+
+BACKUP_GROUP_AVAILABLE=0
+if command -v getent > /dev/null 2>&1 && getent group "$BACKUP_GROUP" > /dev/null 2>&1; then
+  BACKUP_GROUP_AVAILABLE=1
+fi
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -48,6 +55,7 @@ show_help() {
   echo ""
   echo "环境变量:"
   echo "  BACKUP_DIR      备份目录（默认 /www/backup/starstack）"
+  echo "  BACKUP_GROUP    允许服务进程读取备份元数据的用户组（默认 starstack）"
   echo "  DB_PATH         数据库路径（默认 $PROJECT_ROOT/server/data/starstack.sqlite）"
   echo "  KEEP_DAYS       保留最近 N 天（默认 7）"
   echo "  CRON_SCHEDULE   cron 表达式（默认 0 2 * * *）"
@@ -92,7 +100,12 @@ echo "=========================================="
 
 # 创建备份目录
 mkdir -p "$BACKUP_DIR"
-chmod 700 "$BACKUP_DIR"
+if [ "$BACKUP_GROUP_AVAILABLE" -eq 1 ] && chgrp "$BACKUP_GROUP" "$BACKUP_DIR" 2>/dev/null; then
+  # 备份内容仍不对其他用户开放，服务进程只获得目录遍历和元数据读取权限。
+  chmod 750 "$BACKUP_DIR"
+else
+  chmod 700 "$BACKUP_DIR"
+fi
 
 # 检查数据库文件
 if [ ! -f "$DB_PATH" ]; then
@@ -123,7 +136,11 @@ BACKUP_FILE="${BACKUP_FILE}.gz"
 
 # 检查备份结果
 if [ -f "$BACKUP_FILE" ]; then
-    chmod 600 "$BACKUP_FILE"
+    if [ "$BACKUP_GROUP_AVAILABLE" -eq 1 ] && chgrp "$BACKUP_GROUP" "$BACKUP_FILE" 2>/dev/null; then
+      chmod 640 "$BACKUP_FILE"
+    else
+      chmod 600 "$BACKUP_FILE"
+    fi
     BACKUP_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
     echo -e "${GREEN}✓ 备份成功${NC}"
     echo "备份文件: $BACKUP_FILE"
