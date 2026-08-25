@@ -164,12 +164,13 @@ const canCreateSandbox = () => {
   const probe = spawnSync('/bin/bash', [
     SANDBOX_SH, probeRoot, '100', '65536', '-', '/bin/true',
   ], {
-    stdio: 'ignore',
+    stdio: process.env.JUDGE_DEBUG_SANDBOX === '1' ? 'pipe' : 'ignore',
+    encoding: 'utf8',
     timeout: 3000,
   })
   try { fs.rmSync(probeRoot, { recursive: true, force: true }) } catch {}
   if (probe.status !== 0 && process.env.JUDGE_DEBUG_SANDBOX === '1') {
-    console.error(`[sandbox] probe failed: status=${probe.status ?? 'null'} signal=${probe.signal ?? 'null'} error=${probe.error?.message || 'none'}`)
+    console.error(`[sandbox] probe failed: status=${probe.status ?? 'null'} signal=${probe.signal ?? 'null'} error=${probe.error?.message || 'none'} stderr=${probe.stderr?.toString().trim() || 'none'}`)
   }
   return probe.status === 0
 }
