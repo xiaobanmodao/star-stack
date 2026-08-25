@@ -34,8 +34,8 @@ shift 3
 # 第四个参数是由 Node 生成的一次性计时标记，后面才是真正要执行的命令。
 # 兼容没有传入标记的旧调用方式。
 TIMING_MARKER=""
-if [[ "${1:-}" == __STARSTACK_CPU_*__ ]]; then
-  TIMING_MARKER="$1"
+if [[ "${1:-}" == "-" || "${1:-}" == __STARSTACK_CPU_*__ ]]; then
+  TIMING_MARKER="${1#-}"
   shift
 fi
 
