@@ -348,9 +348,18 @@ const OjIdePanel = ({
     setRunTime(null)
     setRunOutput('')
     try {
+      const requestBody: Record<string, unknown> = {
+        problemId: problem.id,
+        language,
+        code: currentCode,
+        input,
+      }
+      // 自定义运行没有“标准答案”输入框，空 expected 只代表运行程序，
+      // 不应该被服务端当成“期望输出为空”来判定答案错误。
+      if (expected.trim()) requestBody.expected = expected
       const { response, data } = await fetchJson<{ status?: string; message?: string; output?: string; timeMs?: number }>('/api/oj/run-custom', {
         method: 'POST',
-        body: JSON.stringify({ problemId: problem.id, language, code: currentCode, input, expected }),
+        body: JSON.stringify(requestBody),
         signal: abortController.signal,
         timeoutMs: 15000,
       })

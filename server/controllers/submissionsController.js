@@ -739,14 +739,16 @@ export const runCustomHandler = async (req, res) => {
   try {
     const runResult = await runTask.promise
     const normalize = (text) => String(text ?? '').replace(/\r\n/g, '\n').trim()
+    const expectedOutput = expected === undefined ? '' : String(expected)
+    const hasExpectedOutput = expectedOutput.trim().length > 0
     let status = runResult.status
     let message = runResult.message
-    if (expected !== undefined && runResult.status === 'OK') {
-      const match = normalize(runResult.output) === normalize(expected)
+    if (hasExpectedOutput && runResult.status === 'OK') {
+      const match = normalize(runResult.output) === normalize(expectedOutput)
       status = match ? 'Accepted' : 'Wrong Answer'
       message = match ? '样例通过' : '样例未通过'
     }
-    return res.json({ output: runResult.output ?? '', expected: expected ?? '', status, message, timeMs: runResult.timeMs ?? 0 })
+    return res.json({ output: runResult.output ?? '', expected: hasExpectedOutput ? expectedOutput : '', status, message, timeMs: runResult.timeMs ?? 0 })
   } catch (error) {
     return res.status(500).json({ message: error?.message || '测试运行失败' })
   }
