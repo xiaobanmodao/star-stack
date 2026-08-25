@@ -3,11 +3,13 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import { fetchJson } from '../utils'
 import type {
-  Achievement, AchievementsResponse, ChatAchievement, ChatAchievementsResponse,
+  Achievement, ChatAchievement, ChatAchievementsResponse,
   DiscussionListResponse, DiscussionPost,
-  FollowRelations, ProfileStatsResponse, UserProfileResponse,
+  FollowRelations, ProfileStatsResponse, UserAchievementsResponse, UserProfileResponse,
 } from '../types'
 import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import HonorGrid from '../components/profile/HonorGrid'
+import DecoratedAvatar from '../components/profile/DecoratedAvatar'
 import ReportModal from '../components/ReportModal'
 import './AccountPage.css'
 import './UserProfile.css'
@@ -20,6 +22,7 @@ export default function UserProfilePage() {
   const [stats, setStats] = useState<ProfileStatsResponse | null>(null)
   const [posts, setPosts] = useState<DiscussionPost[]>([])
   const [achievements, setAchievements] = useState<Achievement[]>([])
+  const [achievementTotal, setAchievementTotal] = useState(0)
   const [chatAchievements, setChatAchievements] = useState<ChatAchievement[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -38,7 +41,7 @@ export default function UserProfilePage() {
         fetchJson<UserProfileResponse>(`/api/users/${userId}/profile`),
         fetchJson<ProfileStatsResponse>(`/api/user/profile/${userId}`).catch(() => null),
         fetchJson<DiscussionListResponse>(`/api/discussions?userId=${encodeURIComponent(userId)}&pageSize=5`).catch(() => null),
-        fetchJson<{ achievements: AchievementsResponse }>(`/api/user/achievements/${userId}`).catch(() => null),
+        fetchJson<UserAchievementsResponse>(`/api/user/achievements/${userId}`).catch(() => null),
         fetchJson<ChatAchievementsResponse>(`/api/chat/achievements/${userId}`).catch(() => null),
       ])
       if (!response.ok || !data) {
@@ -50,6 +53,7 @@ export default function UserProfilePage() {
       if (postsRes?.response.ok && postsRes.data) setPosts(postsRes.data.posts || [])
       if (achievementsRes?.response.ok && achievementsRes.data) {
         setAchievements(achievementsRes.data.achievements || [])
+        setAchievementTotal(achievementsRes.data.total || achievementsRes.data.achievements?.length || 0)
       }
       if (chatAchievementsRes?.response.ok && chatAchievementsRes.data) {
         setChatAchievements(chatAchievementsRes.data.achievements || [])
@@ -161,20 +165,22 @@ export default function UserProfilePage() {
         <aside className="profile-left">
           <Panel className="profile-card profile-identity-card">
             <div className="profile-avatar-shell">
-              <div className="profile-avatar-large">
-                {user.avatar ? (
-                  <img src={user.avatar} alt="头像" loading="lazy" decoding="async" width="88" height="88" />
-                ) : (
-                  <span>{user.name.charAt(0).toUpperCase()}</span>
-                )}
-              </div>
+              <DecoratedAvatar
+                className="profile-avatar-large"
+                avatar={user.avatar}
+                fallback={user.name.charAt(0).toUpperCase()}
+                frame={user.avatarFrame}
+                overlay={user.avatarOverlay}
+                size="profile"
+                alt="头像"
+              />
             </div>
             <div className="profile-user-copy">
               <div className="account-name" data-user-name>{user.name}</div>
               <div className="account-id" data-user-id>@{user.id}</div>
               {user.level && (
                 <Badge tone="info" className="profile-level-badge">
-                  {user.icon || '✦'} Lv.{user.level} {user.title || '星尘'}
+                  {user.displayTitleIcon || user.icon || '✦'} Lv.{user.level} {user.displayTitle || user.title || '星尘'}
                 </Badge>
               )}
             </div>
@@ -295,23 +301,19 @@ export default function UserProfilePage() {
             </Panel>
           </div>
 
-          {achievements.length > 0 && (
+          {achievementTotal > 0 && (
             <Panel className="user-achievements">
               <div className="user-section-head">
                 <div>
-                  <div className="profile-kicker">Achievements</div>
-                  <h2>成就徽章</h2>
+                  <div className="profile-kicker">Honors</div>
+                  <h2>荣誉墙</h2>
                 </div>
-                <span>{achievements.length} 个</span>
+                <span>{achievements.length}/{achievementTotal} 个</span>
               </div>
-              <div className="user-achievements-grid">
-                {achievements.slice(0, 12).map((achievement) => (
-                  <div key={achievement.id} className="user-achievement" title={achievement.description}>
-                    <span className="user-achievement-icon" aria-hidden="true">{achievement.icon || '★'}</span>
-                    <em>{achievement.name}</em>
-                  </div>
-                ))}
-              </div>
+              <HonorGrid
+                achievements={achievements}
+                emptyText="完成题目后，这里会展示用户获得的荣誉。"
+              />
             </Panel>
           )}
 

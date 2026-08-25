@@ -33,18 +33,20 @@ export const getLevelInfo = (xp = 0) => {
 
 // Achievement definitions
 const ACHIEVEMENTS = {
-  FIRST_AC: { id: 'first_ac', name: '初次通过', icon: '🎯', desc: '完成第一道题目' },
-  STREAK_7: { id: 'streak_7', name: '连续打卡7天', icon: '🔥', desc: '连续7天提交代码' },
-  STREAK_30: { id: 'streak_30', name: '连续打卡30天', icon: '⚡', desc: '连续30天提交代码' },
-  STREAK_100: { id: 'streak_100', name: '连续打卡100天', icon: '💎', desc: '连续100天提交代码' },
-  SOLVED_10: { id: 'solved_10', name: '初出茅庐', icon: '🌱', desc: '通过10道题目' },
-  SOLVED_50: { id: 'solved_50', name: '小有所成', icon: '🌿', desc: '通过50道题目' },
-  SOLVED_100: { id: 'solved_100', name: '登堂入室', icon: '🌳', desc: '通过100道题目' },
-  ALL_DIFFICULTY: { id: 'all_difficulty', name: '全难度通关', icon: '🏆', desc: '每个难度至少通过一题' },
-  PERFECT_SOLVE: { id: 'perfect_solve', name: '完美主义者', icon: '✨', desc: '某题一次AC' },
-  NIGHT_OWL: { id: 'night_owl', name: '夜猫子', icon: '🦉', desc: '在凌晨0-6点提交' },
-  EARLY_BIRD: { id: 'early_bird', name: '早起鸟', icon: '🐦', desc: '在早晨6-9点提交' }
+  FIRST_AC: { id: 'first_ac', name: '初次通过', icon: '🎯', desc: '完成第一道题目', rarity: 'common', category: 'problem' },
+  STREAK_7: { id: 'streak_7', name: '连续打卡 7 天', icon: '🔥', desc: '连续 7 天完成有效提交', rarity: 'rare', category: 'activity' },
+  STREAK_30: { id: 'streak_30', name: '连续打卡 30 天', icon: '⚡', desc: '连续 30 天完成有效提交', rarity: 'epic', category: 'activity' },
+  STREAK_100: { id: 'streak_100', name: '连续打卡 100 天', icon: '💎', desc: '连续 100 天完成有效提交', rarity: 'legendary', category: 'activity' },
+  SOLVED_10: { id: 'solved_10', name: '初出茅庐', icon: '🌱', desc: '通过 10 道题目', rarity: 'common', category: 'problem' },
+  SOLVED_50: { id: 'solved_50', name: '小有所成', icon: '🌿', desc: '通过 50 道题目', rarity: 'rare', category: 'problem' },
+  SOLVED_100: { id: 'solved_100', name: '登堂入室', icon: '🌳', desc: '通过 100 道题目', rarity: 'epic', category: 'problem' },
+  ALL_DIFFICULTY: { id: 'all_difficulty', name: '全难度通关', icon: '🏆', desc: '每个难度至少通过一题', rarity: 'rare', category: 'exploration' },
+  PERFECT_SOLVE: { id: 'perfect_solve', name: '完美主义者', icon: '✨', desc: '某题首次提交即通过', rarity: 'epic', category: 'problem' },
+  NIGHT_OWL: { id: 'night_owl', name: '夜猫子', icon: '🦉', desc: '在凌晨 0–6 点完成提交', rarity: 'common', category: 'activity' },
+  EARLY_BIRD: { id: 'early_bird', name: '早起鸟', icon: '🐦', desc: '在早晨 6–9 点完成提交', rarity: 'common', category: 'activity' },
 }
+
+const getAchievementDefinition = (type) => ACHIEVEMENTS[String(type || '').toUpperCase()]
 
 // 按本地时区解析 YYYY-MM-DD（new Date('2026-08-16') 是 UTC 解析，会差一天）
 const parseLocalDate = (str) => {
@@ -197,8 +199,38 @@ async function calculateStreak(db, userId) {
 /**
  * Check and unlock achievements for a user
  */
+const persistAchievements = async (db, userId, achievements, unlockedAt, { notify = true } = {}) => {
+  const unlocked = []
+  for (const achievement of achievements) {
+    const insertResult = await db.run(
+      `INSERT OR IGNORE INTO user_achievements (user_id, achievement_type, achievement_data, unlocked_at)
+       VALUES (?, ?, ?, ?)`,
+      userId,
+      achievement.type,
+      JSON.stringify(achievement.data || {}),
+      unlockedAt
+    )
+    if (insertResult?.changes > 0) {
+      unlocked.push(achievement)
+      const definition = getAchievementDefinition(achievement.type)
+      if (notify) {
+        await createNotification(db, {
+          userId,
+          actorId: userId,
+          type: 'achievement.unlocked',
+          targetType: 'achievement',
+          message: `解锁荣誉「${definition?.name || achievement.type}」`,
+          allowSelf: true,
+        })
+      }
+    }
+  }
+  return unlocked
+}
+
 async function checkAndUnlockAchievements(db, userId, submission) {
   const stats = await db.get(`SELECT * FROM user_stats WHERE user_id = ?`, userId)
+  if (!stats) return []
   const existingAchievements = await db.all(
     `SELECT achievement_type FROM user_achievements WHERE user_id = ?`,
     userId
@@ -208,7 +240,7 @@ async function checkAndUnlockAchievements(db, userId, submission) {
   const newAchievements = []
 
   // First AC
-  if (submission.status === 'Accepted' && stats.solved_problems === 1 && !unlockedTypes.has('first_ac')) {
+  if (submission.status === 'Accepted' && stats.solved_problems >= 1 && !unlockedTypes.has('first_ac')) {
     newAchievements.push({ type: 'first_ac', data: { problemId: submission.problemId } })
   }
 
@@ -224,14 +256,15 @@ async function checkAndUnlockAchievements(db, userId, submission) {
   }
 
   // Streak achievements
-  if (stats.current_streak >= 7 && !unlockedTypes.has('streak_7')) {
-    newAchievements.push({ type: 'streak_7', data: { streak: stats.current_streak } })
+  const bestStreak = Math.max(stats.current_streak || 0, stats.max_streak || 0)
+  if (bestStreak >= 7 && !unlockedTypes.has('streak_7')) {
+    newAchievements.push({ type: 'streak_7', data: { streak: bestStreak } })
   }
-  if (stats.current_streak >= 30 && !unlockedTypes.has('streak_30')) {
-    newAchievements.push({ type: 'streak_30', data: { streak: stats.current_streak } })
+  if (bestStreak >= 30 && !unlockedTypes.has('streak_30')) {
+    newAchievements.push({ type: 'streak_30', data: { streak: bestStreak } })
   }
-  if (stats.current_streak >= 100 && !unlockedTypes.has('streak_100')) {
-    newAchievements.push({ type: 'streak_100', data: { streak: stats.current_streak } })
+  if (bestStreak >= 100 && !unlockedTypes.has('streak_100')) {
+    newAchievements.push({ type: 'streak_100', data: { streak: bestStreak } })
   }
 
   // All difficulty achievement - 完成题库中所有存在的难度等级各一题
@@ -273,30 +306,103 @@ async function checkAndUnlockAchievements(db, userId, submission) {
     newAchievements.push({ type: 'early_bird', data: { hour } })
   }
 
-  // Insert new achievements
-  for (const achievement of newAchievements) {
-    const insertResult = await db.run(
-      `INSERT OR IGNORE INTO user_achievements (user_id, achievement_type, achievement_data, unlocked_at)
-       VALUES (?, ?, ?, ?)`,
+  await persistAchievements(db, userId, newAchievements, now)
+  return newAchievements
+}
+
+/**
+ * Rebuild historical achievements for existing users.
+ * This is intentionally idempotent and does not create notifications, so a server
+ * restart cannot repeatedly disturb users with old unlock messages.
+ */
+export const backfillAchievements = async (db) => {
+  const users = await db.all(`SELECT id FROM users ORDER BY id`)
+  let unlockedCount = 0
+
+  for (const user of users) {
+    const userId = user.id
+    await updateUserStats(db, userId)
+
+    const stats = await db.get(`SELECT * FROM user_stats WHERE user_id = ?`, userId)
+    if (!stats) continue
+    const existingRows = await db.all(
+      `SELECT achievement_type FROM user_achievements WHERE user_id = ?`,
       userId,
-      achievement.type,
-      JSON.stringify(achievement.data),
-      now
     )
-    if (insertResult?.changes > 0) {
-      const definition = ACHIEVEMENTS[achievement.type.toUpperCase()]
-      await createNotification(db, {
-        userId,
-        actorId: userId,
-        type: 'achievement.unlocked',
-        targetType: 'achievement',
-        message: `解锁成就「${definition?.name || achievement.type}」`,
-        allowSelf: true,
-      })
+    const unlockedTypes = new Set(existingRows.map((row) => row.achievement_type))
+    const candidates = []
+    const now = new Date().toISOString()
+    const add = (type, data = {}) => {
+      if (!unlockedTypes.has(type)) candidates.push({ type, data })
     }
+
+    const firstAccepted = await db.get(
+      `SELECT id, problem_id, created_at
+       FROM submissions
+       WHERE user_id = ? AND status = 'Accepted'
+       ORDER BY id ASC LIMIT 1`,
+      userId,
+    )
+    if (firstAccepted && stats.solved_problems >= 1) {
+      add('first_ac', { problemId: firstAccepted.problem_id })
+    }
+
+    if (stats.solved_problems >= 10) add('solved_10', { count: stats.solved_problems })
+    if (stats.solved_problems >= 50) add('solved_50', { count: stats.solved_problems })
+    if (stats.solved_problems >= 100) add('solved_100', { count: stats.solved_problems })
+
+    const bestStreak = Math.max(stats.current_streak || 0, stats.max_streak || 0)
+    if (bestStreak >= 7) add('streak_7', { streak: bestStreak })
+    if (bestStreak >= 30) add('streak_30', { streak: bestStreak })
+    if (bestStreak >= 100) add('streak_100', { streak: bestStreak })
+
+    const difficultyCount = await db.get(
+      `SELECT COUNT(DISTINCT difficulty) AS count
+       FROM problems WHERE difficulty IS NOT NULL AND difficulty <> ''`,
+    )
+    const solvedDifficultyCount = await db.get(
+      `SELECT COUNT(DISTINCT difficulty) AS count
+       FROM solved_problems
+       WHERE user_id = ? AND difficulty IS NOT NULL AND difficulty <> ''`,
+      userId,
+    )
+    if ((difficultyCount?.count || 0) > 0 && (solvedDifficultyCount?.count || 0) >= difficultyCount.count) {
+      add('all_difficulty')
+    }
+
+    const perfectSolve = await db.get(
+      `SELECT s.problem_id
+       FROM submissions s
+       WHERE s.user_id = ? AND s.status = 'Accepted'
+         AND NOT EXISTS (
+           SELECT 1 FROM submissions previous
+           WHERE previous.user_id = s.user_id
+             AND previous.problem_id = s.problem_id
+             AND previous.id < s.id
+         )
+       ORDER BY s.id ASC LIMIT 1`,
+      userId,
+    )
+    if (perfectSolve) add('perfect_solve', { problemId: perfectSolve.problem_id })
+
+    const timeRows = await db.all(
+      `SELECT created_at
+       FROM submissions
+       WHERE user_id = ? AND status NOT IN ('Queued', 'Judging', 'Cancelled')`,
+      userId,
+    )
+    for (const row of timeRows) {
+      const hour = new Date(row.created_at).getHours()
+      if (hour >= 0 && hour < 6) add('night_owl', { hour })
+      if (hour >= 6 && hour < 9) add('early_bird', { hour })
+      if (unlockedTypes.has('night_owl') && unlockedTypes.has('early_bird')) break
+    }
+
+    const unlocked = await persistAchievements(db, userId, candidates, now, { notify: false })
+    unlockedCount += unlocked.length
   }
 
-  return newAchievements
+  return { users: users.length, unlocked: unlockedCount }
 }
 
 /**

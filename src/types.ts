@@ -1,3 +1,7 @@
+export type AvatarFrameId = 'none' | 'meteor' | 'planet' | 'supernova' | 'black-hole'
+export type AvatarOverlayId = 'none' | 'streak-100' | 'perfect-solve'
+export type EquippedTitleId = `level:${number}` | `honor:${string}`
+
 export type UserRecord = {
   id: string
   name: string
@@ -14,6 +18,11 @@ export type UserRecord = {
   nextTitle?: string | null
   nextXp?: number | null
   progress?: number
+  avatarFrame?: AvatarFrameId
+  avatarOverlay?: AvatarOverlayId
+  equippedTitle?: EquippedTitleId | null
+  displayTitle?: string
+  displayTitleIcon?: string
 }
 
 export type AdminProblem = {
@@ -105,10 +114,14 @@ export type HeatmapData = {
 
 export type Achievement = {
   id: string
+  type?: string
   name: string
   description: string
   desc?: string
   icon: string
+  rarity?: 'common' | 'rare' | 'epic' | 'legendary'
+  category?: 'problem' | 'activity' | 'exploration' | 'general'
+  data?: Record<string, unknown>
   unlockedAt?: string
 }
 
@@ -157,6 +170,36 @@ export type AuthSession = {
 
 export type UserResponse = {
   user: UserRecord
+  message?: string
+}
+
+export type DecorationOption = {
+  id: string
+  name: string
+  description?: string
+  icon?: string
+  source?: 'level' | 'honor'
+  unlockText: string
+  unlocked: boolean
+  asset?: string | null
+}
+
+export type DecorationOptionsResponse = {
+  equipped: {
+    avatarFrame: AvatarFrameId
+    avatarOverlay: AvatarOverlayId
+    equippedTitle: EquippedTitleId | null
+    displayTitle: string
+    displayTitleIcon: string
+  }
+  frames: DecorationOption[]
+  overlays: DecorationOption[]
+  titles: DecorationOption[]
+  fallbackTitle: {
+    id: string
+    name: string
+    icon: string
+  }
   message?: string
 }
 
@@ -229,9 +272,17 @@ export type HeatmapResponse = HeatmapData[]
 
 export type AchievementsResponse = Achievement[]
 
+export type UserAchievementsResponse = {
+  achievements: AchievementsResponse
+  honors?: AchievementsResponse
+  total?: number
+  unlockedCount?: number
+}
+
 export type LeaderboardResponse = LeaderboardEntry[]
 export type DiscussionPost = {
   id: number; userId: string; userName: string; userAvatar?: string
+  userAvatarFrame?: AvatarFrameId; userAvatarOverlay?: AvatarOverlayId; userDisplayTitle?: string; userDisplayTitleIcon?: string
   title: string; content?: string
   problemId?: number; problemTitle?: string
   moduleKey?: ChatModuleKey
@@ -241,6 +292,7 @@ export type DiscussionPost = {
 
 export type DiscussionComment = {
   id: number; postId: number; userId: string; userName: string; userAvatar?: string
+  userAvatarFrame?: AvatarFrameId; userAvatarOverlay?: AvatarOverlayId; userDisplayTitle?: string; userDisplayTitleIcon?: string
   content: string; parentId?: number; likeCount: number; liked?: boolean
   createdAt: string; replies?: DiscussionComment[]; replyToName?: string
 }
@@ -258,6 +310,10 @@ export type Message = {
   senderId: string
   senderName: string
   senderAvatar?: string
+  senderAvatarFrame?: AvatarFrameId
+  senderAvatarOverlay?: AvatarOverlayId
+  senderDisplayTitle?: string
+  senderDisplayTitleIcon?: string
   content: string
   isRead: boolean
   createdAt: string
@@ -269,6 +325,10 @@ export type Conversation = {
     id: string
     name: string
     avatar?: string
+    avatarFrame?: AvatarFrameId
+    avatarOverlay?: AvatarOverlayId
+    displayTitle?: string
+    displayTitleIcon?: string
   }
   lastMessage: {
     id: number
@@ -297,6 +357,10 @@ export type MessagesResponse = {
     id: string
     name: string
     avatar?: string
+    avatarFrame?: AvatarFrameId
+    avatarOverlay?: AvatarOverlayId
+    displayTitle?: string
+    displayTitleIcon?: string
     isBanned: boolean
   }
   pagination: {
@@ -435,6 +499,11 @@ export type UserProfile = {
   nextTitle?: string | null
   nextXp?: number | null
   progress?: number
+  avatarFrame?: AvatarFrameId
+  avatarOverlay?: AvatarOverlayId
+  equippedTitle?: EquippedTitleId | null
+  displayTitle?: string
+  displayTitleIcon?: string
 }
 
 export type UserProfileResponse = {

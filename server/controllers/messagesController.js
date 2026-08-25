@@ -2,8 +2,20 @@ import { getDb } from '../db.js'
 import { requireUser } from '../middleware/auth.js'
 import { sanitizeHtml } from '../utils/htmlFilter.js'
 import { BoundedCache } from '../utils/boundedCache.js'
+import { getDecorationIdentity } from '../utils/decorations.js'
+import { getLevelInfo } from '../stats.js'
+import { getUserLevelInfo } from '../utils/userHelpers.js'
 
 const messageRateLimits = new BoundedCache(5000, 3000)
+
+const getUserDecorationFields = (row, prefix) => getDecorationIdentity(
+  {
+    avatar_frame: row[`${prefix}_avatar_frame`],
+    avatar_overlay: row[`${prefix}_avatar_overlay`],
+    equipped_title: row[`${prefix}_equipped_title`],
+  },
+  getLevelInfo(row[`${prefix}_xp`] || 0),
+)
 
 const getOrCreateConversation = async (db, userId1, userId2) => {
   const [user1, user2] = userId1 < userId2 ? [userId1, userId2] : [userId2, userId1]
@@ -23,10 +35,20 @@ export const searchUsers = async (req, res) => {
     const q = (req.query.q || '').trim()
     if (!q || q.length < 1) return res.json({ users: [] })
     const users = await db.all(
-      `SELECT id, name, avatar FROM users WHERE (id LIKE ? OR name LIKE ?) AND id != ? AND is_banned = 0 LIMIT 10`,
+      `SELECT u.id, u.name, u.avatar, u.avatar_frame, u.avatar_overlay, u.equipped_title, us.xp
+       FROM users u LEFT JOIN user_stats us ON us.user_id = u.id
+       WHERE (u.id LIKE ? OR u.name LIKE ?) AND u.id != ? AND u.is_banned = 0 LIMIT 10`,
       `%${q}%`, `%${q}%`, user.id
     )
-    return res.json({ users })
+    return res.json({ users: users.map((item) => ({
+      id: item.id, name: item.name, avatar: item.avatar,
+      ...getUserDecorationFields({
+        search_avatar_frame: item.avatar_frame,
+        search_avatar_overlay: item.avatar_overlay,
+        search_equipped_title: item.equipped_title,
+        search_xp: item.xp,
+      }, 'search'),
+    })) })
   } catch (error) {
     console.error('Failed to search users:', error)
     return res.status(500).json({ message: '搜索用户失败' })
@@ -59,6 +81,10 @@ export const listConversations = async (req, res) => {
         CASE WHEN c.user1_id = ? THEN c.user2_id ELSE c.user1_id END as other_user_id,
         u.name as other_user_name,
         u.avatar as other_user_avatar,
+        u.avatar_frame as other_user_avatar_frame,
+        u.avatar_overlay as other_user_avatar_overlay,
+        u.equipped_title as other_user_equipped_title,
+        us.xp as other_user_xp,
         lm.id as last_msg_id,
         lm.sender_id as last_msg_sender_id,
         lm.content as last_msg_content,
@@ -66,6 +92,7 @@ export const listConversations = async (req, res) => {
         COALESCE(unread.count, 0) as unread_count
        FROM conversations c
        JOIN users u ON u.id = CASE WHEN c.user1_id = ? THEN c.user2_id ELSE c.user1_id END
+       LEFT JOIN user_stats us ON us.user_id = u.id
        LEFT JOIN (
          SELECT m1.conversation_id, m1.id, m1.sender_id, m1.content, m1.created_at
          FROM messages m1
@@ -93,7 +120,10 @@ export const listConversations = async (req, res) => {
     return res.json({
       conversations: conversations.map(conv => ({
         conversationId: conv.id,
-        otherUser: { id: conv.other_user_id, name: conv.other_user_name, avatar: conv.other_user_avatar },
+        otherUser: {
+          id: conv.other_user_id, name: conv.other_user_name, avatar: conv.other_user_avatar,
+          ...getUserDecorationFields(conv, 'other_user'),
+        },
         lastMessage: conv.last_msg_id ? {
           id: conv.last_msg_id, senderId: conv.last_msg_sender_id,
           content: conv.last_msg_content, createdAt: conv.last_msg_created_at,
@@ -125,16 +155,25 @@ export const getConversation = async (req, res) => {
     const pageSize = Math.min(50, Number(req.query.pageSize) || 30)
     const offset = (page - 1) * pageSize
 
-    const otherUser = await db.get(`SELECT id, name, avatar, is_banned FROM users WHERE id = ?`, otherUserId)
+    const otherUser = await db.get(
+      `SELECT u.id, u.name, u.avatar, u.avatar_frame, u.avatar_overlay, u.equipped_title,
+              u.is_banned, us.xp
+       FROM users u LEFT JOIN user_stats us ON us.user_id = u.id
+       WHERE u.id = ?`,
+      otherUserId,
+    )
     if (!otherUser) return res.status(404).json({ message: '用户不存在' })
 
     const conversation = await getOrCreateConversation(db, user.id, otherUserId)
 
     const messages = await db.all(
       `SELECT m.id, m.sender_id, m.content, m.is_read, m.created_at,
-              u.name as sender_name, u.avatar as sender_avatar
+              u.name as sender_name, u.avatar as sender_avatar,
+              u.avatar_frame as sender_avatar_frame, u.avatar_overlay as sender_avatar_overlay,
+              u.equipped_title as sender_equipped_title, us.xp as sender_xp
        FROM messages m
        JOIN users u ON m.sender_id = u.id
+       LEFT JOIN user_stats us ON us.user_id = m.sender_id
        LEFT JOIN message_deletions md ON m.id = md.message_id AND md.user_id = ?
        WHERE m.conversation_id = ? AND md.id IS NULL
        ORDER BY m.created_at DESC LIMIT ? OFFSET ?`,
@@ -154,12 +193,28 @@ export const getConversation = async (req, res) => {
     )
 
     return res.json({
-      messages: messages.reverse().map(m => ({
-        id: m.id, senderId: m.sender_id, senderName: m.sender_name,
-        senderAvatar: m.sender_avatar, content: m.content,
-        isRead: m.is_read === 1, createdAt: m.created_at,
-      })),
-      otherUser: { id: otherUser.id, name: otherUser.name, avatar: otherUser.avatar, isBanned: otherUser.is_banned === 1 },
+      messages: messages.reverse().map(m => {
+        const decoration = getUserDecorationFields(m, 'sender')
+        return {
+          id: m.id, senderId: m.sender_id, senderName: m.sender_name,
+          senderAvatar: m.sender_avatar, content: m.content,
+          senderAvatarFrame: decoration.avatarFrame,
+          senderAvatarOverlay: decoration.avatarOverlay,
+          senderDisplayTitle: decoration.displayTitle,
+          senderDisplayTitleIcon: decoration.displayTitleIcon,
+          isRead: m.is_read === 1, createdAt: m.created_at,
+        }
+      }),
+      otherUser: {
+        id: otherUser.id, name: otherUser.name, avatar: otherUser.avatar,
+        ...getUserDecorationFields({
+          other_avatar_frame: otherUser.avatar_frame,
+          other_avatar_overlay: otherUser.avatar_overlay,
+          other_equipped_title: otherUser.equipped_title,
+          other_xp: otherUser.xp,
+        }, 'other'),
+        isBanned: otherUser.is_banned === 1,
+      },
       pagination: { page, pageSize, total: totalCount.count, totalPages: Math.ceil(totalCount.count / pageSize) },
     })
   } catch (error) {
@@ -206,10 +261,16 @@ export const sendMessage = async (req, res) => {
     await db.run(`UPDATE conversations SET last_message_at = ? WHERE id = ?`, timestamp, conversation.id)
     messageRateLimits.set(user.id, Date.now())
 
+    const senderDecoration = getDecorationIdentity(user, await getUserLevelInfo(db, user.id))
+
     return res.json({
       message: {
         id: result.lastID, senderId: user.id, senderName: user.name,
         senderAvatar: user.avatar || null, content: sanitizedContent,
+        senderAvatarFrame: senderDecoration.avatarFrame,
+        senderAvatarOverlay: senderDecoration.avatarOverlay,
+        senderDisplayTitle: senderDecoration.displayTitle,
+        senderDisplayTitleIcon: senderDecoration.displayTitleIcon,
         isRead: false, createdAt: timestamp,
       },
     })

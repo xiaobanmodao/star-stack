@@ -1,7 +1,9 @@
 import { getDb } from '../db.js'
 import { requireUser, requireAdmin, getAuthToken, getUserByToken } from '../middleware/auth.js'
 import { sanitizeHtml } from '../utils/htmlFilter.js'
-import { addXp } from '../utils/userHelpers.js'
+import { addXp, getUserLevelInfo } from '../utils/userHelpers.js'
+import { getDecorationIdentity } from '../utils/decorations.js'
+import { getLevelInfo } from '../stats.js'
 import { createNotification, notifyMentions } from '../utils/notifications.js'
 import { bumpChatStat } from '../utils/chatStats.js'
 import { BoundedCache } from '../utils/boundedCache.js'
@@ -10,6 +12,23 @@ import { recordAdminAction } from '../utils/adminAudit.js'
 const VALID_MODULES = new Set(['general', 'oj', 'jieya', 'starcode'])
 const postRateLimits = new BoundedCache(5000, 10000)
 const commentRateLimits = new BoundedCache(5000, 5000)
+
+const getUserDecorationFields = (row, prefix = 'user') => {
+  const decoration = getDecorationIdentity(
+    {
+      avatar_frame: row[`${prefix}_avatar_frame`],
+      avatar_overlay: row[`${prefix}_avatar_overlay`],
+      equipped_title: row[`${prefix}_equipped_title`],
+    },
+    getLevelInfo(row[`${prefix}_xp`] || 0),
+  )
+  return {
+    userAvatarFrame: decoration.avatarFrame,
+    userAvatarOverlay: decoration.avatarOverlay,
+    userDisplayTitle: decoration.displayTitle,
+    userDisplayTitleIcon: decoration.displayTitleIcon,
+  }
+}
 
 export const listDiscussions = async (req, res) => {
   try {
@@ -50,9 +69,13 @@ export const listDiscussions = async (req, res) => {
     const posts = await db.all(
       `SELECT dp.id, dp.user_id, dp.title, dp.content, dp.problem_id, dp.module_key, dp.view_count, dp.like_count,
               dp.comment_count, dp.is_pinned, dp.created_at, dp.updated_at,
-              u.name as user_name, u.avatar as user_avatar, p.title as problem_title
+              u.name as user_name, u.avatar as user_avatar,
+              u.avatar_frame as user_avatar_frame, u.avatar_overlay as user_avatar_overlay,
+              u.equipped_title as user_equipped_title, us.xp as user_xp,
+              p.title as problem_title
        FROM discussion_posts dp
        LEFT JOIN users u ON dp.user_id = u.id
+       LEFT JOIN user_stats us ON us.user_id = dp.user_id
        LEFT JOIN problems p ON dp.problem_id = p.id
        ${whereSql} ${orderSql} LIMIT ? OFFSET ?`,
       ...params, pageSize, offset
@@ -73,6 +96,7 @@ export const listDiscussions = async (req, res) => {
     return res.json({
       posts: posts.map(p => ({
         id: p.id, userId: p.user_id, userName: p.user_name, userAvatar: p.user_avatar,
+        ...getUserDecorationFields(p),
         title: p.title, content: p.content, problemId: p.problem_id, problemTitle: p.problem_title,
         moduleKey: p.module_key || 'general',
         viewCount: p.view_count, likeCount: p.like_count, commentCount: p.comment_count,
@@ -94,8 +118,12 @@ export const getDiscussion = async (req, res) => {
     if (!postId) return res.status(400).json({ message: '无效的帖子ID' })
 
     const post = await db.get(
-      `SELECT dp.*, u.name as user_name, u.avatar as user_avatar, p.title as problem_title
+      `SELECT dp.*, u.name as user_name, u.avatar as user_avatar,
+              u.avatar_frame as user_avatar_frame, u.avatar_overlay as user_avatar_overlay,
+              u.equipped_title as user_equipped_title, us.xp as user_xp,
+              p.title as problem_title
        FROM discussion_posts dp LEFT JOIN users u ON dp.user_id = u.id LEFT JOIN problems p ON dp.problem_id = p.id
+       LEFT JOIN user_stats us ON us.user_id = dp.user_id
        WHERE dp.id = ?`, postId
     )
     if (!post) return res.status(404).json({ message: '帖子不存在' })
@@ -123,8 +151,11 @@ export const getDiscussion = async (req, res) => {
     }
 
     const comments = await db.all(
-      `SELECT dc.*, u.name as user_name, u.avatar as user_avatar
+      `SELECT dc.*, u.name as user_name, u.avatar as user_avatar,
+              u.avatar_frame as user_avatar_frame, u.avatar_overlay as user_avatar_overlay,
+              u.equipped_title as user_equipped_title, us.xp as user_xp
        FROM discussion_comments dc LEFT JOIN users u ON dc.user_id = u.id
+       LEFT JOIN user_stats us ON us.user_id = dc.user_id
        WHERE dc.post_id = ? ORDER BY dc.created_at ASC`, postId
     )
 
@@ -151,6 +182,7 @@ export const getDiscussion = async (req, res) => {
       commentMap.set(c.id, {
         id: c.id, postId: c.post_id, userId: c.user_id,
         userName: c.user_name, userAvatar: c.user_avatar,
+        ...getUserDecorationFields(c),
         content: c.content, parentId: c.parent_id,
         likeCount: c.like_count, liked: commentLikedSet.has(c.id),
         createdAt: c.created_at, replies: [],
@@ -171,6 +203,7 @@ export const getDiscussion = async (req, res) => {
       post: {
         id: post.id, userId: post.user_id, userName: post.user_name,
         userAvatar: post.user_avatar, title: post.title, content: post.content,
+        ...getUserDecorationFields(post),
         problemId: post.problem_id, problemTitle: post.problem_title,
         moduleKey: post.module_key,
         viewCount: post.view_count, likeCount: post.like_count,
@@ -415,11 +448,16 @@ export const addComment = async (req, res) => {
       'post', postId, (id) => `在评论中提到了你（@${id}）`
     )
 
+    const decoration = getDecorationIdentity(user, await getUserLevelInfo(db, user.id))
     return res.json({
       message: '评论成功',
       comment: {
         id: result.lastID, postId, userId: user.id,
         userName: user.name, userAvatar: user.avatar,
+        userAvatarFrame: decoration.avatarFrame,
+        userAvatarOverlay: decoration.avatarOverlay,
+        userDisplayTitle: decoration.displayTitle,
+        userDisplayTitleIcon: decoration.displayTitleIcon,
         content: sanitized, parentId: parentId || null,
         likeCount: 0, liked: false, createdAt: now, replies: [],
       },

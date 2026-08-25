@@ -14,6 +14,7 @@ import {
   updatePassword,
   updateAvatar,
 } from '../controllers/authController.js'
+import { getMyDecorations, updateMyDecorations } from '../controllers/decorationController.js'
 import { createRateLimiter } from '../middleware/rateLimit.js'
 
 const router = Router()
@@ -34,5 +35,7 @@ router.delete('/me/sessions/:id', revokeSession)
 router.patch('/me/name', updateName)
 router.post('/me/password', updatePassword)
 router.post('/me/avatar', updateAvatar)
+router.get('/me/decorations', getMyDecorations)
+router.patch('/me/decorations', updateMyDecorations)
 
 export default router

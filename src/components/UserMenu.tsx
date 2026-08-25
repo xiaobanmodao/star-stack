@@ -4,6 +4,7 @@ import './UserMenu.css'
 import { OJ_ENABLED } from '../constants'
 import type { UserRecord } from '../types'
 import { BookOpen, CircleUserRound, FileText, LogOut, ShieldCheck, UserRound } from 'lucide-react'
+import DecoratedAvatar from './profile/DecoratedAvatar'
 
 interface UserMenuProps {
   currentUser: UserRecord
@@ -76,11 +77,15 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
         onClick={toggleMenu}
         onFocus={handleMouseEnter}
       >
-        {currentUser.avatar ? (
-          <img src={currentUser.avatar} alt="头像" loading="eager" decoding="async" width="36" height="36" />
-        ) : (
-          <span>{initial}</span>
-        )}
+        <DecoratedAvatar
+          avatar={currentUser.avatar}
+          fallback={initial}
+          frame={currentUser.avatarFrame}
+          overlay={currentUser.avatarOverlay}
+          size="topbar"
+          alt="头像"
+          loading="eager"
+        />
       </button>
       <div
         ref={menuRef}
@@ -90,9 +95,9 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
         aria-hidden={!userMenuOpen}
       >
         <div className="user-menu-level">
-          <span aria-hidden="true">{currentUser.icon || <CircleUserRound size={16} strokeWidth={1.8} />}</span>
+          <span aria-hidden="true">{currentUser.displayTitleIcon || currentUser.icon || <CircleUserRound size={16} strokeWidth={1.8} />}</span>
           <span>Lv.{currentUser.level ?? 1}</span>
-          <strong>{currentUser.title || '星尘'}</strong>
+          <strong>{currentUser.displayTitle || currentUser.title || '星尘'}</strong>
         </div>
         <div className="user-menu-divider" aria-hidden="true" />
         <button className="user-menu-item" role="menuitem" type="button" onClick={() => {

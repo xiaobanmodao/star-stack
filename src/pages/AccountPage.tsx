@@ -5,20 +5,20 @@ import { useAppContext } from '../context/AppContext'
 import { useToast } from '../components/ui/ToastContext'
 import type {
   Achievement,
-  AchievementsResponse,
   CheckinResponse,
   DifficultyStats,
   HeatmapData,
   HeatmapResponse,
-  OjSubmission,
   ProfileStats,
   ProfileStatsResponse,
-  SubmissionsResponse,
+  UserAchievementsResponse,
 } from '../types'
 import { fetchJson } from '../utils'
 import { OJ_ENABLED } from '../constants'
 import type { FollowRelations, UserProfileResponse } from '../types'
 import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
+import HonorGrid from '../components/profile/HonorGrid'
+import DecoratedAvatar from '../components/profile/DecoratedAvatar'
 import './AccountPage.css'
 import './UserProfile.css'
 
@@ -41,29 +41,23 @@ const getRatingDelta = (history: { date: string; rating: number }[]) => {
   return history[history.length - 1].rating - history[0].rating
 }
 
-const getSubmissionLabel = (status: string) => {
-  if (status === 'Accepted') return 'AC'
-  if (status === 'Wrong Answer') return 'WA'
-  if (status === 'Time Limit Exceeded') return 'TLE'
-  if (status === 'Runtime Error') return 'RE'
-  if (status === 'Compile Error') return 'CE'
-  if (status === 'Queued') return '排队'
-  if (status === 'Judging') return '评测'
-  return status || '未知'
-}
-
 export default function AccountPage() {
   const navigate = useNavigate()
   const { currentUser, openAuth } = useAppContext()
   const { showToast } = useToast()
   const [profileStats, setProfileStats] = useState<ProfileStats | null>(null)
   const [heatmapData, setHeatmapData] = useState<HeatmapData[]>([])
+  const [heatmapTip, setHeatmapTip] = useState<{
+    text: string
+    x: number
+    y: number
+  } | null>(null)
   const [achievements, setAchievements] = useState<Achievement[]>([])
+  const [achievementTotal, setAchievementTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [profileError, setProfileError] = useState('')
   const [profileReloadKey, setProfileReloadKey] = useState(0)
   const [ratingHistory, setRatingHistory] = useState<{ date: string; rating: number }[]>([])
-  const [recentSubmissions, setRecentSubmissions] = useState<OjSubmission[]>([])
   const [relations, setRelations] = useState<FollowRelations | null>(null)
   const [bookmarks, setBookmarks] = useState<{ id: number; title: string; userName: string; commentCount: number; createdAt: string }[]>([])
   const [problemBookmarks, setProblemBookmarks] = useState<{ id: number; title: string; difficulty?: string; createdAt: string }[]>([])
@@ -78,6 +72,31 @@ export default function AccountPage() {
     setProfileError('')
     setProfileReloadKey((value) => value + 1)
   }
+
+  const showHeatmapTip = (event: { currentTarget: HTMLElement }, text: string) => {
+    const panel = event.currentTarget.closest('.profile-activity-panel') as HTMLElement | null
+    if (!panel) return
+    const panelRect = panel.getBoundingClientRect()
+    const rect = event.currentTarget.getBoundingClientRect()
+    setHeatmapTip({
+      text,
+      x: rect.left - panelRect.left + rect.width / 2,
+      y: rect.top - panelRect.top - 6,
+    })
+  }
+
+  const clearHeatmapTip = () => setHeatmapTip(null)
+
+  useEffect(() => {
+    if (!heatmapTip) return undefined
+    const closeTip = () => setHeatmapTip(null)
+    window.addEventListener('scroll', closeTip, true)
+    window.addEventListener('resize', closeTip)
+    return () => {
+      window.removeEventListener('scroll', closeTip, true)
+      window.removeEventListener('resize', closeTip)
+    }
+  }, [heatmapTip])
 
   const handleCheckin = async () => {
     if (!currentUser || checkingIn || checkin?.checkedToday) return
@@ -118,12 +137,11 @@ export default function AccountPage() {
       setLoading(true)
       setProfileError('')
       try {
-        const [statsRes, heatmapRes, achievementsRes, ratingRes, submissionsRes] = await Promise.all([
+        const [statsRes, heatmapRes, achievementsRes, ratingRes] = await Promise.all([
           fetchJson<ProfileStatsResponse>(`/api/user/profile/${currentUser.id}`),
           fetchJson<{ heatmap: HeatmapResponse }>(`/api/user/heatmap/${currentUser.id}`),
-          fetchJson<{ achievements: AchievementsResponse }>(`/api/user/achievements/${currentUser.id}`),
+          fetchJson<UserAchievementsResponse>(`/api/user/achievements/${currentUser.id}`),
           fetchJson<{ history: { date: string; rating: number }[] }>(`/api/user/rating-history/${currentUser.id}`),
-          fetchJson<SubmissionsResponse>('/api/oj/submissions'),
         ])
 
         if (!mounted) return
@@ -132,9 +150,11 @@ export default function AccountPage() {
 
         if (statsRes.response.ok && statsRes.data) setProfileStats(statsRes.data)
         if (heatmapRes.response.ok && heatmapRes.data) setHeatmapData(heatmapRes.data.heatmap || [])
-        if (achievementsRes.response.ok && achievementsRes.data) setAchievements(achievementsRes.data.achievements || [])
+        if (achievementsRes.response.ok && achievementsRes.data) {
+          setAchievements(achievementsRes.data.achievements || [])
+          setAchievementTotal(achievementsRes.data.total || achievementsRes.data.achievements?.length || 0)
+        }
         if (ratingRes.response.ok && ratingRes.data) setRatingHistory(ratingRes.data.history || [])
-        if (submissionsRes.response.ok && submissionsRes.data) setRecentSubmissions((submissionsRes.data.submissions || []).slice(0, 6))
 
         if (failed) {
           setProfileError('部分成长数据加载失败，其他内容仍可正常使用。')
@@ -276,13 +296,15 @@ export default function AccountPage() {
       <aside className="profile-left">
         <Panel className="profile-card profile-identity-card">
           <div className="profile-avatar-shell">
-            <div className="profile-avatar-large">
-              {currentUser.avatar ? (
-                <img src={currentUser.avatar} alt="头像" loading="lazy" />
-              ) : (
-                initial
-              )}
-            </div>
+            <DecoratedAvatar
+              className="profile-avatar-large"
+              avatar={currentUser.avatar}
+              fallback={initial}
+              frame={currentUser.avatarFrame}
+              overlay={currentUser.avatarOverlay}
+              size="profile"
+              alt="头像"
+            />
           </div>
           <div className="profile-user-copy">
             <div className="profile-name-row">
@@ -301,7 +323,7 @@ export default function AccountPage() {
             <div className="account-email" data-user-email>{currentUser.email || '邮箱未绑定'}</div>
             {currentUser.level && (
               <Badge tone="info" className="profile-level-badge">
-                {currentUser.icon || '✦'} Lv.{currentUser.level} {currentUser.title || '星尘'}
+                {currentUser.displayTitleIcon || currentUser.icon || '✦'} Lv.{currentUser.level} {currentUser.displayTitle || currentUser.title || '星尘'}
               </Badge>
             )}
           </div>
@@ -377,16 +399,35 @@ export default function AccountPage() {
             </div>
             <span>最近 {heatmapData.length || 0} 天</span>
           </div>
-          <div className="heatmap-grid">
-            {heatmapData.map((day, index) => (
-              <div
-                key={`${day.date}-${index}`}
-                className="heatmap-cell"
-                data-level={getHeatmapLevel(day.count)}
-                data-tip={`${day.date}：提交 ${day.count} 次，AC ${day.accepted ?? 0} 次`}
-              />
-            ))}
+          <div className="heatmap-scroll" onScroll={clearHeatmapTip}>
+            <div className="heatmap-grid">
+              {heatmapData.map((day, index) => {
+                const tip = `${day.date}：提交 ${day.count} 次，AC ${day.accepted ?? 0} 次`
+                return (
+                  <button
+                    key={`${day.date}-${index}`}
+                    type="button"
+                    className="heatmap-cell"
+                    data-level={getHeatmapLevel(day.count)}
+                    aria-label={tip}
+                    onMouseEnter={(event) => showHeatmapTip(event, tip)}
+                    onMouseLeave={clearHeatmapTip}
+                    onFocus={(event) => showHeatmapTip(event, tip)}
+                    onBlur={clearHeatmapTip}
+                  />
+                )
+              })}
+            </div>
           </div>
+          {heatmapTip && (
+            <div
+              className="heatmap-tooltip"
+              role="tooltip"
+              style={{ left: heatmapTip.x, top: heatmapTip.y }}
+            >
+              {heatmapTip.text}
+            </div>
+          )}
         </Panel>
 
         {difficultyEntries.length > 0 && (
@@ -419,26 +460,19 @@ export default function AccountPage() {
           </Panel>
         )}
 
-        {achievements.length > 0 && (
+        {OJ_ENABLED && achievementTotal > 0 && (
           <Panel className="achievements-section profile-achievements-panel">
             <div className="profile-panel-head">
               <div>
-                <div className="profile-kicker">Achievements</div>
-                <h2>成就轨道</h2>
+                <div className="profile-kicker">Honors</div>
+                <h2>荣誉墙</h2>
               </div>
-              <span>{achievements.length} 个已解锁</span>
+              <span>{achievements.length}/{achievementTotal} 个已解锁</span>
             </div>
-            <div className="achievements-grid profile-achievements-grid">
-              {achievements.map((achievement) => (
-                <div key={achievement.id} className="achievement-card profile-achievement-card">
-                  <div className="profile-achievement-icon" aria-hidden="true">{achievement.icon || '★'}</div>
-                  <div>
-                    <div className="achievement-name">{achievement.name}</div>
-                    <div className="achievement-desc">{achievement.description}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <HonorGrid
+              achievements={achievements}
+              emptyText="完成题目和连续签到后，新的荣誉会显示在这里。"
+            />
           </Panel>
         )}
 
@@ -468,33 +502,6 @@ export default function AccountPage() {
           </Panel>
           )}
 
-          <Panel className="profile-recent-submissions">
-            <div className="profile-panel-head">
-              <div>
-                <div className="profile-kicker">Recent Runs</div>
-                <h2>最近提交</h2>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => navigate('/oj/submissions')}>查看全部</Button>
-            </div>
-            {recentSubmissions.length === 0 ? (
-              <div className="profile-recent-empty">还没有提交记录，去题库完成第一道题吧。</div>
-            ) : (
-              <div className="profile-recent-list">
-                {recentSubmissions.map((item) => (
-                  <button key={item.id} type="button" onClick={() => navigate(`/oj/judge/${item.id}`)}>
-                    <span className={`profile-submission-status ${item.status === 'Accepted' ? 'accepted' : item.status === 'Queued' || item.status === 'Judging' ? 'pending' : 'failed'}`}>
-                      {getSubmissionLabel(item.status)}
-                    </span>
-                    <span className="profile-submission-copy">
-                      <strong>P{item.problemId} · {item.problemTitle || '未命名题目'}</strong>
-                      <span>{item.language} · {item.score ?? 0} 分 · {item.createdAt ? new Date(item.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '刚刚'}</span>
-                    </span>
-                    <span className="profile-submission-arrow" aria-hidden="true">→</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </Panel>
         </>
         ) : (
           <Panel className="profile-oj-paused">

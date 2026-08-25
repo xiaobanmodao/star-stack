@@ -318,7 +318,7 @@ export const login = async (req, res) => {
   }
   const db = await getDb()
   const user = await db.get(
-    `SELECT id, name, password_hash, email, is_admin, is_banned, avatar, onboarded_at FROM users WHERE id = ?`,
+    `SELECT id, name, password_hash, email, is_admin, is_banned, avatar, avatar_frame, avatar_overlay, equipped_title, onboarded_at FROM users WHERE id = ?`,
     id
   )
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {

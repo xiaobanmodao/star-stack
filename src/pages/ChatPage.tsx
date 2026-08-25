@@ -6,6 +6,7 @@ import RichTextEditor from '../components/RichTextEditor'
 import { fetchJson, isPollingPageVisible } from '../utils'
 import { renderRichText } from '../utils/richText'
 import { useModalFocus } from '../hooks/useModalFocus'
+import DecoratedAvatar from '../components/profile/DecoratedAvatar'
 import type { FollowRelations, Message, MessagesResponse, UserProfileResponse } from '../types'
 import './OpsPages.css'
 import './ChatPage.css'
@@ -24,7 +25,7 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
   const { currentUser, fetchUnreadCount } = useAppContext()
   const { userId: otherUserId } = useParams<{ userId: string }>()
   const [messages, setMessages] = useState<Message[]>([])
-  const [otherUser, setOtherUser] = useState<{ id: string; name: string; avatar?: string; isBanned: boolean } | null>(null)
+  const [otherUser, setOtherUser] = useState<MessagesResponse['otherUser'] | null>(null)
   const [relations, setRelations] = useState<FollowRelations | null>(null)
   const [blockHint, setBlockHint] = useState<string | null>(null)
   const [messageContent, setMessageContent] = useState('')
@@ -315,16 +316,19 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
             onClick={() => navigate(`/user/${otherUser.id}`)}
             title="查看个人主页"
           >
-            <div className="chat-avatar">
-              {otherUser.avatar ? (
-                <img src={otherUser.avatar} alt={otherUser.name} loading="lazy" />
-              ) : (
-                <span>{otherUser.name.charAt(0).toUpperCase()}</span>
-              )}
-            </div>
+            <DecoratedAvatar
+              avatar={otherUser.avatar}
+              fallback={otherUser.name.charAt(0).toUpperCase()}
+              frame={otherUser.avatarFrame}
+              overlay={otherUser.avatarOverlay}
+              size="chat"
+              alt={otherUser.name}
+              loading="lazy"
+            />
             <div>
               <span className="chat-user-name">{otherUser.name}</span>
               <span className="chat-user-id">@{otherUser.id}</span>
+              {otherUser.displayTitle && <span className="chat-user-title">{otherUser.displayTitleIcon || '✦'} {otherUser.displayTitle}</span>}
             </div>
           </button>
           <div className="chat-profile-status">
@@ -400,13 +404,15 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
                       key={message.id}
                       className={`chat-message ${message.senderId === currentUser?.id ? 'own' : 'other'}`}
                     >
-                      <div className="message-avatar">
-                        {message.senderAvatar ? (
-                          <img src={message.senderAvatar} alt={message.senderName} loading="lazy" />
-                        ) : (
-                          <span>{(message.senderName || '?').charAt(0).toUpperCase()}</span>
-                        )}
-                      </div>
+                      <DecoratedAvatar
+                        avatar={message.senderAvatar}
+                        fallback={(message.senderName || '?').charAt(0).toUpperCase()}
+                        frame={message.senderAvatarFrame}
+                        overlay={message.senderAvatarOverlay}
+                        size="message"
+                        alt={message.senderName}
+                        loading="lazy"
+                      />
                       <div className="message-content-wrap">
                         <div className="message-bubble">
                           <div className="message-text" dangerouslySetInnerHTML={{ __html: renderRichText(message.content) }} />

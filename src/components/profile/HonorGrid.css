@@ -1,0 +1,159 @@
+.honor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 10px;
+  overflow: visible;
+}
+
+.honor-card {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  aspect-ratio: 1 / 1.06;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 8px 6px 7px;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-hover-layer);
+  color: var(--ss-color-text);
+  cursor: default;
+  text-align: center;
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.honor-card:hover,
+.honor-card:focus {
+  border-color: var(--ss-accent-border);
+  background: var(--ss-accent-bg);
+  box-shadow: 0 8px 20px var(--ss-accent-border-soft);
+  outline: none;
+}
+
+.honor-card:focus-visible {
+  outline: 2px solid var(--ss-accent-border);
+  outline-offset: 2px;
+}
+
+.honor-card[data-rarity='rare'] {
+  border-color: var(--ss-accent-border);
+}
+
+.honor-card[data-rarity='epic'] {
+  border-color: var(--ss-color-warning);
+}
+
+.honor-card[data-rarity='legendary'] {
+  border-color: var(--ss-color-danger);
+}
+
+.honor-card-art {
+  display: grid;
+  width: min(100%, 68px);
+  aspect-ratio: 1;
+  place-items: center;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.honor-card-art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.honor-card-fallback {
+  color: var(--ss-color-accent);
+  font-size: 30px;
+}
+
+.honor-card-name {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ss-color-text-muted);
+  font-size: 11px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.honor-card-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  left: 50%;
+  display: flex;
+  width: min(190px, calc(100vw - 32px));
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--ss-accent-border);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-bg-panel-solid);
+  box-shadow: 0 12px 28px var(--ss-bg-code-35);
+  color: var(--ss-color-text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0;
+  pointer-events: none;
+  text-align: left;
+  transform: translate(-50%, -4px);
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+  visibility: hidden;
+}
+
+.honor-card-popover::before {
+  position: absolute;
+  top: -5px;
+  left: calc(50% - 5px);
+  width: 8px;
+  height: 8px;
+  border-top: 1px solid var(--ss-accent-border);
+  border-left: 1px solid var(--ss-accent-border);
+  background: var(--ss-bg-panel-solid);
+  content: '';
+  transform: rotate(45deg);
+}
+
+.honor-card-popover strong,
+.honor-card-popover span {
+  display: block;
+}
+
+.honor-card-popover strong {
+  color: var(--ss-color-text);
+  font-size: 12px;
+}
+
+.honor-card:hover .honor-card-popover,
+.honor-card:focus .honor-card-popover {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+  visibility: visible;
+}
+
+@media (max-width: 540px) {
+  .honor-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .honor-card {
+    padding-inline: 4px;
+  }
+
+  .honor-card-art {
+    width: min(100%, 56px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .honor-card,
+  .honor-card-popover {
+    transition: none;
+  }
+}

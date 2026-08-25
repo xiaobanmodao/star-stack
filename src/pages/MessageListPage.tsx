@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Badge, Button, EmptyState, ErrorState, LoadingState, PageHeader, Panel } from '../components/ui'
+import DecoratedAvatar from '../components/profile/DecoratedAvatar'
 import type { Conversation, ConversationsResponse } from '../types'
 import { ApiRequestError, fetchJson, htmlToPlainText, isPollingPageVisible } from '../utils'
 import { useModalFocus } from '../hooks/useModalFocus'
@@ -13,7 +14,7 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
   const [loading, setLoading] = useState(true)
   const [showNewChat, setShowNewChat] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<{ id: string; name: string; avatar?: string }[]>([])
+  const [searchResults, setSearchResults] = useState<{ id: string; name: string; avatar?: string; avatarFrame?: Conversation['otherUser']['avatarFrame']; avatarOverlay?: Conversation['otherUser']['avatarOverlay']; displayTitle?: string; displayTitleIcon?: string }[]>([])
   const [searching, setSearching] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [unreadTotal, setUnreadTotal] = useState(0)
@@ -85,7 +86,7 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
       searchControllerRef.current = controller
       setSearching(true)
       try {
-        const { response, data } = await fetchJson<{ users: { id: string; name: string; avatar?: string }[] }>(
+        const { response, data } = await fetchJson<{ users: typeof searchResults }>(
           `/api/users/search?q=${encodeURIComponent(searchQuery.trim())}`,
           { signal: controller.signal },
         )
@@ -195,11 +196,15 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
                   aria-label={`查看 ${conversation.otherUser.name} 的个人主页`}
                   onClick={() => navigate(`/user/${conversation.otherUser.id}`)}
                 >
-                  {conversation.otherUser.avatar ? (
-                    <img src={conversation.otherUser.avatar} alt={conversation.otherUser.name} loading="lazy" decoding="async" width="44" height="44" />
-                  ) : (
-                    <span>{conversation.otherUser.name.charAt(0).toUpperCase()}</span>
-                  )}
+                  <DecoratedAvatar
+                    avatar={conversation.otherUser.avatar}
+                    fallback={conversation.otherUser.name.charAt(0).toUpperCase()}
+                    frame={conversation.otherUser.avatarFrame}
+                    overlay={conversation.otherUser.avatarOverlay}
+                    size="conversation"
+                    alt={conversation.otherUser.name}
+                    loading="lazy"
+                  />
                 </button>
                 <button
                   type="button"
@@ -210,6 +215,9 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
                   <span className="conversation-content">
                     <span className="conversation-header">
                       <strong className="conversation-name">{conversation.otherUser.name}</strong>
+                      {conversation.otherUser.displayTitle && (
+                        <span className="conversation-user-title">{conversation.otherUser.displayTitleIcon || '✦'} {conversation.otherUser.displayTitle}</span>
+                      )}
                       <span className="conversation-time">{formatTime(conversation.lastMessageAt)}</span>
                     </span>
                     {conversation.lastMessage ? (
@@ -268,11 +276,18 @@ export default function MessageListPage({ basePath = '/messages' }: { basePath?:
               ) : (
                 searchResults.map((user) => (
                   <button key={user.id} type="button" className="new-chat-user" onClick={() => { setShowNewChat(false); navigate(`${basePath}/${user.id}`) }}>
-                    <div className="conversation-avatar" style={{ width: 36, height: 36, fontSize: 16 }}>
-                      {user.avatar ? <img src={user.avatar} alt={user.name} loading="lazy" decoding="async" width="36" height="36" /> : <span>{user.name.charAt(0).toUpperCase()}</span>}
-                    </div>
+                    <DecoratedAvatar
+                      avatar={user.avatar}
+                      fallback={user.name.charAt(0).toUpperCase()}
+                      frame={user.avatarFrame}
+                      overlay={user.avatarOverlay}
+                      size="discussion"
+                      alt={user.name}
+                      loading="lazy"
+                    />
                     <div>
                       <div className="new-chat-user-name">{user.name}</div>
+                      {user.displayTitle && <div className="new-chat-user-title">{user.displayTitleIcon || '✦'} {user.displayTitle}</div>}
                       <div className="new-chat-user-id">{user.id}</div>
                     </div>
                   </button>

@@ -265,6 +265,9 @@ export const initDb = async () => {
       is_admin INTEGER NOT NULL DEFAULT 0,
       is_banned INTEGER NOT NULL DEFAULT 0,
       onboarded_at TEXT,
+      avatar_frame TEXT NOT NULL DEFAULT 'none',
+      avatar_overlay TEXT NOT NULL DEFAULT 'none',
+      equipped_title TEXT,
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS email_verifications (
@@ -382,6 +385,15 @@ export const initDb = async () => {
   }
   if (!columnNames.includes('email_verified_at')) {
     await db.exec(`ALTER TABLE users ADD COLUMN email_verified_at TEXT;`)
+  }
+  if (!columnNames.includes('avatar_frame')) {
+    await db.exec(`ALTER TABLE users ADD COLUMN avatar_frame TEXT NOT NULL DEFAULT 'none';`)
+  }
+  if (!columnNames.includes('avatar_overlay')) {
+    await db.exec(`ALTER TABLE users ADD COLUMN avatar_overlay TEXT NOT NULL DEFAULT 'none';`)
+  }
+  if (!columnNames.includes('equipped_title')) {
+    await db.exec(`ALTER TABLE users ADD COLUMN equipped_title TEXT;`)
   }
   await db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique

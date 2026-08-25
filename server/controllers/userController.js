@@ -4,13 +4,14 @@ import { getUserLevelInfo } from '../utils/userHelpers.js'
 import { getLevelInfo, getDifficultyStats, getHeatmapData, ACHIEVEMENTS } from '../stats.js'
 import { getFollowRelations } from '../utils/socialHelpers.js'
 import { localDay } from '../utils/dateHelpers.js'
+import { getDecorationIdentity } from '../utils/decorations.js'
 
 export const getUserProfile = async (req, res) => {
   try {
     const db = await getDb()
     const userId = req.params.userId
     const user = await db.get(
-      `SELECT id, name, avatar, created_at, is_admin FROM users WHERE id = ?`, userId
+      `SELECT id, name, avatar, avatar_frame, avatar_overlay, equipped_title, created_at, is_admin FROM users WHERE id = ?`, userId
     )
     if (!user) return res.status(404).json({ message: '用户不存在' })
 
@@ -30,7 +31,8 @@ export const getUserProfile = async (req, res) => {
     return res.json({
       user: {
         id: user.id, name: user.name, avatar: user.avatar,
-        createdAt: user.created_at, isAdmin: user.is_admin === 1, ...levelInfo,
+        createdAt: user.created_at, isAdmin: user.is_admin === 1,
+        ...levelInfo, ...getDecorationIdentity(user, levelInfo),
       },
       stats: {
         totalSubmissions: stats.total_submissions,
@@ -142,14 +144,29 @@ export const getUserAchievements = async (req, res) => {
       userId
     )
     const formattedAchievements = achievements.map(a => ({
+      id: a.achievement_type,
       type: a.achievement_type,
       name: ACHIEVEMENTS[a.achievement_type.toUpperCase()]?.name || a.achievement_type,
       icon: ACHIEVEMENTS[a.achievement_type.toUpperCase()]?.icon || '🏅',
+      description: ACHIEVEMENTS[a.achievement_type.toUpperCase()]?.desc || '',
       desc: ACHIEVEMENTS[a.achievement_type.toUpperCase()]?.desc || '',
+      rarity: ACHIEVEMENTS[a.achievement_type.toUpperCase()]?.rarity || 'common',
+      category: ACHIEVEMENTS[a.achievement_type.toUpperCase()]?.category || 'general',
       unlockedAt: a.unlocked_at,
-      data: a.achievement_data ? JSON.parse(a.achievement_data) : {},
+      data: (() => {
+        try {
+          return a.achievement_data ? JSON.parse(a.achievement_data) : {}
+        } catch {
+          return {}
+        }
+      })(),
     }))
-    return res.json({ achievements: formattedAchievements })
+    return res.json({
+      achievements: formattedAchievements,
+      honors: formattedAchievements,
+      total: Object.keys(ACHIEVEMENTS).length,
+      unlockedCount: formattedAchievements.length,
+    })
   } catch (error) {
     console.error('Failed to get achievements:', error)
     return res.status(500).json({ message: '获取成就数据失败' })
@@ -161,7 +178,7 @@ export const getSocialProfile = async (req, res) => {
     const db = await getDb()
     const targetId = req.params.id
     const target = await db.get(
-      `SELECT id, name, avatar, is_admin, bio, created_at FROM users WHERE id = ?`, targetId
+      `SELECT id, name, avatar, avatar_frame, avatar_overlay, equipped_title, is_admin, bio, created_at FROM users WHERE id = ?`, targetId
     )
     if (!target) return res.status(404).json({ message: '用户不存在' })
 
@@ -188,7 +205,7 @@ export const getSocialProfile = async (req, res) => {
       user: {
         id: target.id, name: target.name, avatar: target.avatar,
         isAdmin: Boolean(target.is_admin), bio: target.bio || '', createdAt: target.created_at,
-        ...levelInfo,
+        ...levelInfo, ...getDecorationIdentity(target, levelInfo),
       },
       relations,
       blocked: blockedByViewer,

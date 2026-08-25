@@ -20,7 +20,8 @@ export const getUserByToken = async (db, token) => {
     return null
   }
   const user = await db.get(
-    `SELECT id, name, password_hash, email, email_verified_at, is_admin, is_banned, avatar, bio, onboarded_at, created_at
+    `SELECT id, name, password_hash, email, email_verified_at, is_admin, is_banned, avatar, bio, onboarded_at,
+            avatar_frame, avatar_overlay, equipped_title, created_at
      FROM users WHERE id = ?`,
     session.user_id
   )

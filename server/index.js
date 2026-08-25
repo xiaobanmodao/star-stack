@@ -6,6 +6,7 @@ import { errorHandler } from './middleware/errorHandler.js'
 import { createRateLimiter } from './middleware/rateLimit.js'
 import { initPush } from './controllers/notificationsController.js'
 import { getBackupHealth, getDatabaseHealth, getDiskHealth } from './utils/monitoring.js'
+import { backfillAchievements } from './stats.js'
 import {
   getJudgeQueueSnapshot,
   recoverPendingSubmissions,
@@ -589,6 +590,11 @@ app.use(errorHandler)
 const PORT = Number(process.env.PORT) || 5174
 initDb()
   .then(async () => {
+    const db = await getDb()
+    const achievementBackfill = await backfillAchievements(db)
+    if (achievementBackfill.unlocked > 0) {
+      console.log(`[achievements] historical backfill: users=${achievementBackfill.users} unlocked=${achievementBackfill.unlocked}`)
+    }
     app.listen(PORT, () => {
       console.log(`StarStack API running at http://localhost:${PORT}`)
       void recoverPendingSubmissions().catch((error) => {

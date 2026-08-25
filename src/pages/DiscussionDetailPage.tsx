@@ -5,6 +5,7 @@ import { fetchJson, formatTime, htmlToPlainText } from '../utils'
 import { renderRichText } from '../utils/richText'
 import type { DiscussionPost, DiscussionComment, DiscussionDetailResponse } from '../types'
 import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import DecoratedAvatar from '../components/profile/DecoratedAvatar'
 import RichTextEditor from '../components/RichTextEditor'
 import ReportModal from '../components/ReportModal'
 import './DiscussionPages.css'
@@ -163,12 +164,17 @@ export default function DiscussionDetailPage() {
           title="查看个人主页"
           style={{ cursor: 'pointer' }}
         >
-          {comment.userAvatar ? (
-            <img className="discussion-avatar small" src={comment.userAvatar} alt="" loading="lazy" />
-          ) : (
-            <span className="discussion-avatar fallback small">{comment.userName?.charAt(0) || '?'}</span>
-          )}
-          {comment.userName}
+          <DecoratedAvatar
+            avatar={comment.userAvatar}
+            fallback={comment.userName?.charAt(0) || '?'}
+            frame={comment.userAvatarFrame}
+            overlay={comment.userAvatarOverlay}
+            size="discussion-small"
+            alt=""
+            loading="lazy"
+          />
+          <span className="discussion-author-name">{comment.userName}</span>
+          {comment.userDisplayTitle && <span className="discussion-author-title">{comment.userDisplayTitleIcon || '✦'} {comment.userDisplayTitle}</span>}
         </span>
         {currentUser && currentUser.id !== comment.userId && (
           <button
@@ -263,12 +269,17 @@ export default function DiscussionDetailPage() {
                 title="查看个人主页"
                 style={{ cursor: 'pointer' }}
               >
-                {post.userAvatar ? (
-                  <img className="discussion-avatar" src={post.userAvatar} alt="" loading="lazy" />
-                ) : (
-                  <span className="discussion-avatar fallback">{post.userName?.charAt(0) || '?'}</span>
-                )}
-                {post.userName}
+                <DecoratedAvatar
+                  avatar={post.userAvatar}
+                  fallback={post.userName?.charAt(0) || '?'}
+                  frame={post.userAvatarFrame}
+                  overlay={post.userAvatarOverlay}
+                  size="discussion"
+                  alt=""
+                  loading="lazy"
+                />
+                <span className="discussion-author-name">{post.userName}</span>
+                {post.userDisplayTitle && <span className="discussion-author-title">{post.userDisplayTitleIcon || '✦'} {post.userDisplayTitle}</span>}
               </span>
               {currentUser && currentUser.id !== post.userId && (
                 <button

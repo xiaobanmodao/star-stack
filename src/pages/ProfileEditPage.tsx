@@ -2,17 +2,33 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
-import type { ApiResponse, AuthSession, UserResponse } from '../types'
+import DecoratedAvatar from '../components/profile/DecoratedAvatar'
+import type {
+  ApiResponse,
+  AuthSession,
+  AvatarFrameId,
+  AvatarOverlayId,
+  DecorationOptionsResponse,
+  EquippedTitleId,
+  UserResponse,
+} from '../types'
 import { fetchJson } from '../utils'
 import { Button, PageHeader, Panel } from '../components/ui'
+import { useToast } from '../components/ui/ToastContext'
 import './ProfileEditPage.css'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+const getRequestErrorMessage = (error: unknown, fallback: string) => (
+  error instanceof Error && error.message ? error.message : fallback
+)
+
 export default function ProfileEditPage() {
   const navigate = useNavigate()
   const { currentUser, setCurrentUser } = useAppContext()
+  const { showToast } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const mountedRef = useRef(true)
   const [editName, setEditName] = useState(() => currentUser?.name || '')
   const [editEmail, setEditEmail] = useState(() => currentUser?.email || '')
   const [editEmailCode, setEditEmailCode] = useState('')
@@ -27,8 +43,29 @@ export default function ProfileEditPage() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordSaving, setPasswordSaving] = useState(false)
+  const [decorations, setDecorations] = useState<DecorationOptionsResponse | null>(null)
+  const [decorationLoading, setDecorationLoading] = useState(true)
+  const [decorationSaving, setDecorationSaving] = useState(false)
+  const [selectedFrame, setSelectedFrame] = useState<AvatarFrameId>(currentUser?.avatarFrame || 'none')
+  const [selectedOverlay, setSelectedOverlay] = useState<AvatarOverlayId>(currentUser?.avatarOverlay || 'none')
+  const [selectedTitle, setSelectedTitle] = useState<EquippedTitleId | null>(currentUser?.equippedTitle || null)
   const [editError, setEditError] = useState('')
-  const [editSuccess, setEditSuccess] = useState('')
+
+  const showEditSuccess = (message: string) => {
+    if (!mountedRef.current) return
+    setEditError('')
+    showToast(message, 'success')
+  }
+
+  const showEditError = (message: string) => {
+    if (!mountedRef.current) return
+    setEditError('')
+    showToast(message, 'error')
+  }
+
+  useEffect(() => () => {
+    mountedRef.current = false
+  }, [])
 
   useEffect(() => {
     if (emailCooldown <= 0) return
@@ -47,37 +84,64 @@ export default function ProfileEditPage() {
     return () => { cancelled = true }
   }, [currentUser])
 
+  useEffect(() => {
+    if (!currentUser) return
+    let cancelled = false
+    setDecorationLoading(true)
+    void fetchJson<DecorationOptionsResponse>('/api/me/decorations').then(({ response, data }) => {
+      if (cancelled) return
+      if (response.ok && data) {
+        setDecorations(data)
+        setSelectedFrame(data.equipped.avatarFrame)
+        setSelectedOverlay(data.equipped.avatarOverlay)
+        setSelectedTitle(data.equipped.equippedTitle)
+      } else {
+        setEditError(data?.message || '站内装饰加载失败，请重试。')
+      }
+    }).catch(() => {
+      if (!cancelled) setEditError('网络异常，站内装饰暂时无法加载。')
+    }).finally(() => {
+      if (!cancelled) setDecorationLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [currentUser])
+
   if (!currentUser) return <Navigate to="/auth" replace />
 
   const initial = currentUser.name.trim()[0] || currentUser.id[0] || '★'
 
   const handleSaveName = async () => {
+    if (savingName) return
     const name = editName.trim()
     if (!name) {
       setEditError('昵称不能为空。')
-      setEditSuccess('')
       return
     }
     if (name === currentUser.name) {
-      setEditSuccess('昵称没有变化。')
+      showToast('昵称没有变化。', 'info')
       setEditError('')
       return
     }
     setSavingName(true)
     setEditError('')
-    setEditSuccess('')
-    const { response, data } = await fetchJson<UserResponse>('/api/me/name', {
-      method: 'PATCH',
-      body: JSON.stringify({ name }),
-    })
-    setSavingName(false)
-    if (!response.ok || !data?.user) {
-      setEditError(data?.message || '昵称保存失败，请重试。')
-      return
+    try {
+      const { response, data } = await fetchJson<UserResponse>('/api/me/name', {
+        method: 'PATCH',
+        body: JSON.stringify({ name }),
+      })
+      if (!mountedRef.current) return
+      if (!response.ok || !data?.user) {
+        showEditError(data?.message || '昵称保存失败，请重试。')
+        return
+      }
+      setCurrentUser(data.user)
+      setEditName(data.user.name)
+      showEditSuccess('昵称已更新。')
+    } catch (error) {
+      showEditError(getRequestErrorMessage(error, '昵称保存失败，请重试。'))
+    } finally {
+      if (mountedRef.current) setSavingName(false)
     }
-    setCurrentUser(data.user)
-    setEditName(data.user.name)
-    setEditSuccess('昵称已更新。')
   }
 
   const handleSendEmailChangeCode = async () => {
@@ -85,101 +149,112 @@ export default function ProfileEditPage() {
     const email = editEmail.trim()
     if (!EMAIL_PATTERN.test(email)) {
       setEditError('请输入有效的邮箱地址。')
-      setEditSuccess('')
       return
     }
     if (email.toLowerCase() === (currentUser.email || '').trim().toLowerCase()) {
       setEditError('新邮箱不能与当前邮箱相同。')
-      setEditSuccess('')
       return
     }
     setEmailSending(true)
     setEditError('')
-    setEditSuccess('')
-    const { response, data } = await fetchJson<ApiResponse<{ retryAfter?: number }>>('/api/me/email-code', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    })
-    setEmailSending(false)
-    if (!response.ok) {
-      setEditError(data?.message || '验证码发送失败，请重试。')
-      if (response.status === 429 && data?.retryAfter) setEmailCooldown(data.retryAfter)
-      return
+    try {
+      const { response, data } = await fetchJson<ApiResponse<{ retryAfter?: number }>>('/api/me/email-code', {
+        method: 'POST',
+        body: JSON.stringify({ email }),
+      })
+      if (!mountedRef.current) return
+      if (!response.ok) {
+        showEditError(data?.message || '验证码发送失败，请重试。')
+        if (response.status === 429 && data?.retryAfter) setEmailCooldown(data.retryAfter)
+        return
+      }
+      setEmailCooldown(60)
+      showEditSuccess('验证码已发送到新邮箱。')
+    } catch (error) {
+      showEditError(getRequestErrorMessage(error, '验证码发送失败，请重试。'))
+    } finally {
+      if (mountedRef.current) setEmailSending(false)
     }
-    setEmailCooldown(60)
-    setEditSuccess('验证码已发送到新邮箱。')
   }
 
   const handleSaveEmail = async () => {
+    if (emailSaving) return
     const email = editEmail.trim()
     const emailCode = editEmailCode.trim()
     if (!EMAIL_PATTERN.test(email)) {
       setEditError('请输入有效的邮箱地址。')
-      setEditSuccess('')
       return
     }
     if (!/^\d{6}$/.test(emailCode)) {
       setEditError('请输入 6 位邮箱验证码。')
-      setEditSuccess('')
       return
     }
     setEmailSaving(true)
     setEditError('')
-    setEditSuccess('')
-    const { response, data } = await fetchJson<UserResponse>('/api/me/email', {
-      method: 'PATCH',
-      body: JSON.stringify({ email, emailCode }),
-    })
-    setEmailSaving(false)
-    if (!response.ok || !data?.user) {
-      setEditError(data?.message || '邮箱换绑失败，请重试。')
-      return
+    try {
+      const { response, data } = await fetchJson<UserResponse>('/api/me/email', {
+        method: 'PATCH',
+        body: JSON.stringify({ email, emailCode }),
+      })
+      if (!mountedRef.current) return
+      if (!response.ok || !data?.user) {
+        showEditError(data?.message || '邮箱换绑失败，请重试。')
+        return
+      }
+      setCurrentUser(data.user)
+      setEditEmail(data.user.email || '')
+      setEditEmailCode('')
+      showEditSuccess('邮箱已重新绑定。')
+    } catch (error) {
+      showEditError(getRequestErrorMessage(error, '邮箱换绑失败，请重试。'))
+    } finally {
+      if (mountedRef.current) setEmailSaving(false)
     }
-    setCurrentUser(data.user)
-    setEditEmail(data.user.email || '')
-    setEditEmailCode('')
-    setEditSuccess('邮箱已重新绑定。')
   }
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (uploading) return
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
 
     if (!file.type.startsWith('image/')) {
       setEditError('请选择图片文件。')
-      setEditSuccess('')
       return
     }
     if (file.size > 2 * 1024 * 1024) {
       setEditError('图片大小不能超过 2MB。')
-      setEditSuccess('')
       return
     }
 
     setEditError('')
-    setEditSuccess('')
     setUploading(true)
     const reader = new FileReader()
     reader.onload = async (loadEvent) => {
       const base64 = loadEvent.target?.result as string
-      const { response, data } = await fetchJson<UserResponse>('/api/me/avatar', {
-        method: 'POST',
-        body: JSON.stringify({ avatar: base64 }),
-      })
-      setUploading(false)
-      if (!response.ok) {
-        setEditError(data?.message || '头像上传失败。')
-        return
-      }
-      if (data?.user) {
-        setCurrentUser(data.user)
-        setEditSuccess('头像已更新。')
+      try {
+        const { response, data } = await fetchJson<UserResponse>('/api/me/avatar', {
+          method: 'POST',
+          body: JSON.stringify({ avatar: base64 }),
+        })
+        if (!mountedRef.current) return
+        if (!response.ok) {
+          showEditError(data?.message || '头像上传失败。')
+          return
+        }
+        if (data?.user) {
+          setCurrentUser(data.user)
+          showEditSuccess('头像已更新。')
+        }
+      } catch (error) {
+        showEditError(getRequestErrorMessage(error, '头像上传失败，请重试。'))
+      } finally {
+        if (mountedRef.current) setUploading(false)
       }
     }
     reader.onerror = () => {
       setUploading(false)
-      setEditError('读取图片失败，请重试。')
+      showEditError('读取图片失败，请重试。')
     }
     reader.readAsDataURL(file)
   }
@@ -188,58 +263,105 @@ export default function ProfileEditPage() {
     if (sessionActionBusy || !sessions.some((session) => !session.current)) return
     setSessionActionBusy('others')
     setEditError('')
-    const { response, data } = await fetchJson<ApiResponse<{ revoked?: number }>>('/api/me/sessions/revoke-others', { method: 'POST' })
-    setSessionActionBusy('')
-    if (!response.ok) {
-      setEditError(data?.message || '其他会话注销失败，请重试。')
-      return
+    try {
+      const { response, data } = await fetchJson<ApiResponse<{ revoked?: number }>>('/api/me/sessions/revoke-others', { method: 'POST' })
+      if (!mountedRef.current) return
+      if (!response.ok) {
+        showEditError(data?.message || '其他会话注销失败，请重试。')
+        return
+      }
+      setSessions((current) => current.filter((session) => session.current))
+      showEditSuccess(`已注销 ${data?.revoked || 0} 个其他登录会话。`)
+    } catch (error) {
+      showEditError(getRequestErrorMessage(error, '其他会话注销失败，请重试。'))
+    } finally {
+      if (mountedRef.current) setSessionActionBusy('')
     }
-    setSessions((current) => current.filter((session) => session.current))
-    setEditSuccess(`已注销 ${data?.revoked || 0} 个其他登录会话。`)
   }
 
   const handleRevokeSession = async (session: AuthSession) => {
     if (session.current || sessionActionBusy) return
     setSessionActionBusy(session.id)
     setEditError('')
-    const { response, data } = await fetchJson<ApiResponse>(`/api/me/sessions/${session.id}`, { method: 'DELETE' })
-    setSessionActionBusy('')
-    if (!response.ok) {
-      setEditError(data?.message || '会话注销失败，请重试。')
-      return
+    try {
+      const { response, data } = await fetchJson<ApiResponse>(`/api/me/sessions/${session.id}`, { method: 'DELETE' })
+      if (!mountedRef.current) return
+      if (!response.ok) {
+        showEditError(data?.message || '会话注销失败，请重试。')
+        return
+      }
+      setSessions((current) => current.filter((item) => item.id !== session.id))
+      showEditSuccess('已注销选中的登录会话。')
+    } catch (error) {
+      showEditError(getRequestErrorMessage(error, '会话注销失败，请重试。'))
+    } finally {
+      if (mountedRef.current) setSessionActionBusy('')
     }
-    setSessions((current) => current.filter((item) => item.id !== session.id))
-    setEditSuccess('已注销选中的登录会话。')
   }
 
   const handleSavePassword = async () => {
+    if (passwordSaving) return
     if (!oldPassword || newPassword.length < 6) {
       setEditError('请填写旧密码，新密码至少 6 位。')
-      setEditSuccess('')
       return
     }
     if (newPassword !== confirmPassword) {
       setEditError('两次新密码不一致。')
-      setEditSuccess('')
       return
     }
     setPasswordSaving(true)
     setEditError('')
-    setEditSuccess('')
-    const { response, data } = await fetchJson<ApiResponse>('/api/me/password', {
-      method: 'POST',
-      body: JSON.stringify({ oldPassword, newPassword }),
-    })
-    setPasswordSaving(false)
-    if (!response.ok) {
-      setEditError(data?.message || '密码修改失败，请重试。')
-      return
+    try {
+      const { response, data } = await fetchJson<ApiResponse>('/api/me/password', {
+        method: 'POST',
+        body: JSON.stringify({ oldPassword, newPassword }),
+      })
+      if (!mountedRef.current) return
+      if (!response.ok) {
+        showEditError(data?.message || '密码修改失败，请重试。')
+        return
+      }
+      setOldPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+      showEditSuccess('密码已更新，其他登录设备已注销。')
+      setSessions((current) => current.filter((session) => session.current))
+    } catch (error) {
+      showEditError(getRequestErrorMessage(error, '密码修改失败，请重试。'))
+    } finally {
+      if (mountedRef.current) setPasswordSaving(false)
     }
-    setOldPassword('')
-    setNewPassword('')
-    setConfirmPassword('')
-    setEditSuccess('密码已更新，其他登录设备已注销。')
-    setSessions((current) => current.filter((session) => session.current))
+  }
+
+  const handleSaveDecorations = async () => {
+    if (decorationSaving) return
+    setDecorationSaving(true)
+    setEditError('')
+    try {
+      const { response, data } = await fetchJson<UserResponse & { decorations?: DecorationOptionsResponse }>('/api/me/decorations', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          avatarFrame: selectedFrame,
+          avatarOverlay: selectedOverlay,
+          equippedTitle: selectedTitle,
+        }),
+      })
+      if (!mountedRef.current) return
+      if (!response.ok || !data?.user || !data.decorations) {
+        showEditError(data?.message || '站内装饰保存失败，请重试。')
+        return
+      }
+      setCurrentUser(data.user)
+      setDecorations(data.decorations)
+      setSelectedFrame(data.decorations.equipped.avatarFrame)
+      setSelectedOverlay(data.decorations.equipped.avatarOverlay)
+      setSelectedTitle(data.decorations.equipped.equippedTitle)
+      showEditSuccess('站内装饰已更新。')
+    } catch (error) {
+      showEditError(getRequestErrorMessage(error, '站内装饰保存失败，请重试。'))
+    } finally {
+      if (mountedRef.current) setDecorationSaving(false)
+    }
   }
 
   return (
@@ -263,7 +385,14 @@ export default function ProfileEditPage() {
           </div>
           <div className="profile-edit-avatar-actions">
             <div className={`profile-edit-avatar-preview ${uploading ? 'uploading' : ''}`}>
-              {currentUser.avatar ? <img src={currentUser.avatar} alt="当前头像" /> : initial}
+              <DecoratedAvatar
+                avatar={currentUser.avatar}
+                fallback={initial}
+                frame={currentUser.avatarFrame}
+                overlay={currentUser.avatarOverlay}
+                size="edit"
+                alt="当前头像"
+              />
             </div>
             <Button variant="ghost" onClick={() => fileInputRef.current?.click()} loading={uploading}>
               更换头像
@@ -275,6 +404,124 @@ export default function ProfileEditPage() {
               hidden
               onChange={handleFileChange}
             />
+          </div>
+        </section>
+
+        <section className="profile-edit-section profile-edit-decoration-section">
+          <div className="profile-edit-section-copy">
+            <h2>站内装饰</h2>
+            <p>装备头像框、头像叠加层和称号。未解锁项目会显示获得条件，称号不能自定义。</p>
+          </div>
+          <div className="profile-edit-decoration-content">
+            {decorationLoading ? (
+              <div className="profile-decoration-loading" aria-live="polite">正在加载装饰选项…</div>
+            ) : decorations ? (
+              <>
+                <div className="profile-decoration-preview">
+                  <DecoratedAvatar
+                    avatar={currentUser.avatar}
+                    fallback={initial}
+                    frame={selectedFrame}
+                    overlay={selectedOverlay}
+                    size="edit"
+                    alt="装饰预览"
+                  />
+                  <div>
+                    <strong>{currentUser.name}</strong>
+                    <span>
+                      {selectedTitle
+                        ? `${decorations.titles.find((item) => item.id === selectedTitle)?.icon || ''} ${decorations.titles.find((item) => item.id === selectedTitle)?.name || decorations.fallbackTitle.name}`
+                        : `${decorations.fallbackTitle.icon} ${decorations.fallbackTitle.name}`}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="profile-decoration-group">
+                  <div className="profile-decoration-group-title">头像框</div>
+                  <div className="profile-decoration-option-grid">
+                    {decorations.frames.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={`profile-decoration-option ${selectedFrame === option.id ? 'selected' : ''} ${!option.unlocked ? 'locked' : ''}`}
+                        disabled={!option.unlocked}
+                        onClick={() => setSelectedFrame(option.id as AvatarFrameId)}
+                        title={option.unlocked ? option.description : option.unlockText}
+                      >
+                        <DecoratedAvatar
+                          avatar={currentUser.avatar}
+                          fallback={initial}
+                          frame={option.id as AvatarFrameId}
+                          size="discussion"
+                          alt=""
+                        />
+                        <span className="profile-decoration-option-copy">
+                          <strong>{option.name}</strong>
+                          <small>{option.unlocked ? '已解锁' : `🔒 ${option.unlockText}`}</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="profile-decoration-group">
+                  <div className="profile-decoration-group-title">头像叠加层</div>
+                  <div className="profile-decoration-option-grid">
+                    {decorations.overlays.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={`profile-decoration-option ${selectedOverlay === option.id ? 'selected' : ''} ${!option.unlocked ? 'locked' : ''}`}
+                        disabled={!option.unlocked}
+                        onClick={() => setSelectedOverlay(option.id as AvatarOverlayId)}
+                        title={option.unlocked ? option.description : option.unlockText}
+                      >
+                        <DecoratedAvatar
+                          avatar={currentUser.avatar}
+                          fallback={initial}
+                          overlay={option.id as AvatarOverlayId}
+                          size="discussion"
+                          alt=""
+                        />
+                        <span className="profile-decoration-option-copy">
+                          <strong>{option.name}</strong>
+                          <small>{option.unlocked ? '已解锁' : `🔒 ${option.unlockText}`}</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="profile-decoration-group">
+                  <div className="profile-decoration-group-title">称号</div>
+                  <div className="profile-decoration-title-list">
+                    <button
+                      type="button"
+                      className={`profile-decoration-title ${selectedTitle === null ? 'selected' : ''}`}
+                      onClick={() => setSelectedTitle(null)}
+                    >
+                      <span>{decorations.fallbackTitle.icon}</span>
+                      <span><strong>当前等级称号</strong><small>{decorations.fallbackTitle.name}</small></span>
+                    </button>
+                    {decorations.titles.filter((option) => option.id !== decorations.fallbackTitle.id).map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={`profile-decoration-title ${selectedTitle === option.id ? 'selected' : ''}`}
+                        onClick={() => setSelectedTitle(option.id as EquippedTitleId)}
+                      >
+                        <span>{option.icon || '✦'}</span>
+                        <span><strong>{option.name}</strong><small>{option.source === 'honor' ? '荣誉称号' : option.unlockText}</small></span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <Button variant="primary" onClick={() => void handleSaveDecorations()} loading={decorationSaving}>
+                  保存站内装饰
+                </Button>
+              </>
+            ) : null}
           </div>
         </section>
 
@@ -394,7 +641,6 @@ export default function ProfileEditPage() {
         </section>
 
         {editError && <div className="auth-error profile-edit-message">{editError}</div>}
-        {editSuccess && <div className="auth-success profile-edit-message">{editSuccess}</div>}
       </Panel>
     </div>
   )

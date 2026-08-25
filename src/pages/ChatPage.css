@@ -140,6 +140,16 @@
   white-space: nowrap;
 }
 
+.chat-workspace-v2 .chat-user-title {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--ss-color-accent);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chat-user-id {
   display: block;
   margin-top: 3px;
@@ -452,57 +462,6 @@
   background: var(--ss-danger-bg);
 }
 
-/* ==================== Private Messaging Styles ==================== */
-
-/* Message button in topbar */
-.topbar-message-btn {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border: none;
-  background: transparent;
-  border-radius: 50%;
-  cursor: pointer;
-  transition: color 0.2s, background-color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s, box-shadow 0.2s;
-}
-
-.topbar-message-btn:hover {
-  background: var(--ss-accent-bg-strong);
-}
-
-.topbar-message-btn svg {
-  fill: none;
-  stroke: var(--muted);
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  transition: stroke 0.2s ease;
-}
-
-.topbar-message-btn:hover svg {
-  stroke: var(--accent);
-}
-
-.topbar-message-dot {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 9px;
-  height: 9px;
-  background: var(--ss-color-danger);
-  border-radius: 50%;
-  border: 2px solid var(--ss-bg-panel-solid);
-  box-shadow: 0 0 6px var(--ss-danger-50);
-  animation: dot-pulse 2s ease-in-out infinite;
-}
-
-@keyframes dot-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
 
 /* Message list page */
 .message-list-page {
@@ -567,6 +526,10 @@
   overflow: hidden;
 }
 
+.conversation-avatar-link {
+  overflow: visible;
+}
+
 .conversation-avatar img {
   width: 100%;
   height: 100%;
@@ -589,6 +552,16 @@
   font-size: 16px;
   font-weight: 600;
   color: var(--text);
+}
+
+.conversation-user-title,
+.new-chat-user-title {
+  max-width: 160px;
+  overflow: hidden;
+  color: var(--ss-color-accent);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .conversation-time {

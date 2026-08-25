@@ -62,7 +62,7 @@
   height: 72px;
   flex: 0 0 72px;
   place-items: center;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--ss-accent-border);
   border-radius: 50%;
   background: var(--ss-hover-layer);
@@ -80,6 +80,169 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.profile-edit-avatar-preview .decorated-avatar-media {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+.profile-edit-avatar-preview .decorated-avatar-overlay {
+  width: 122%;
+  height: 122%;
+  max-width: none;
+  border-radius: 0;
+}
+
+.profile-edit-decoration-section {
+  align-items: start;
+}
+
+.profile-edit-decoration-content {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.profile-decoration-loading {
+  padding: 14px;
+  border: 1px dashed var(--ss-color-border);
+  border-radius: var(--ss-radius-md);
+  color: var(--ss-color-text-subtle);
+  font-size: 12px;
+}
+
+.profile-decoration-preview {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--ss-accent-border-soft);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-accent-bg);
+}
+
+.profile-decoration-preview > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.profile-decoration-preview strong {
+  overflow: hidden;
+  color: var(--ss-color-text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-decoration-preview span {
+  color: var(--ss-color-text-subtle);
+  font-size: 12px;
+}
+
+.profile-decoration-group {
+  display: grid;
+  gap: 9px;
+}
+
+.profile-decoration-group-title {
+  color: var(--ss-color-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.profile-decoration-option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 8px;
+}
+
+.profile-decoration-option,
+.profile-decoration-title {
+  min-width: 0;
+  border: 1px solid var(--ss-color-border);
+  border-radius: var(--ss-radius-md);
+  background: var(--ss-bg-input);
+  color: var(--ss-color-text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--ss-motion-fast), background-color var(--ss-motion-fast), opacity var(--ss-motion-fast);
+}
+
+.profile-decoration-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+}
+
+.profile-decoration-option:hover:not(:disabled),
+.profile-decoration-title:hover {
+  border-color: var(--ss-accent-border);
+  background: var(--ss-accent-bg);
+}
+
+.profile-decoration-option.selected,
+.profile-decoration-title.selected {
+  border-color: var(--ss-accent-border);
+  background: var(--ss-accent-bg-strong);
+  box-shadow: 0 0 0 1px var(--ss-accent-border-soft);
+}
+
+.profile-decoration-option.locked {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.profile-decoration-option-copy,
+.profile-decoration-title > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.profile-decoration-option-copy strong,
+.profile-decoration-title strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-decoration-option-copy small,
+.profile-decoration-title small {
+  overflow: hidden;
+  color: var(--ss-color-text-subtle);
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-decoration-title-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.profile-decoration-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+}
+
+.profile-decoration-title > span:first-child {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  flex: 0 0 23px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ss-hover-layer);
+  font-size: 14px;
 }
 
 .profile-edit-control-row {
@@ -186,6 +349,15 @@
     grid-template-columns: 1fr;
     gap: 14px;
     padding: 18px;
+  }
+
+  .profile-decoration-option-grid,
+  .profile-decoration-title-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .profile-decoration-option {
+    padding: 8px;
   }
 
   .profile-edit-message {

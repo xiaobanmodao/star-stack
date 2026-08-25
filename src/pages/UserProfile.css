@@ -149,6 +149,27 @@
   font-style: normal;
 }
 
+.profile-honors-empty {
+  padding: 14px 4px 4px;
+  color: var(--ss-color-text-subtle);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.user-achievement[data-rarity='rare'] {
+  border-color: var(--ss-accent-border);
+}
+
+.user-achievement[data-rarity='epic'] {
+  border-color: var(--ss-color-warning);
+  background: color-mix(in srgb, var(--ss-color-warning) 8%, var(--ss-bg-panel-solid));
+}
+
+.user-achievement[data-rarity='legendary'] {
+  border-color: var(--ss-color-danger);
+  background: color-mix(in srgb, var(--ss-color-danger) 8%, var(--ss-bg-panel-solid));
+}
+
 /* 最近发帖 */
 .user-recent-posts-list {
   display: flex;
@@ -271,6 +292,24 @@
   overflow: hidden;
 }
 
+.decorated-avatar.profile-avatar-large {
+  overflow: visible;
+  background: transparent;
+}
+
+.decorated-avatar.profile-avatar-large .decorated-avatar-media {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+.decorated-avatar.profile-avatar-large .decorated-avatar-overlay {
+  width: 122%;
+  height: 122%;
+  max-width: none;
+  border-radius: 0;
+}
+
 .profile-avatar-large:hover {
   /* transform removed: 克制化 */
   box-shadow: 0 0 0 2px var(--ss-accent-border);
@@ -333,27 +372,21 @@
   box-shadow: 0 0 6px var(--ss-accent-border);
 }
 
-.heatmap-cell[data-tip]::after {
-  content: attr(data-tip);
+.heatmap-tooltip {
   position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
+  z-index: 5000;
+  width: max-content;
+  max-width: min(240px, calc(100vw - 24px));
   background: var(--ss-bg-panel-solid);
-  color: var(--text);
+  color: var(--ss-color-text);
   font-size: 11px;
   padding: 4px 8px;
   border-radius: 4px;
   white-space: nowrap;
   pointer-events: none;
-  opacity: 0;
-  z-index: 10;
-  border: 1px solid var(--border);
-  transition: opacity 0.15s;
-}
-
-.heatmap-cell:hover[data-tip]::after {
-  opacity: 1;
+  border: 1px solid var(--ss-color-border);
+  box-shadow: 0 8px 20px var(--ss-bg-code-35);
+  transform: translate(-50%, -100%);
 }
 
 .heatmap-cell[data-level="1"] {

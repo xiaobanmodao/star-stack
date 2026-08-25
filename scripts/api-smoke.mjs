@@ -1,5 +1,15 @@
 #!/usr/bin/env node
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 const baseUrl = (process.env.SMOKE_BASE_URL || 'http://127.0.0.1:5180').replace(/\/$/, '')
+const staticBaseUrl = (process.env.SMOKE_STATIC_BASE_URL || '').replace(/\/$/, '')
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const decorationAssets = [
+  'public/assets/decorations/streak-100-overlay.png',
+  'public/assets/decorations/perfect-solve-overlay.png',
+]
 
 const checks = [
   ['GET', '/api/health', 200],
@@ -8,6 +18,8 @@ const checks = [
   ['GET', '/api/admin/client-errors', 401],
   ['GET', '/api/me/export', 404],
   ['GET', '/api/me/sessions', 401],
+  ['GET', '/api/me/decorations', 401],
+  ['PATCH', '/api/me/decorations', 401],
   ['POST', '/api/me/sessions/revoke-others', 401],
   ['POST', '/api/oj/submissions/1/cancel', 401],
   ['GET', '/api/messages/conversations', 401],
@@ -41,4 +53,52 @@ if (paginatedBody.page !== 1 || paginatedBody.pageSize !== 2 || !Number.isIntege
   throw new Error('题库分页响应格式不正确')
 }
 console.log('ok /api/oj/problems pagination -> 200')
+
+for (const asset of decorationAssets) {
+  if (!fs.existsSync(path.join(projectRoot, asset))) throw new Error(`缺少装饰资源：${asset}`)
+}
+console.log('ok decoration assets -> local files present')
+
+if (staticBaseUrl) {
+  for (const asset of decorationAssets) {
+    const response = await fetch(`${staticBaseUrl}/${asset.replace(/^public\//, '')}`)
+    if (response.status !== 200) throw new Error(`${asset}: expected static 200, got ${response.status}`)
+  }
+  console.log('ok decoration assets -> static host reachable')
+} else {
+  console.log('static decoration smoke skipped: set SMOKE_STATIC_BASE_URL to verify a hosted build')
+}
+
+if (process.env.SMOKE_TOKEN) {
+  const authHeaders = { Authorization: `Bearer ${process.env.SMOKE_TOKEN}` }
+  const decorationsResponse = await fetch(`${baseUrl}/api/me/decorations`, { headers: authHeaders })
+  if (decorationsResponse.status !== 200) {
+    throw new Error(`/api/me/decorations authenticated: expected 200, got ${decorationsResponse.status}`)
+  }
+  const decorations = await decorationsResponse.json()
+  if (!decorations.equipped || !Array.isArray(decorations.frames) || !Array.isArray(decorations.overlays) || !Array.isArray(decorations.titles)) {
+    throw new Error('装饰接口缺少 equipped/frames/overlays/titles')
+  }
+  const equipped = decorations.equipped
+  const saveResponse = await fetch(`${baseUrl}/api/me/decorations`, {
+    method: 'PATCH',
+    headers: { ...authHeaders, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      avatarFrame: equipped.avatarFrame,
+      avatarOverlay: equipped.avatarOverlay,
+      equippedTitle: equipped.equippedTitle,
+    }),
+  })
+  if (saveResponse.status !== 200) {
+    throw new Error(`/api/me/decorations authenticated PATCH: expected 200, got ${saveResponse.status}`)
+  }
+  const saved = await saveResponse.json()
+  if (!saved.success || !saved.user || !saved.decorations?.equipped) {
+    throw new Error('装饰保存响应缺少 success/user/decorations.equipped')
+  }
+  console.log('ok /api/me/decorations authenticated -> load/save response shape')
+} else {
+  console.log('authenticated decoration smoke skipped: set SMOKE_TOKEN to enable')
+}
+
 console.log('API smoke checks passed')

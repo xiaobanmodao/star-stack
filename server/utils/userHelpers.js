@@ -1,4 +1,5 @@
 import { getLevelInfo } from '../stats.js'
+import { getDecorationIdentity } from './decorations.js'
 import { sanitizeHtml } from './htmlFilter.js'
 
 export const sanitizeProblemText = (value) => sanitizeHtml(String(value ?? '').trim())
@@ -21,6 +22,7 @@ export const addXp = async (db, userId, amount) => {
 
 export const serializeUser = async (db, user) => {
   const levelInfo = await getUserLevelInfo(db, user.id)
+  const decoration = getDecorationIdentity(user, levelInfo)
   return {
     id: user.id,
     name: user.name,
@@ -30,5 +32,6 @@ export const serializeUser = async (db, user) => {
     isBanned: Boolean(user.is_banned),
     onboarded: Boolean(user.onboarded_at),
     ...levelInfo,
+    ...decoration,
   }
 }

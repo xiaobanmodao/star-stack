@@ -231,3 +231,62 @@ button.lang-switch-item:hover {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
+
+/* 顶部操作按钮使用固定几何，避免路由级样式覆盖后尺寸跳变。 */
+.topbar-actions .topbar-message-btn,
+.topbar-actions .ui-icon-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px !important;
+  min-width: 36px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  max-height: 36px !important;
+  padding: 0 !important;
+  border-radius: 14px !important;
+  background: var(--ss-hover-layer) !important;
+  border: 1px solid var(--ss-color-border) !important;
+  color: var(--ss-color-text) !important;
+  transform: none !important;
+}
+
+.topbar-actions .topbar-message-btn:hover,
+.topbar-actions .topbar-message-btn:focus-visible,
+.topbar-actions .ui-icon-button:hover:not(:disabled),
+.topbar-actions .ui-icon-button:focus-visible {
+  width: 36px !important;
+  min-width: 36px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  transform: none !important;
+  color: var(--ss-color-text) !important;
+  background: var(--ss-hover-layer) !important;
+}
+
+.topbar-actions .topbar-message-btn > span,
+.topbar-actions .ui-icon-button > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  line-height: 0;
+}
+
+.topbar-actions .topbar-message-btn > svg,
+.topbar-actions .topbar-message-btn > span > svg,
+.topbar-actions .ui-icon-button > span > svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  transform: none;
+}
+
+.topbar-actions .topbar-message-btn:hover > svg,
+.topbar-actions .topbar-message-btn:hover > span > svg,
+.topbar-actions .ui-icon-button:hover:not(:disabled) > span > svg {
+  stroke: var(--ss-color-accent);
+}

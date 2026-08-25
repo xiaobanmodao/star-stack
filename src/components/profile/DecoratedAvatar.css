@@ -1,0 +1,111 @@
+.decorated-avatar {
+  position: relative;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: visible;
+  border-radius: 50%;
+  isolation: isolate;
+  vertical-align: middle;
+}
+
+.decorated-avatar-profile { width: 104px; height: 104px; }
+.decorated-avatar-topbar { width: 36px; height: 36px; }
+.decorated-avatar-conversation { width: 44px; height: 44px; }
+.decorated-avatar-discussion { width: 24px; height: 24px; }
+.decorated-avatar-discussion-small { width: 20px; height: 20px; }
+.decorated-avatar-chat { width: 40px; height: 40px; }
+.decorated-avatar-message { width: 36px; height: 36px; }
+.decorated-avatar-edit { width: 72px; height: 72px; }
+
+.decorated-avatar-media,
+.decorated-avatar-fallback {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.decorated-avatar-media {
+  object-fit: cover;
+}
+
+.decorated-avatar-fallback {
+  background: var(--ss-hover-layer);
+  color: var(--ss-color-text);
+  font-family: var(--ss-font-display);
+  font-size: 0.9em;
+  font-weight: 700;
+}
+
+.decorated-avatar::before {
+  position: absolute;
+  z-index: 0;
+  inset: -2px;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  content: '';
+  pointer-events: none;
+}
+
+.decorated-avatar-frame-meteor::before {
+  border-color: #58d5ff;
+  box-shadow: 0 0 0 2px rgb(88 213 255 / 13%), 0 0 12px rgb(88 213 255 / 40%);
+}
+
+.decorated-avatar-frame-planet::before {
+  inset: -3px;
+  border-color: #8e9cff;
+  box-shadow: 0 0 0 2px rgb(142 156 255 / 12%), 0 0 14px rgb(142 156 255 / 42%);
+  transform: rotate(-18deg) scaleX(1.08);
+}
+
+.decorated-avatar-frame-supernova::before {
+  inset: -3px;
+  border-color: #c98cff;
+  box-shadow: 0 0 0 2px rgb(201 140 255 / 13%), 0 0 18px rgb(201 140 255 / 48%);
+}
+
+.decorated-avatar-frame-black-hole::before {
+  inset: -4px;
+  border-color: #6e7cff;
+  box-shadow: 0 0 0 3px rgb(31 39 104 / 38%), 0 0 20px rgb(110 124 255 / 52%);
+}
+
+.decorated-avatar-overlay {
+  position: absolute;
+  z-index: 2;
+  inset: -11%;
+  width: 122%;
+  height: 122%;
+  max-width: none;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.decorated-avatar-topbar .decorated-avatar-overlay,
+.decorated-avatar-discussion .decorated-avatar-overlay,
+.decorated-avatar-discussion-small .decorated-avatar-overlay,
+.decorated-avatar-message .decorated-avatar-overlay {
+  inset: -14%;
+  width: 128%;
+  height: 128%;
+}
+
+.decorated-avatar-discussion-small .decorated-avatar-fallback {
+  font-size: 0.72em;
+}
+
+.decorated-avatar-message .decorated-avatar-fallback,
+.decorated-avatar-chat .decorated-avatar-fallback {
+  font-size: 0.8em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .decorated-avatar::before {
+    transition: none;
+  }
+}

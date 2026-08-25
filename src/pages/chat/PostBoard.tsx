@@ -7,6 +7,7 @@ import { fetchJson, openInNewTab } from '../../utils'
 import { MODULE_KEYS, MODULE_META } from '../../components/chat/chatMeta'
 import { useModalFocus } from '../../hooks/useModalFocus'
 import { EmptyState, LoadingState } from '../../components/ui'
+import DecoratedAvatar from '../../components/profile/DecoratedAvatar'
 import './ChatHub.css'
 
 const formatPostTime = (iso: string) => {
@@ -349,12 +350,17 @@ export default function PostBoard({ module = 'all' }: { module?: ChatModuleKey |
                     navigate(`/user/${post.userId}`)
                   }}
                 >
-                  {post.userAvatar ? (
-                    <img src={post.userAvatar} alt="" loading="lazy" />
-                  ) : (
-                    <span>{post.userName.charAt(0).toUpperCase()}</span>
-                  )}
-                  {post.userName}
+                  <DecoratedAvatar
+                    avatar={post.userAvatar}
+                    fallback={post.userName.charAt(0).toUpperCase()}
+                    frame={post.userAvatarFrame}
+                    overlay={post.userAvatarOverlay}
+                    size="discussion-small"
+                    alt=""
+                    loading="lazy"
+                  />
+                  <span>{post.userName}</span>
+                  {post.userDisplayTitle && <small className="plaza-post-author-title">{post.userDisplayTitleIcon || '✦'} {post.userDisplayTitle}</small>}
                 </span>
                 <span className="plaza-post-foot-right">
                   {currentUser?.isAdmin && (
