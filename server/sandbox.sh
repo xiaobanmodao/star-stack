@@ -107,7 +107,7 @@ done
 
 export HOME=/tmp
 export TMPDIR=/tmp
-export PATH=/usr/local/bin:/usr/bin:/bin
+export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin
 
 # 将 Node 传入的工作目录绝对路径映射为 chroot 内的 /work 路径。
 COMMAND=("$@")
