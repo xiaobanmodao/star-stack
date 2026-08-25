@@ -247,7 +247,7 @@ const runCommand = (cmd, args, options = {}) =>
       ]
       // 沙箱环境下限制 PATH，移除敏感环境变量
       spawnEnv = {
-        PATH: '/usr/local/bin:/usr/bin:/bin',
+        PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin',
         HOME: options.cwd || '/tmp',
         LANG: 'en_US.UTF-8',
         ...(options.env || {}),
