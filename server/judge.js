@@ -152,7 +152,14 @@ const hasCommand = (command) => {
 // 生产环境如果当前内核/容器不允许用户 namespace、挂载或 chroot，必须拒绝执行用户代码。
 const canCreateSandbox = () => {
   if (!IS_LINUX || !fs.existsSync(SANDBOX_SH)) return false
-  if (!hasCommand('unshare') || !hasCommand('timeout') || !hasCommand('mount') || !hasCommand('chroot')) return false
+  const requiredCommands = ['unshare', 'timeout', 'mount', 'chroot']
+  const missingCommands = requiredCommands.filter((command) => !hasCommand(command))
+  if (missingCommands.length) {
+    if (process.env.JUDGE_DEBUG_SANDBOX === '1') {
+      console.error(`[sandbox] missing commands: ${missingCommands.join(', ')}`)
+    }
+    return false
+  }
   const probeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'starstack-sandbox-probe-'))
   const probe = spawnSync('/bin/bash', [
     SANDBOX_SH, probeRoot, '100', '65536', '-', '/bin/true',
@@ -161,6 +168,9 @@ const canCreateSandbox = () => {
     timeout: 3000,
   })
   try { fs.rmSync(probeRoot, { recursive: true, force: true }) } catch {}
+  if (probe.status !== 0 && process.env.JUDGE_DEBUG_SANDBOX === '1') {
+    console.error(`[sandbox] probe failed: status=${probe.status ?? 'null'} signal=${probe.signal ?? 'null'} error=${probe.error?.message || 'none'}`)
+  }
   return probe.status === 0
 }
 
