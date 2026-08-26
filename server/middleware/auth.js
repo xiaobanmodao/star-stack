@@ -4,7 +4,10 @@ const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000 // 会话 30 天过期
 
 export const getAuthToken = (req) => {
   const header = req.headers.authorization || ''
-  if (header.startsWith('Bearer ')) return header.slice(7).trim()
+  if (header.startsWith('Bearer ')) {
+    const token = header.slice(7).trim()
+    return token && token.length <= 128 ? token : null
+  }
   return null
 }
 

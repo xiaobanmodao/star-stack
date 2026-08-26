@@ -14,6 +14,22 @@ const ALLOWED_ATTR_MAP = {
 const SAFE_URL_RE = /^(?:https?:\/\/|mailto:|\/(?!\/))/i
 const SAFE_CLASS_RE = /^(?:text-(?:sm|lg|xl)|language-[a-z0-9+-]+)$/i
 
+const isSafeHref = (value) => {
+  const normalized = String(value || '').trim()
+  const hasUnsafeCharacters = normalized.includes('\\') || Array.from(normalized).some((char) => char.charCodeAt(0) <= 0x20)
+  if (!normalized || hasUnsafeCharacters || !SAFE_URL_RE.test(normalized)) return false
+  try {
+    if (normalized.startsWith('/')) {
+      const parsed = new URL(normalized, 'https://starstack.invalid')
+      return parsed.origin === 'https://starstack.invalid'
+    }
+    const parsed = new URL(normalized)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'mailto:'
+  } catch {
+    return false
+  }
+}
+
 export function sanitizeHtml(html) {
   if (!html) return ''
   return html.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)?\/?>/g, (match, tag, attrStr) => {
@@ -32,7 +48,7 @@ export function sanitizeHtml(html) {
       const attrName = m[1].toLowerCase()
       const attrVal = m[2] ?? m[3] ?? m[4] ?? ''
       if (!allowedAttrs.has(attrName)) continue
-      if (attrName === 'href' && !SAFE_URL_RE.test(attrVal.trim())) continue
+      if (attrName === 'href' && !isSafeHref(attrVal)) continue
       if (attrName === 'target' && attrVal !== '_blank' && attrVal !== '_self') continue
       if (attrName === 'rel') continue
       if (attrName === 'class' && !SAFE_CLASS_RE.test(attrVal.trim())) continue

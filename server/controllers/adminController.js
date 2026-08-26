@@ -134,8 +134,9 @@ export const resetPassword = async (req, res) => {
   const { db } = auth
   const targetId = req.params.id
   const { password } = req.body || {}
-  if (!password) return res.status(400).json({ message: '请输入新密码' })
+  if (typeof password !== 'string' || !password) return res.status(400).json({ message: '请输入新密码' })
   if (password.length < 6) return res.status(400).json({ message: '密码至少 6 位' })
+  if (password.length > 128) return res.status(400).json({ message: '密码不能超过 128 个字符' })
   const target = await db.get(`SELECT id FROM users WHERE id = ?`, targetId)
   if (!target) return res.status(404).json({ message: '用户不存在' })
   const passwordHash = await bcrypt.hash(password, 10)

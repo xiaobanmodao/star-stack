@@ -10,6 +10,7 @@ import {
   checkAndUnlockAchievements,
   updateRankings,
 } from '../stats.js'
+import { sseConnectionLimiter } from '../utils/connectionLimit.js'
 
 const parseResults = (raw) => {
   if (!raw) return []
@@ -594,6 +595,12 @@ export const streamSubmission = async (req, res) => {
   }
   judgeRateLimits.set(user.id, Date.now())
 
+  const releaseSse = sseConnectionLimiter.tryAcquire(user.id)
+  if (!releaseSse) {
+    res.setHeader('Retry-After', '10')
+    return res.status(429).json({ message: '实时连接数已达上限，请稍后重试' })
+  }
+
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
   res.setHeader('Connection', 'keep-alive')
@@ -606,6 +613,7 @@ export const streamSubmission = async (req, res) => {
   let queuedSubmission
   req.on('close', () => {
     closed = true
+    releaseSse()
     // SSE 断开不代表用户取消评测：网络切换、页面刷新和反向代理都可能触发 close。
     // 评测任务已持久化，客户端可通过提交详情轮询恢复；只有显式调用 cancel 接口才取消排队任务。
   })
@@ -670,6 +678,7 @@ export const streamSubmission = async (req, res) => {
     console.error('Streaming submission failed:', error)
     if (!closed) sendEvent('error', { submissionId: queuedSubmission?.submissionId, message: '评测失败，请稍后重试' })
   } finally {
+    releaseSse()
     if (heartbeatTimer) clearInterval(heartbeatTimer)
     if (!res.writableEnded && !res.destroyed) res.end()
   }
@@ -715,7 +724,8 @@ export const runSampleHandler = async (req, res) => {
     }
     return res.json({ output: runResult.output ?? '', expected: String(sample.output ?? ''), status, message, timeMs: runResult.timeMs ?? 0 })
   } catch (error) {
-    return res.status(500).json({ message: error?.message || '测试运行失败' })
+    console.error('Sample run failed:', error)
+    return res.status(500).json({ message: '测试运行失败，请稍后重试' })
   }
 }
 
@@ -750,7 +760,8 @@ export const runCustomHandler = async (req, res) => {
     }
     return res.json({ output: runResult.output ?? '', expected: hasExpectedOutput ? expectedOutput : '', status, message, timeMs: runResult.timeMs ?? 0 })
   } catch (error) {
-    return res.status(500).json({ message: error?.message || '测试运行失败' })
+    console.error('Custom run failed:', error)
+    return res.status(500).json({ message: '测试运行失败，请稍后重试' })
   }
 }
 
@@ -802,6 +813,7 @@ export const runSamplesHandler = async (req, res) => {
       : { status: 'Wrong Answer', message: '存在样例未通过' }
     return res.json({ ...overall, results })
   } catch (error) {
-    return res.status(500).json({ message: error?.message || '测试运行失败' })
+    console.error('Samples run failed:', error)
+    return res.status(500).json({ message: '测试运行失败，请稍后重试' })
   }
 }

@@ -4,7 +4,7 @@ import { getUserLevelInfo } from '../utils/userHelpers.js'
 import { getLevelInfo, getDifficultyStats, getHeatmapData, ACHIEVEMENTS } from '../stats.js'
 import { getFollowRelations } from '../utils/socialHelpers.js'
 import { localDay } from '../utils/dateHelpers.js'
-import { getDecorationIdentity } from '../utils/decorations.js'
+import { getDecorationIdentity, getUnlockedAchievementTypes } from '../utils/decorations.js'
 
 export const getUserProfile = async (req, res) => {
   try {
@@ -27,12 +27,13 @@ export const getUserProfile = async (req, res) => {
 
     const difficultyStats = await getDifficultyStats(db, userId)
     const levelInfo = getLevelInfo(stats.xp || 0)
+    const achievementTypes = await getUnlockedAchievementTypes(db, userId)
 
     return res.json({
       user: {
         id: user.id, name: user.name, avatar: user.avatar,
         createdAt: user.created_at, isAdmin: user.is_admin === 1,
-        ...levelInfo, ...getDecorationIdentity(user, levelInfo),
+        ...levelInfo, ...getDecorationIdentity(user, levelInfo, achievementTypes),
       },
       stats: {
         totalSubmissions: stats.total_submissions,
@@ -200,12 +201,13 @@ export const getSocialProfile = async (req, res) => {
 
     const statsRow = await db.get(`SELECT xp FROM user_stats WHERE user_id = ?`, targetId)
     const levelInfo = getLevelInfo(statsRow?.xp || 0)
+    const achievementTypes = await getUnlockedAchievementTypes(db, targetId)
 
     return res.json({
       user: {
         id: target.id, name: target.name, avatar: target.avatar,
         isAdmin: Boolean(target.is_admin), bio: target.bio || '', createdAt: target.created_at,
-        ...levelInfo, ...getDecorationIdentity(target, levelInfo),
+        ...levelInfo, ...getDecorationIdentity(target, levelInfo, achievementTypes),
       },
       relations,
       blocked: blockedByViewer,

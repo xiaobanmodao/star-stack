@@ -250,7 +250,15 @@ const ensureBuiltinProblems = async (db) => {
 
 export const initDb = async () => {
   if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true })
+    fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 })
+  }
+  // SQLite contains passwords, sessions and private messages. Keep the live
+  // database and WAL sidecars readable only by the service account.
+  try { fs.chmodSync(DATA_DIR, 0o700) } catch {}
+  for (const filePath of [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`]) {
+    if (fs.existsSync(filePath)) {
+      try { fs.chmodSync(filePath, 0o600) } catch {}
+    }
   }
   const db = await dbPromise
   await db.exec(`

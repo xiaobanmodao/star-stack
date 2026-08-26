@@ -66,7 +66,7 @@ export const AVATAR_OVERLAY_DEFINITIONS = [
 
 const getAchievement = (type) => ACHIEVEMENTS[String(type || '').toUpperCase()]
 
-const getTitleDefinition = (titleId, levelInfo) => {
+const getTitleDefinition = (titleId, levelInfo, achievementTypes = new Set()) => {
   if (!titleId) return null
   if (String(titleId).startsWith('level:')) {
     const level = Number(String(titleId).slice('level:'.length))
@@ -82,7 +82,7 @@ const getTitleDefinition = (titleId, levelInfo) => {
   if (String(titleId).startsWith('honor:')) {
     const achievementType = String(titleId).slice('honor:'.length)
     const item = getAchievement(achievementType)
-    if (!item) return null
+    if (!item || !achievementTypes.has(item.id)) return null
     return {
       id: `honor:${item.id}`,
       name: item.name,
@@ -94,12 +94,14 @@ const getTitleDefinition = (titleId, levelInfo) => {
   return null
 }
 
-export const getDecorationIdentity = (user = {}, levelInfo = getLevelInfo(0)) => {
+export const getDecorationIdentity = (user = {}, levelInfo = getLevelInfo(0), achievementTypes = new Set()) => {
   const frame = AVATAR_FRAME_DEFINITIONS.find((item) => item.id === user.avatar_frame)
   const avatarFrame = frame && levelInfo.level >= frame.minLevel ? frame.id : 'none'
   const overlay = AVATAR_OVERLAY_DEFINITIONS.find((item) => item.id === user.avatar_overlay)
-  const avatarOverlay = overlay ? overlay.id : 'none'
-  const equipped = getTitleDefinition(user.equipped_title, levelInfo)
+  const avatarOverlay = overlay && (!overlay.achievementType || achievementTypes.has(overlay.achievementType))
+    ? overlay.id
+    : 'none'
+  const equipped = getTitleDefinition(user.equipped_title, levelInfo, achievementTypes)
   const fallbackTitle = {
     id: `level:${levelInfo.level}`,
     name: levelInfo.title,
@@ -128,9 +130,31 @@ const getUserXpAndAchievements = async (db, userId) => {
   }
 }
 
+export const getUnlockedAchievementTypes = async (db, userId) => {
+  const rows = await db.all(`SELECT achievement_type FROM user_achievements WHERE user_id = ?`, userId)
+  return new Set(rows.map((item) => item.achievement_type))
+}
+
+export const getUnlockedAchievementTypeMap = async (db, userIds) => {
+  const ids = [...new Set(userIds.filter(Boolean))]
+  const result = new Map(ids.map((id) => [id, new Set()]))
+  if (ids.length === 0) return result
+  // Keep the placeholder count below SQLite's variable limit for discussions
+  // with a large number of comments.
+  for (let index = 0; index < ids.length; index += 500) {
+    const batch = ids.slice(index, index + 500)
+    const rows = await db.all(
+      `SELECT user_id, achievement_type FROM user_achievements WHERE user_id IN (${batch.map(() => '?').join(',')})`,
+      ...batch,
+    )
+    for (const row of rows) result.get(row.user_id)?.add(row.achievement_type)
+  }
+  return result
+}
+
 export const getDecorationOptions = async (db, user) => {
   const { levelInfo, achievementTypes } = await getUserXpAndAchievements(db, user.id)
-  const identity = getDecorationIdentity(user, levelInfo)
+  const identity = getDecorationIdentity(user, levelInfo, achievementTypes)
   const frames = AVATAR_FRAME_DEFINITIONS.map((item) => ({
     id: item.id,
     name: item.name,

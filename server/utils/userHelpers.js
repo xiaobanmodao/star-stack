@@ -1,5 +1,5 @@
 import { getLevelInfo } from '../stats.js'
-import { getDecorationIdentity } from './decorations.js'
+import { getDecorationIdentity, getUnlockedAchievementTypes } from './decorations.js'
 import { sanitizeHtml } from './htmlFilter.js'
 
 export const sanitizeProblemText = (value) => sanitizeHtml(String(value ?? '').trim())
@@ -21,8 +21,11 @@ export const addXp = async (db, userId, amount) => {
 }
 
 export const serializeUser = async (db, user) => {
-  const levelInfo = await getUserLevelInfo(db, user.id)
-  const decoration = getDecorationIdentity(user, levelInfo)
+  const [levelInfo, achievementTypes] = await Promise.all([
+    getUserLevelInfo(db, user.id),
+    getUnlockedAchievementTypes(db, user.id),
+  ])
+  const decoration = getDecorationIdentity(user, levelInfo, achievementTypes)
   return {
     id: user.id,
     name: user.name,

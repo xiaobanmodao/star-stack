@@ -88,13 +88,30 @@ trap cleanup EXIT HUP INT TERM
 mount --make-rprivate /
 mount -t tmpfs -o size=64m,mode=755 tmpfs "$ROOT_DIR"
 
-# 编译器、解释器和动态链接器只以只读方式暴露；不暴露 /home、/root、/opt、/var 等目录。
-for system_dir in usr bin sbin lib lib64 etc; do
+# 编译器、解释器和动态链接器只以只读方式暴露；不暴露 /home、/root、/opt、/var、/etc 等目录。
+for system_dir in usr bin sbin lib lib64; do
   if [[ -e "/$system_dir" ]]; then
     mkdir -p "$ROOT_DIR/$system_dir"
-    mount --rbind "/$system_dir" "$ROOT_DIR/$system_dir"
+    # 普通 bind 不递归带入宿主机目录中的嵌套挂载，避免意外暴露额外文件系统。
+    mount --bind "/$system_dir" "$ROOT_DIR/$system_dir"
     mount --make-rslave "$ROOT_DIR/$system_dir"
-    mount -o remount,bind,ro "$ROOT_DIR/$system_dir" 2>/dev/null || true
+    if ! mount -o remount,bind,ro "$ROOT_DIR/$system_dir" 2>/dev/null; then
+      echo "sandbox unavailable: cannot make /$system_dir read-only" >&2
+      exit 125
+    fi
+  fi
+done
+
+# 只提供动态链接器缓存和时区文件，不把宿主机的用户、主机、凭据等配置带入沙箱。
+mkdir -p "$ROOT_DIR/etc"
+for config in ld.so.cache localtime; do
+  if [[ -e "/etc/$config" ]]; then
+    touch "$ROOT_DIR/etc/$config"
+    mount --bind "/etc/$config" "$ROOT_DIR/etc/$config"
+    if ! mount -o remount,bind,ro "$ROOT_DIR/etc/$config" 2>/dev/null; then
+      echo "sandbox unavailable: cannot make /etc/$config read-only" >&2
+      exit 125
+    fi
   fi
 done
 

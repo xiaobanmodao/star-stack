@@ -39,6 +39,20 @@ describe('decoration unlock rules', () => {
     })
   })
 
+  it('does not expose an honor or overlay stored without its achievement', () => {
+    const identity = getDecorationIdentity({
+      avatar_frame: 'meteor',
+      avatar_overlay: 'perfect-solve',
+      equipped_title: 'honor:perfect_solve',
+    }, { level: 7, title: '黑洞', icon: '🕳️' })
+
+    expect(identity).toMatchObject({
+      avatarOverlay: 'none',
+      equippedTitle: null,
+      displayTitle: '黑洞',
+    })
+  })
+
   it('unlocks avatar frames only at their configured levels', async () => {
     const levelTwo = await getDecorationOptions(createDb({ xp: 100 }), { id: 'astro01' })
     const levelFour = await getDecorationOptions(createDb({ xp: 700 }), { id: 'astro01' })

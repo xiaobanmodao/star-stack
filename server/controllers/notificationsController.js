@@ -1,7 +1,15 @@
 import webpush from 'web-push'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { getDb } from '../db.js'
 import { requireUser } from '../middleware/auth.js'
+import { BoundedCache } from '../utils/boundedCache.js'
+import { isTrustedPushEndpoint } from '../utils/pushEndpoint.js'
+
+const pushSubscriptionRateLimits = new BoundedCache(5000, 60 * 1000)
+const MAX_PUSH_ENDPOINT_LENGTH = 2048
+const MAX_PUSH_KEY_LENGTH = 256
+const MAX_PUSH_SUBSCRIPTIONS_PER_USER = 10
+const BASE64URL_RE = /^[A-Za-z0-9_-]+$/
 
 let vapidKeys = null
 const getVapidKeys = () => {
@@ -12,11 +20,13 @@ const getVapidKeys = () => {
   }
   const filePath = new URL('../.vapid.json', import.meta.url).pathname
   if (existsSync(filePath)) {
+    try { chmodSync(filePath, 0o600) } catch {}
     vapidKeys = JSON.parse(readFileSync(filePath, 'utf8'))
     return vapidKeys
   }
   const generated = webpush.generateVAPIDKeys()
-  writeFileSync(filePath, JSON.stringify(generated, null, 2))
+  writeFileSync(filePath, JSON.stringify(generated, null, 2), { mode: 0o600 })
+  try { chmodSync(filePath, 0o600) } catch {}
   vapidKeys = generated
   return vapidKeys
 }
@@ -37,10 +47,47 @@ export const subscribePush = async (req, res) => {
   const { db, user } = auth
   try {
     const { subscription } = req.body || {}
-    if (!subscription?.endpoint || !subscription?.keys) return res.status(400).json({ message: '无效的订阅信息' })
+    if (!subscription || typeof subscription !== 'object' || Array.isArray(subscription)) {
+      return res.status(400).json({ message: '无效的订阅信息' })
+    }
+    const endpoint = typeof subscription.endpoint === 'string' ? subscription.endpoint.trim() : ''
+    const keys = subscription.keys
+    if (!endpoint || endpoint.length > MAX_PUSH_ENDPOINT_LENGTH || !keys || typeof keys !== 'object' || Array.isArray(keys)) {
+      return res.status(400).json({ message: '无效的订阅信息' })
+    }
+    let endpointUrl
+    try {
+      endpointUrl = new URL(endpoint)
+    } catch {
+      return res.status(400).json({ message: '无效的推送地址' })
+    }
+    if (endpointUrl.protocol !== 'https:' || endpointUrl.username || endpointUrl.password || !isTrustedPushEndpoint(endpoint)) {
+      return res.status(400).json({ message: '无效的推送地址' })
+    }
+    const p256dh = typeof keys.p256dh === 'string' ? keys.p256dh.trim() : ''
+    const authKey = typeof keys.auth === 'string' ? keys.auth.trim() : ''
+    if (
+      p256dh.length < 16 || p256dh.length > MAX_PUSH_KEY_LENGTH ||
+      authKey.length < 8 || authKey.length > MAX_PUSH_KEY_LENGTH ||
+      !BASE64URL_RE.test(p256dh) || !BASE64URL_RE.test(authKey)
+    ) {
+      return res.status(400).json({ message: '无效的推送密钥' })
+    }
+    const limitKey = `${user.id}:${endpoint}`
+    if (pushSubscriptionRateLimits.has(limitKey)) {
+      return res.status(429).json({ message: '订阅操作过于频繁，请稍后再试' })
+    }
+    pushSubscriptionRateLimits.set(limitKey, true)
+    const existing = await db.get(`SELECT id FROM push_subscriptions WHERE user_id = ? AND endpoint = ?`, user.id, endpoint)
+    if (!existing) {
+      const count = await db.get(`SELECT COUNT(*) AS count FROM push_subscriptions WHERE user_id = ?`, user.id)
+      if (Number(count?.count || 0) >= MAX_PUSH_SUBSCRIPTIONS_PER_USER) {
+        return res.status(409).json({ message: '推送设备数量已达到上限' })
+      }
+    }
     await db.run(
       `INSERT OR REPLACE INTO push_subscriptions (user_id, endpoint, keys_json, created_at) VALUES (?, ?, ?, ?)`,
-      user.id, subscription.endpoint, JSON.stringify(subscription.keys), new Date().toISOString()
+      user.id, endpoint, JSON.stringify({ p256dh, auth: authKey }), new Date().toISOString()
     )
     return res.json({ success: true })
   } catch (error) {

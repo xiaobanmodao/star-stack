@@ -16,6 +16,22 @@ const ALLOWED_ATTRS: Record<string, Set<string>> = {
 const SAFE_URL_RE = /^(?:https?:\/\/|mailto:|\/(?!\/))/i
 // class 白名单：只允许文字大小类与代码语言类（与服务端 sanitizeHtml 一致）
 const SAFE_CLASS_RE = /^(?:text-(?:sm|lg|xl)|language-[a-z0-9+-]+)$/i
+
+const isSafeHref = (value: string) => {
+  const normalized = value.trim()
+  const hasUnsafeCharacters = normalized.includes('\\') || Array.from(normalized).some((char) => char.charCodeAt(0) <= 0x20)
+  if (!normalized || hasUnsafeCharacters || !SAFE_URL_RE.test(normalized)) return false
+  try {
+    if (normalized.startsWith('/')) {
+      const parsed = new URL(normalized, window.location.origin)
+      return parsed.origin === window.location.origin
+    }
+    const parsed = new URL(normalized)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'mailto:'
+  } catch {
+    return false
+  }
+}
 const LATEX_PLAIN_TEXT_MAP: Array<[RegExp, string]> = [
   [/\\leq?/g, '≤'],
   [/\\geq?/g, '≥'],
@@ -78,7 +94,7 @@ const sanitizeRichHtml = (raw: string) => {
         element.removeAttribute(attr.name)
         return
       }
-      if (name === 'href' && !SAFE_URL_RE.test(value)) {
+      if (name === 'href' && !isSafeHref(value)) {
         element.removeAttribute(attr.name)
         return
       }

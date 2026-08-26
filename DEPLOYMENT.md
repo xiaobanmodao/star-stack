@@ -14,7 +14,7 @@
 | 访问域名 | `https://xingzhan.cc`、`https://www.xingzhan.cc` |
 | 数据库 | `server/data/starstack.sqlite` |
 
-生产服务由 Nginx 提供前端静态文件和 HTTPS，由 Nginx 将 `/api/` 转发到 PM2 管理的 Express 服务。判题依赖 C++17、Python 3 和 Java 17。
+生产服务由 Nginx 提供前端静态文件和 HTTPS，由 Nginx 将 `/api/` 转发到 PM2 管理的 Express 服务。生产模式下 Express 默认只监听 `127.0.0.1:5174`，不能绕过 Nginx 直接公网访问。判题依赖 C++17、Python 3 和 Java 17。
 
 ### Cloudflare Turnstile
 

@@ -1,4 +1,5 @@
 import webpush from 'web-push'
+import { isTrustedPushEndpoint } from './pushEndpoint.js'
 
 const sendPushToUser = async (db, userId, { title, body, url }) => {
   try {
@@ -9,6 +10,11 @@ const sendPushToUser = async (db, userId, { title, body, url }) => {
     const payload = JSON.stringify({ title, body, url })
     for (const sub of subs) {
       try {
+        // 历史数据也要重新校验，避免旧版本保存的任意 HTTPS 地址形成 SSRF。
+        if (!isTrustedPushEndpoint(sub.endpoint)) {
+          await db.run(`DELETE FROM push_subscriptions WHERE endpoint = ?`, sub.endpoint)
+          continue
+        }
         await webpush.sendNotification({ endpoint: sub.endpoint, keys: JSON.parse(sub.keys_json) }, payload)
       } catch (error) {
         if (error?.statusCode === 404 || error?.statusCode === 410) {

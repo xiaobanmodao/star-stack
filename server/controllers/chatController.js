@@ -6,9 +6,11 @@ import { bumpChatStat, touchChatActivity, countActiveDaysPublic, CHAT_ACHIEVEMEN
 import { localDay, parseLocalDate } from '../utils/dateHelpers.js'
 import { BoundedCache } from '../utils/boundedCache.js'
 import { randomBytes } from 'node:crypto'
+import { sseConnectionLimiter } from '../utils/connectionLimit.js'
 
 const CHAT_VALID_MODULES = new Set(['general', 'oj', 'jieya', 'starcode'])
 const chatRateLimits = new BoundedCache(5000, 1000)
+const typingRateLimits = new BoundedCache(5000, 1000)
 const reportRateLimits = new BoundedCache(5000, 10000)
 export const PRESENCE_ONLINE_MS = 60 * 1000
 
@@ -111,6 +113,12 @@ const openChatStream = async (req, res, scopeKey) => {
       if (!member) { if (!res.headersSent) res.status(403).json({ message: '需要加入后才能查看' }); return null }
     }
   }
+  const releaseSse = sseConnectionLimiter.tryAcquire(user.id)
+  if (!releaseSse) {
+    res.setHeader('Retry-After', '10')
+    if (!res.headersSent) res.status(429).json({ message: '实时连接数已达上限，请稍后重试' })
+    return null
+  }
   await touchPresence(db, user.id)
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
@@ -127,6 +135,7 @@ const openChatStream = async (req, res, scopeKey) => {
   }, 15000)
   req.on('close', () => {
     closed = true; clearInterval(ping)
+    releaseSse()
     const set = chatStreams.get(scopeKey)
     if (set) { set.delete(res); if (set.size === 0) chatStreams.delete(scopeKey) }
   })
@@ -512,8 +521,30 @@ export const typingIndicator = async (req, res) => {
   const { db, user } = auth
   try {
     const { scopeType, scopeId } = req.body || {}
-    if ((scopeType !== 'channel' && scopeType !== 'room') || !scopeId) return res.status(400).json({ message: '无效的范围' })
-    const scopeKey = scopeType === 'channel' ? `channel:${scopeId}` : `room:${scopeId}`
+    const normalizedScopeId = String(scopeId ?? '').trim()
+    if ((scopeType !== 'channel' && scopeType !== 'room') || !normalizedScopeId || normalizedScopeId.length > 64) {
+      return res.status(400).json({ message: '无效的范围' })
+    }
+    let scopeKey
+    if (scopeType === 'channel') {
+      if (!CHAT_VALID_MODULES.has(normalizedScopeId)) return res.status(400).json({ message: '无效的频道' })
+      scopeKey = `channel:${normalizedScopeId}`
+    } else {
+      const roomId = Number(normalizedScopeId)
+      if (!Number.isInteger(roomId) || roomId <= 0) return res.status(400).json({ message: '无效的房间' })
+      const room = await db.get(`SELECT id, type FROM chat_rooms WHERE id = ?`, roomId)
+      if (!room) return res.status(404).json({ message: '房间不存在' })
+      if (room.type === 'invite') {
+        const member = await db.get(
+          `SELECT 1 FROM chat_room_members WHERE room_id = ? AND user_id = ?`,
+          roomId, user.id,
+        )
+        if (!member) return res.status(403).json({ message: '需要加入后才能操作' })
+      }
+      scopeKey = `room:${roomId}`
+    }
+    if (typingRateLimits.has(user.id)) return res.status(429).json({ message: '操作过快，请稍后再试' })
+    typingRateLimits.set(user.id, Date.now())
     await touchPresence(db, user.id)
     broadcastToScope(scopeKey, { type: 'typing', userId: user.id, userName: user.name })
     return res.json({ success: true })
@@ -642,6 +673,9 @@ export const createInviteLink = async (req, res) => {
 
 export const getInviteLink = async (req, res) => {
   try {
+    if (!/^[a-f0-9]{32}$/.test(req.params.token || '')) {
+      return res.status(404).json({ message: '邀请链接无效或已被使用' })
+    }
     const db = await getDb()
     const link = await db.get(
       `SELECT l.*, cr.name as room_name, cr.type as room_type, u.name as owner_name
@@ -663,6 +697,9 @@ export const joinViaInviteLink = async (req, res) => {
   if (!auth) return
   const { db, user } = auth
   try {
+    if (!/^[a-f0-9]{32}$/.test(req.params.token || '')) {
+      return res.status(404).json({ message: '邀请链接无效或已被使用' })
+    }
     const link = await db.get(`SELECT * FROM room_invite_links WHERE token = ?`, req.params.token)
     if (!link) return res.status(404).json({ message: '邀请链接无效或已被使用' })
     if (link.expires_at && new Date(link.expires_at).getTime() < Date.now()) return res.status(410).json({ message: '邀请链接已过期' })

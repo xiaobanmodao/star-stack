@@ -4,6 +4,7 @@ import { getDb, initDb } from './db.js'
 import { getAuthToken, getUserByToken } from './middleware/auth.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { createRateLimiter } from './middleware/rateLimit.js'
+import { BoundedCache } from './utils/boundedCache.js'
 import { initPush } from './controllers/notificationsController.js'
 import { getBackupHealth, getDatabaseHealth, getDiskHealth } from './utils/monitoring.js'
 import { backfillAchievements } from './stats.js'
@@ -31,6 +32,21 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
 
 const app = express()
 app.disable('x-powered-by')
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'self'",
+  "object-src 'none'",
+  "script-src 'self' https://challenges.cloudflare.com",
+  "connect-src 'self' https://challenges.cloudflare.com",
+  "img-src 'self' data: blob:",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self' data:",
+  "worker-src 'self' blob:",
+  "frame-src https://challenges.cloudflare.com",
+  process.env.NODE_ENV === 'production' ? 'upgrade-insecure-requests' : '',
+].filter(Boolean).join('; ')
 // 只信任部署链路中明确配置的代理层，避免请求方伪造 X-Forwarded-For 绕过限流。
 // 生产默认按 Nginx → Node 的单跳部署处理；多级代理请显式设置 TRUST_PROXY_HOPS。
 const configuredProxyHops = Number.parseInt(
@@ -44,6 +60,10 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
   res.setHeader('X-Permitted-Cross-Domain-Policies', 'none')
+  res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY)
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  }
   next()
 })
 
@@ -127,12 +147,32 @@ app.get('/api/stats', async (req, res) => {
   })
 })
 
-// Frontend error reporting
-app.post('/api/client-errors', createRateLimiter({ windowMs: 60 * 1000, max: 30, message: '错误上报过于频繁' }), async (req, res) => {
+// Frontend error reporting. This endpoint must remain available before login,
+// but it is intentionally strict and de-duplicates repeated browser errors.
+const clientErrorDuplicates = new BoundedCache(5000, 60 * 1000)
+const clientErrorText = (value, maxLength) => String(value ?? '')
+  .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+  .trim()
+  .slice(0, maxLength)
+const clientErrorLimiter = createRateLimiter({ windowMs: 60 * 1000, max: 10, message: '错误上报过于频繁' })
+app.post('/api/client-errors', clientErrorLimiter, async (req, res) => {
   try {
     const db = await getDb()
     const { message, source, line, column, stack, url, userAgent } = req.body || {}
-    if (!message) return res.status(400).json({ message: '缺少错误信息' })
+    if (JSON.stringify(req.body || {}).length > 16 * 1024) {
+      return res.status(413).json({ message: '错误信息过大' })
+    }
+    if (typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({ message: '缺少错误信息' })
+    }
+    const normalizedMessage = clientErrorText(message, 1000)
+    const normalizedSource = typeof source === 'string' ? clientErrorText(source, 500) : null
+    const normalizedStack = typeof stack === 'string' ? clientErrorText(stack, 3000) : null
+    const normalizedUrl = typeof url === 'string' ? clientErrorText(url, 1000) : null
+    const normalizedUserAgent = typeof userAgent === 'string' ? clientErrorText(userAgent, 300) : null
+    const errorKey = [normalizedMessage, normalizedSource, normalizedStack, normalizedUrl].join('\u0000')
+    if (clientErrorDuplicates.has(errorKey)) return res.json({ success: true, duplicate: true })
+    clientErrorDuplicates.set(errorKey, true)
     let userId = null
     const token = getAuthToken(req)
     if (token) {
@@ -143,13 +183,13 @@ app.post('/api/client-errors', createRateLimiter({ windowMs: 60 * 1000, max: 30,
       `INSERT INTO client_errors (user_id, message, source, line, column, stack, url, user_agent, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       userId,
-      String(message).slice(0, 1000),
-      source ? String(source).slice(0, 500) : null,
-      Number.isFinite(Number(line)) ? Number(line) : null,
-      Number.isFinite(Number(column)) ? Number(column) : null,
-      stack ? String(stack).slice(0, 3000) : null,
-      url ? String(url).slice(0, 1000) : null,
-      userAgent ? String(userAgent).slice(0, 300) : null,
+      normalizedMessage,
+      normalizedSource,
+      Number.isInteger(Number(line)) && Number(line) >= 0 && Number(line) <= 1000000 ? Number(line) : null,
+      Number.isInteger(Number(column)) && Number(column) >= 0 && Number(column) <= 1000000 ? Number(column) : null,
+      normalizedStack,
+      normalizedUrl,
+      normalizedUserAgent,
       new Date().toISOString()
     )
     return res.json({ success: true })
@@ -530,6 +570,9 @@ app.post('/api/sso/session', async (req, res) => {
   }
 })
 
+// Keep API probes from receiving Express' default HTML error page or a stack trace.
+app.use('/api', (req, res) => res.status(404).json({ message: '接口不存在' }))
+
 // Message retention: delete messages older than 90 days at midnight daily
 const MESSAGE_RETENTION_DAYS = 90
 
@@ -588,6 +631,8 @@ const scheduleOperationalCleanup = () => {
 app.use(errorHandler)
 
 const PORT = Number(process.env.PORT) || 5174
+// 生产环境只在本机监听，由 Nginx 负责公网入口，避免绕过 HTTPS、CORS 和代理层直接访问 Node。
+const HOST = process.env.HOST || (process.env.NODE_ENV === 'production' ? '127.0.0.1' : '0.0.0.0')
 initDb()
   .then(async () => {
     const db = await getDb()
@@ -595,8 +640,8 @@ initDb()
     if (achievementBackfill.unlocked > 0) {
       console.log(`[achievements] historical backfill: users=${achievementBackfill.users} unlocked=${achievementBackfill.unlocked}`)
     }
-    app.listen(PORT, () => {
-      console.log(`StarStack API running at http://localhost:${PORT}`)
+    app.listen(PORT, HOST, () => {
+      console.log(`StarStack API running at http://${HOST}:${PORT}`)
       void recoverPendingSubmissions().catch((error) => {
         console.error('[judge] pending submission recovery failed:', error?.message || error)
       })

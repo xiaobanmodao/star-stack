@@ -2,7 +2,7 @@ import { getDb } from '../db.js'
 import { requireUser, requireAdmin, getAuthToken, getUserByToken } from '../middleware/auth.js'
 import { sanitizeHtml } from '../utils/htmlFilter.js'
 import { addXp, getUserLevelInfo } from '../utils/userHelpers.js'
-import { getDecorationIdentity } from '../utils/decorations.js'
+import { getDecorationIdentity, getUnlockedAchievementTypeMap, getUnlockedAchievementTypes } from '../utils/decorations.js'
 import { getLevelInfo } from '../stats.js'
 import { createNotification, notifyMentions } from '../utils/notifications.js'
 import { bumpChatStat } from '../utils/chatStats.js'
@@ -13,7 +13,7 @@ const VALID_MODULES = new Set(['general', 'oj', 'jieya', 'starcode'])
 const postRateLimits = new BoundedCache(5000, 10000)
 const commentRateLimits = new BoundedCache(5000, 5000)
 
-const getUserDecorationFields = (row, prefix = 'user') => {
+const getUserDecorationFields = (row, prefix = 'user', achievementTypes = new Set()) => {
   const decoration = getDecorationIdentity(
     {
       avatar_frame: row[`${prefix}_avatar_frame`],
@@ -21,6 +21,7 @@ const getUserDecorationFields = (row, prefix = 'user') => {
       equipped_title: row[`${prefix}_equipped_title`],
     },
     getLevelInfo(row[`${prefix}_xp`] || 0),
+    achievementTypes,
   )
   return {
     userAvatarFrame: decoration.avatarFrame,
@@ -93,10 +94,11 @@ export const listDiscussions = async (req, res) => {
       }
     }
 
+    const achievementMap = await getUnlockedAchievementTypeMap(db, posts.map((post) => post.user_id))
     return res.json({
       posts: posts.map(p => ({
         id: p.id, userId: p.user_id, userName: p.user_name, userAvatar: p.user_avatar,
-        ...getUserDecorationFields(p),
+        ...getUserDecorationFields(p, 'user', achievementMap.get(p.user_id)),
         title: p.title, content: p.content, problemId: p.problem_id, problemTitle: p.problem_title,
         moduleKey: p.module_key || 'general',
         viewCount: p.view_count, likeCount: p.like_count, commentCount: p.comment_count,
@@ -176,13 +178,14 @@ export const getDiscussion = async (req, res) => {
       }
     }
 
+    const achievementMap = await getUnlockedAchievementTypeMap(db, [post.user_id, ...comments.map((comment) => comment.user_id)])
     const commentMap = new Map()
     const topComments = []
     for (const c of comments) {
       commentMap.set(c.id, {
         id: c.id, postId: c.post_id, userId: c.user_id,
         userName: c.user_name, userAvatar: c.user_avatar,
-        ...getUserDecorationFields(c),
+        ...getUserDecorationFields(c, 'user', achievementMap.get(c.user_id)),
         content: c.content, parentId: c.parent_id,
         likeCount: c.like_count, liked: commentLikedSet.has(c.id),
         createdAt: c.created_at, replies: [],
@@ -203,7 +206,7 @@ export const getDiscussion = async (req, res) => {
       post: {
         id: post.id, userId: post.user_id, userName: post.user_name,
         userAvatar: post.user_avatar, title: post.title, content: post.content,
-        ...getUserDecorationFields(post),
+        ...getUserDecorationFields(post, 'user', achievementMap.get(post.user_id)),
         problemId: post.problem_id, problemTitle: post.problem_title,
         moduleKey: post.module_key,
         viewCount: post.view_count, likeCount: post.like_count,
@@ -448,7 +451,11 @@ export const addComment = async (req, res) => {
       'post', postId, (id) => `在评论中提到了你（@${id}）`
     )
 
-    const decoration = getDecorationIdentity(user, await getUserLevelInfo(db, user.id))
+    const decoration = getDecorationIdentity(
+      user,
+      await getUserLevelInfo(db, user.id),
+      await getUnlockedAchievementTypes(db, user.id),
+    )
     return res.json({
       message: '评论成功',
       comment: {

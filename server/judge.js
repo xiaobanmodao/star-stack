@@ -209,7 +209,10 @@ const runCommand = (cmd, args, options = {}) =>
     const timeoutMs = Math.max(1, Math.round(Number(options.timeout ?? TIME_LIMIT_MS)))
     // sandbox.sh 会把 CPU 兜底上限换算为整秒，并用 GNU timeout 按毫秒执行墙钟限时，
     // 避免 100～999ms 的测试点被错误放大到 2 秒。
-    const cpuTimeMarker = sandboxAvailable && options.sandbox !== false
+    // Production never honors a request to bypass the sandbox. The option is
+    // retained only for local debugging, where unsafe execution is explicit.
+    const useSandbox = sandboxAvailable && (options.sandbox !== false || !allowUnsafeJudge)
+    const cpuTimeMarker = useSandbox
       ? `__STARSTACK_CPU_${crypto.randomBytes(12).toString('hex')}__`
       : null
     const elapsedWallTime = () => Math.max(0, Math.round(Number(process.hrtime.bigint() - start) / 1e6))
@@ -234,7 +237,7 @@ const runCommand = (cmd, args, options = {}) =>
     let spawnEnv = options.env ? { ...process.env, ...options.env } : process.env
 
     // Linux 沙箱模式：通过 sandbox.sh 包裹执行
-    if (sandboxAvailable && options.sandbox !== false) {
+    if (useSandbox) {
       spawnCmd = '/bin/bash'
       spawnArgs = [
         SANDBOX_SH,
@@ -714,9 +717,10 @@ export const judgeSubmission = async ({ language, code, testcases, onTestCase })
       score,
     }
   } catch (error) {
+    console.error('Judge execution failed:', error)
     return {
       status: 'Judge Error',
-      message: error?.message ? String(error.message).slice(0, 500) : '判题失败',
+      message: '判题失败，请稍后重试',
       timeMs: 0,
       results: [],
     }
@@ -834,9 +838,10 @@ export const runSample = async ({ language, code, input, timeLimitMs = TIME_LIMI
       output: execResult.stdout,
     }
   } catch (error) {
+    console.error('Sample execution failed:', error)
     return {
       status: 'Judge Error',
-      message: error?.message ? String(error.message).slice(0, 500) : '运行失败',
+      message: '运行失败，请稍后重试',
       timeMs: 0,
       output: '',
     }
@@ -942,9 +947,10 @@ export const runSamples = async ({ language, code, inputs }) => {
     }
     return { status: overallStatus, message: overallMessage, results }
   } catch (error) {
+    console.error('Samples execution failed:', error)
     return {
       status: 'Judge Error',
-      message: error?.message ? String(error.message).slice(0, 500) : '运行失败',
+      message: '运行失败，请稍后重试',
       results: [],
     }
   } finally {

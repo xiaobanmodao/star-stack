@@ -20,6 +20,9 @@ import {
 
 const createToken = () => randomBytes(24).toString('hex')
 export const getSessionFingerprint = (token) => createHash('sha256').update(String(token)).digest('hex').slice(0, 16)
+const MAX_USER_ID_LENGTH = 64
+const MAX_USER_NAME_LENGTH = 80
+const MAX_PASSWORD_LENGTH = 128
 const emailCodeIpLimits = new Map()
 const EMAIL_CODE_IP_WINDOW_MS = 60 * 60 * 1000
 const EMAIL_CODE_IP_MAX_REQUESTS = 10
@@ -173,10 +176,21 @@ export const sendEmailChangeCode = async (req, res) => {
 }
 
 export const register = async (req, res) => {
-  const { id, name, password, emailCode } = req.body || {}
+  const { id: rawId, name: rawName, password, emailCode } = req.body || {}
+  const id = typeof rawId === 'string' ? rawId.trim() : ''
+  const name = typeof rawName === 'string' ? rawName.trim() : ''
   const email = normalizeEmail(req.body?.email)
   if (!id || !name || !password || !email || !emailCode) {
     return res.status(400).json({ message: '请填写完整信息' })
+  }
+  if (id.length > MAX_USER_ID_LENGTH) {
+    return res.status(400).json({ message: '用户 ID 不能超过 64 个字符' })
+  }
+  if (name.length > MAX_USER_NAME_LENGTH) {
+    return res.status(400).json({ message: '用户名称不能超过 80 个字符' })
+  }
+  if (typeof password !== 'string' || password.length > MAX_PASSWORD_LENGTH) {
+    return res.status(400).json({ message: '密码不能超过 128 个字符' })
   }
   if (!isValidEmail(email)) {
     return res.status(400).json({ message: '请输入有效的邮箱地址' })
@@ -299,16 +313,19 @@ export const updateEmail = async (req, res) => {
 }
 
 export const login = async (req, res) => {
-  const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown'
+  const clientIp = getClientIp(req)
   if (checkLoginLock(clientIp)) {
     return res.status(429).json({ message: '尝试次数过多，请 10 分钟后再试' })
   }
   const { id, password, turnstileToken } = req.body || {}
-  if (!id || !password) {
+  if (typeof id !== 'string' || typeof password !== 'string' || !id || !password) {
     return res.status(400).json({ message: '请输入 ID 与密码' })
   }
   if (password.length < 6) {
     return res.status(400).json({ message: '密码至少 6 位' })
+  }
+  if (password.length > MAX_PASSWORD_LENGTH) {
+    return res.status(400).json({ message: '密码不能超过 128 个字符' })
   }
   if (getLoginFailureCount(clientIp) >= 2) {
     const captcha = await verifyTurnstile({ token: turnstileToken, req, action: 'login' })
@@ -416,8 +433,11 @@ export const updateName = async (req, res) => {
     return res.status(401).json({ message: '未登录' })
   }
   const { name } = req.body || {}
-  if (!name || !name.trim()) {
+  if (typeof name !== 'string' || !name.trim()) {
     return res.status(400).json({ message: '名称不能为空' })
+  }
+  if (name.trim().length > MAX_USER_NAME_LENGTH) {
+    return res.status(400).json({ message: '用户名称不能超过 80 个字符' })
   }
   const db = await getDb()
   const user = await getUserByToken(db, token)
@@ -440,11 +460,14 @@ export const updatePassword = async (req, res) => {
     return res.status(401).json({ message: '未登录' })
   }
   const { oldPassword, newPassword } = req.body || {}
-  if (!oldPassword || !newPassword) {
+  if (typeof oldPassword !== 'string' || typeof newPassword !== 'string' || !oldPassword || !newPassword) {
     return res.status(400).json({ message: '请填写完整信息' })
   }
   if (newPassword.length < 6) {
     return res.status(400).json({ message: '密码至少 6 位' })
+  }
+  if (oldPassword.length > MAX_PASSWORD_LENGTH || newPassword.length > MAX_PASSWORD_LENGTH) {
+    return res.status(400).json({ message: '密码不能超过 128 个字符' })
   }
   const db = await getDb()
   const user = await getUserByToken(db, token)
@@ -471,7 +494,7 @@ export const updateAvatar = async (req, res) => {
     return res.status(401).json({ message: '未登录' })
   }
   const { avatar } = req.body || {}
-  if (!avatar) {
+  if (typeof avatar !== 'string' || !avatar) {
     return res.status(400).json({ message: '请提供头像数据' })
   }
   // MIME 白名单：仅允许常见位图格式，拒绝 svg（可携带脚本）

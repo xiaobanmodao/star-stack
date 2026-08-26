@@ -2,19 +2,21 @@ import { getDb } from '../db.js'
 import { requireUser } from '../middleware/auth.js'
 import { sanitizeHtml } from '../utils/htmlFilter.js'
 import { BoundedCache } from '../utils/boundedCache.js'
-import { getDecorationIdentity } from '../utils/decorations.js'
+import { getDecorationIdentity, getUnlockedAchievementTypeMap, getUnlockedAchievementTypes } from '../utils/decorations.js'
 import { getLevelInfo } from '../stats.js'
 import { getUserLevelInfo } from '../utils/userHelpers.js'
+import { sseConnectionLimiter } from '../utils/connectionLimit.js'
 
 const messageRateLimits = new BoundedCache(5000, 3000)
 
-const getUserDecorationFields = (row, prefix) => getDecorationIdentity(
+const getUserDecorationFields = (row, prefix, achievementTypes = new Set()) => getDecorationIdentity(
   {
     avatar_frame: row[`${prefix}_avatar_frame`],
     avatar_overlay: row[`${prefix}_avatar_overlay`],
     equipped_title: row[`${prefix}_equipped_title`],
   },
   getLevelInfo(row[`${prefix}_xp`] || 0),
+  achievementTypes,
 )
 
 const getOrCreateConversation = async (db, userId1, userId2) => {
@@ -40,6 +42,7 @@ export const searchUsers = async (req, res) => {
        WHERE (u.id LIKE ? OR u.name LIKE ?) AND u.id != ? AND u.is_banned = 0 LIMIT 10`,
       `%${q}%`, `%${q}%`, user.id
     )
+    const achievementMap = await getUnlockedAchievementTypeMap(db, users.map((item) => item.id))
     return res.json({ users: users.map((item) => ({
       id: item.id, name: item.name, avatar: item.avatar,
       ...getUserDecorationFields({
@@ -47,7 +50,7 @@ export const searchUsers = async (req, res) => {
         search_avatar_overlay: item.avatar_overlay,
         search_equipped_title: item.equipped_title,
         search_xp: item.xp,
-      }, 'search'),
+      }, 'search', achievementMap.get(item.id)),
     })) })
   } catch (error) {
     console.error('Failed to search users:', error)
@@ -117,12 +120,13 @@ export const listConversations = async (req, res) => {
       user.id, user.id, user.id, user.id, user.id, user.id, user.id, user.id, pageSize, offset,
     )
 
+    const achievementMap = await getUnlockedAchievementTypeMap(db, conversations.map((conversation) => conversation.other_user_id))
     return res.json({
       conversations: conversations.map(conv => ({
         conversationId: conv.id,
         otherUser: {
           id: conv.other_user_id, name: conv.other_user_name, avatar: conv.other_user_avatar,
-          ...getUserDecorationFields(conv, 'other_user'),
+          ...getUserDecorationFields(conv, 'other_user', achievementMap.get(conv.other_user_id)),
         },
         lastMessage: conv.last_msg_id ? {
           id: conv.last_msg_id, senderId: conv.last_msg_sender_id,
@@ -192,9 +196,11 @@ export const getConversation = async (req, res) => {
       conversation.id, otherUserId
     )
 
+    const decorationUserIds = [otherUser.id, ...messages.map((message) => message.sender_id)]
+    const achievementMap = await getUnlockedAchievementTypeMap(db, decorationUserIds)
     return res.json({
       messages: messages.reverse().map(m => {
-        const decoration = getUserDecorationFields(m, 'sender')
+        const decoration = getUserDecorationFields(m, 'sender', achievementMap.get(m.sender_id))
         return {
           id: m.id, senderId: m.sender_id, senderName: m.sender_name,
           senderAvatar: m.sender_avatar, content: m.content,
@@ -212,7 +218,7 @@ export const getConversation = async (req, res) => {
           other_avatar_overlay: otherUser.avatar_overlay,
           other_equipped_title: otherUser.equipped_title,
           other_xp: otherUser.xp,
-        }, 'other'),
+        }, 'other', achievementMap.get(otherUser.id)),
         isBanned: otherUser.is_banned === 1,
       },
       pagination: { page, pageSize, total: totalCount.count, totalPages: Math.ceil(totalCount.count / pageSize) },
@@ -261,7 +267,11 @@ export const sendMessage = async (req, res) => {
     await db.run(`UPDATE conversations SET last_message_at = ? WHERE id = ?`, timestamp, conversation.id)
     messageRateLimits.set(user.id, Date.now())
 
-    const senderDecoration = getDecorationIdentity(user, await getUserLevelInfo(db, user.id))
+    const senderDecoration = getDecorationIdentity(
+      user,
+      await getUserLevelInfo(db, user.id),
+      await getUnlockedAchievementTypes(db, user.id),
+    )
 
     return res.json({
       message: {
@@ -323,6 +333,11 @@ export const unreadStream = async (req, res) => {
   const auth = await requireUser(req, res)
   if (!auth) return
   const { db, user } = auth
+  const releaseSse = sseConnectionLimiter.tryAcquire(user.id)
+  if (!releaseSse) {
+    res.setHeader('Retry-After', '10')
+    return res.status(429).json({ message: '实时连接数已达上限，请稍后重试' })
+  }
 
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
@@ -335,6 +350,7 @@ export const unreadStream = async (req, res) => {
   req.on('close', () => {
     closed = true
     if (timer !== null) clearInterval(timer)
+    releaseSse()
   })
 
   const pushCount = async () => {
