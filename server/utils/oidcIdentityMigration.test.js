@@ -109,8 +109,20 @@ describe('OIDC identity schema migration', () => {
       '2026-08-30T00:00:00.000Z',
       '2026-09-29T00:00:00.000Z',
     )
+    await db.run(
+      `INSERT INTO account_center_sessions
+         (token_hash, user_id, account_subject, auth_generation, csrf_hash,
+          created_at, expires_at, last_seen_at, established_at)
+       VALUES ('legacy-account-session', 'alice', ?, 0, 'legacy-csrf', ?, ?, ?, ?)`,
+      subjects[0],
+      '2026-08-30T00:00:00.000Z',
+      '2026-09-29T00:00:00.000Z',
+      '2026-08-30T00:00:00.000Z',
+      '2026-08-30T00:00:00.000Z',
+    )
     await db.exec(`ALTER TABLE oidc_interactions DROP COLUMN csrf_hash`)
     await db.exec(`ALTER TABLE oidc_logout_transactions DROP COLUMN browser_csrf_hash`)
+    await db.exec(`ALTER TABLE account_center_sessions DROP COLUMN established_at`)
     await db.exec(`DROP INDEX idx_oidc_login_sessions_status_expires`)
     await db.exec(`ALTER TABLE oidc_login_sessions DROP COLUMN expires_at`)
 
@@ -125,9 +137,16 @@ describe('OIDC identity schema migration', () => {
     const loginSessionColumns = new Set((await db.all(
       `PRAGMA table_info(oidc_login_sessions)`,
     )).map((column) => column.name))
+    const accountSessionColumns = new Set((await db.all(
+      `PRAGMA table_info(account_center_sessions)`,
+    )).map((column) => column.name))
     expect(interactionColumns.has('csrf_hash')).toBe(true)
     expect(logoutColumns.has('browser_csrf_hash')).toBe(true)
     expect(loginSessionColumns.has('expires_at')).toBe(true)
+    expect(accountSessionColumns.has('established_at')).toBe(true)
+    expect(await db.get(
+      `SELECT established_at FROM account_center_sessions LIMIT 1`,
+    )).toEqual({ established_at: '2026-08-30T00:00:00.000Z' })
     expect(await db.get(
       `SELECT expires_at FROM oidc_login_sessions WHERE sid = 'legacy-sid'`,
     )).toEqual({ expires_at: '2026-09-29T00:00:00.000Z' })

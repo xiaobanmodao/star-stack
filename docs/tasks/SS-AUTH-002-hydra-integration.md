@@ -62,12 +62,17 @@
 ### DoS 与容量闭环
 
 - 公开账号 `GET` 固定为每源 60 次/分钟、进程总量 300 次/分钟；UserInfo 固定为每源 300 次/分钟、总量 600 次/分钟，并额外限制 16 个并发 introspection。无凭据的私网请求在解析 JSON 和进入关键队列前即被拒绝。
+- 密码登录和退出重认证共享固定的 10 分钟密码尝试预算：单账号 20 次、进程总量 200 次。账号键使用进程内随机密钥做 HMAC，内存最多保存 512 个摘要且不保存明文账号；所有有效表单的成功/失败尝试均计数，达到上限后在 bcrypt 前返回 `429`。预算只在 challenge、session-bound CSRF 与 exact Origin/Referer 全部通过后消费，无效表单无法耗尽密码预算。
+- 账号中心会话在 Login 接受后先以 provisional 状态保存，只有 Consent 成功后才转为 established；Hydra 接受失败、拒绝授权、Consent 失败或 Login `sid` 达到上限时，会删除本次 provisional 会话。迁移前已存在的会话会一次性回填为 established，重复迁移不改动新 provisional 会话。
+- 登录、Consent 和退出重认证的失败/拒绝/过期响应只撤销其服务端 provisional 会话，不发送同名 Cookie 删除；这样旧标签页的迟到响应不能删除另一标签页刚建立的账号 Cookie。仅用户明确确认且成功完成全局退出时发送账号 Cookie 删除。
+- `account_center_sessions` 每个 `account_subject` 最多 16 条、全局最多 4,096 条。每次创建在同一个 `BEGIN IMMEDIATE` 事务中清理过期行、为账号和全局各预留一个插入槽并按最旧访问时间淘汰，然后插入新会话；SQLite 跨连接并发仍只会有一个写事务越过容量边界。
 - 公开身份操作队列最多容纳 32 个正在执行或等待的请求，私网关键队列最多 64 个；断开的公开请求获得锁后立即释放，不会形成永久队首阻塞。
 - `oidc_interactions` 在同一个 `BEGIN IMMEDIATE` 临界区清理过期记录、执行原子 count/insert，并硬限制为 512 条；双连接边界竞争最多一个成功。
 - 每个 `(account_subject, client_id)` 最多保留 16 个未撤销 Login `sid`。超限 Consent 不签发 Grant，先撤销新 Hydra Login Session，再以标准错误拒绝 Consent；并发边界同样通过 SQLite 写锁原子裁决。
 - Login `sid` 显式保存 30 天 `expires_at`；过期 active、超过 15 分钟的 `authorization_pending` 和超过 30 天的 revoked 行会清理，`revocation_pending` 永远保留到 outbox 成功，避免静默丢失撤销任务。
 - `identity_outbox` 设 10,000 行绝对上限、1,024 条未解决事件上限和单账号世代 64 条上限；历史异常 SID 枚举使用 `LIMIT 65` 预检并失败关闭。浏览器退出请求最多同步处理 8 条，后台每轮最多 25 条，其余持久化有界重试。
 - 本地 Hydra 工具只接受精确 DSN `postgres://hydra_test@127.0.0.1:55432/hydra_test?sslmode=disable`。`run-local-runtime` 与完整协议脚本都会在任何文件写入、Hydra spawn、migration 或 Client 注册之前拒绝其他 DSN；坏 DSN 零副作用测试覆盖两侧入口。
+- 身份功能启用时 issuer 按环境失败关闭：开发只能是精确的 `http://auth.localhost:5174`，生产只能是精确的 `https://auth.xingzhan.cc`；尾斜杠、其他 host、HTTP 生产地址以及包含 path/query/fragment/credentials 的值均被拒绝。
 
 ## 真实运行时发现并闭环的兼容点
 
@@ -116,7 +121,7 @@
 最终本地门禁：
 
 - `npm run lint`：通过；
-- `npm test -- --run`：42 个文件、187 项通过；
+- `npm test -- --run`：43 个文件、209 项通过；
 - `npm run build`：通过；
 - `npm run test:smoke`：隔离数据库通过；
 - `node server/migrate.js` 重复迁移与 `npm run db:verify`：50 张表、0 个外键问题；

@@ -6,6 +6,7 @@ import { hashOpaqueToken, verifyOpaqueToken } from './opaqueToken.js'
 import { validateHydraTokenHook, TokenPolicyError } from './tokenPolicy.js'
 import { resolveUserInfo, UserInfoError } from './userInfo.js'
 import {
+  OidcFlowError,
   acceptConsent,
   acceptLogin,
   issueInteractionCsrf,
@@ -16,7 +17,9 @@ import {
 } from './oidcFlow.js'
 import {
   createAccountCenterSession,
+  establishAccountCenterSession,
   getAccountCenterSession,
+  revokeAccountCenterSession,
   rotateAccountCenterCsrf,
 } from '../services/accountCenterSession.js'
 import {
@@ -31,12 +34,19 @@ import {
   IdentityOperationCapacityError,
   acquireIdentityOperation,
 } from '../services/identityOperation.js'
+import { createPasswordAttemptLimiter } from './passwordRateLimit.js'
 
 const ACCOUNT_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 const MAX_PASSWORD_LENGTH = 128
 const DEFAULT_IDENTITY_LIMITS = Object.freeze({
   accountRate: Object.freeze({ windowMs: 60_000, perSourceMax: 60, globalMax: 300 }),
   userInfoRate: Object.freeze({ windowMs: 60_000, perSourceMax: 300, globalMax: 600 }),
+  passwordRate: Object.freeze({
+    windowMs: 10 * 60 * 1000,
+    perAccountMax: 20,
+    globalMax: 200,
+    maxTrackedAccounts: 512,
+  }),
   publicQueueMaxPending: 32,
   criticalQueueMaxPending: 64,
   userInfoMaxConcurrent: 16,
@@ -187,7 +197,7 @@ const normalizeCredentials = (body) => ({
   password: typeof body?.password === 'string' ? body.password : '',
 })
 
-const authenticateAccount = async (db, body) => {
+const authenticateAccount = async (db, body, comparePassword) => {
   const { id, password } = normalizeCredentials(body)
   if (!id || id.length > 64 || password.length < 6 || password.length > MAX_PASSWORD_LENGTH) return null
   const account = await db.get(
@@ -195,7 +205,7 @@ const authenticateAccount = async (db, body) => {
     id,
   )
   if (!account || account.account_status !== 'active') return null
-  return (await bcrypt.compare(password, account.password_hash)) ? account : null
+  return (await comparePassword(password, account.password_hash)) ? account : null
 }
 
 const mergeLimits = (limits = {}) => ({
@@ -203,6 +213,7 @@ const mergeLimits = (limits = {}) => ({
   ...limits,
   accountRate: { ...DEFAULT_IDENTITY_LIMITS.accountRate, ...limits.accountRate },
   userInfoRate: { ...DEFAULT_IDENTITY_LIMITS.userInfoRate, ...limits.userInfoRate },
+  passwordRate: { ...DEFAULT_IDENTITY_LIMITS.passwordRate, ...limits.passwordRate },
 })
 
 const createDualRateLimit = ({ windowMs, perSourceMax, globalMax }, message) => {
@@ -252,6 +263,7 @@ export const createIdentityRouter = ({
   config,
   now = () => new Date(),
   limits: limitOverrides,
+  comparePassword = bcrypt.compare,
 }) => {
   const router = Router()
   const limits = mergeLimits(limitOverrides)
@@ -262,6 +274,24 @@ export const createIdentityRouter = ({
     max: 20,
     message: '登录请求过于频繁，请稍后再试',
   })
+  const passwordAttemptLimiter = createPasswordAttemptLimiter(limits.passwordRate)
+  const consumePasswordAttempt = (req, res) => {
+    const result = passwordAttemptLimiter.consume(req.body?.id, now())
+    const limit = result.scope === 'account'
+      ? limits.passwordRate.perAccountMax
+      : limits.passwordRate.globalMax
+    res.setHeader('RateLimit-Limit', String(limit))
+    if (!result.limited) return true
+    res.setHeader('RateLimit-Remaining', '0')
+    res.setHeader('Retry-After', String(result.retryAfter))
+    sendHtmlError(res, 429, '密码尝试过于频繁，请稍后再试。')
+    return false
+  }
+  const requireExactAccountSource = (pathname) => (req, res, next) => (
+    exactSource(req, config, pathname)
+      ? next()
+      : sendHtmlError(res, 403, '请求来源验证失败。')
+  )
   const accountGetLimiter = createDualRateLimit(
     limits.accountRate,
     '账号中心请求过于频繁，请稍后再试',
@@ -392,15 +422,17 @@ export const createIdentityRouter = ({
 
   router.get('/account/login', async (req, res) => {
     const challenge = req.query.login_challenge
+    const accountSessionToken = getAccountToken(req, config)
+    let provisionalSession = false
     try {
       const db = req.identityDb
-      const accountSessionToken = getAccountToken(req, config)
       const prepared = await prepareLogin(db, admin, {
         challenge,
         accountSessionToken,
         client: config.client,
         now,
       })
+      provisionalSession = Boolean(prepared.session?.provisional)
       if (prepared.session) {
         const accepted = await acceptLogin(db, admin, {
           challenge,
@@ -418,31 +450,48 @@ export const createIdentityRouter = ({
         csrfToken,
       }))
     } catch (error) {
+      if (provisionalSession) {
+        await revokeAccountCenterSession(
+          req.identityDb,
+          accountSessionToken,
+          { provisionalOnly: true },
+        ).catch(() => undefined)
+      }
       reportIdentityFailure('login preparation', error)
       return sendHtmlError(res, error?.status === 503 ? 503 : 400, '登录请求无效、已过期或暂时不可用。')
     }
   })
 
-  router.post('/account/login', loginLimiter, formParser, async (req, res) => {
-    if (!exactSource(req, config, '/account/login')) return sendHtmlError(res, 403, '请求来源验证失败。')
+  router.post(
+    '/account/login',
+    loginLimiter,
+    formParser,
+    requireExactAccountSource('/account/login'),
+    async (req, res) => {
+    let createdSessionToken = null
     const challenge = req.body?.login_challenge
     try {
       const db = req.identityDb
       if (!(await verifyInteractionCsrf(db, challenge, req.body?.csrf_token))) {
         return sendHtmlError(res, 403, '登录表单已过期，请重新发起登录。')
       }
-      const account = await authenticateAccount(db, req.body)
+      if (!consumePasswordAttempt(req, res)) return undefined
+      const account = await authenticateAccount(db, req.body, comparePassword)
       if (!account) return sendHtmlError(res, 401, '账号或密码错误，或账号不可用。')
       const session = await createAccountCenterSession(db, { userId: account.id, now })
-      setAccountCookie(res, config, session.token)
+      createdSessionToken = session.token
       const accepted = await acceptLogin(db, admin, {
         challenge,
         accountSessionToken: session.token,
         client: config.client,
         now,
       })
+      setAccountCookie(res, config, session.token)
       return res.redirect(303, accepted.redirectTo)
     } catch (error) {
+      if (createdSessionToken) {
+        await revokeAccountCenterSession(req.identityDb, createdSessionToken).catch(() => undefined)
+      }
       reportIdentityFailure('login acceptance', error)
       return sendHtmlError(res, error?.status === 503 ? 503 : 400, '登录请求已失效，请重新发起。')
     }
@@ -450,9 +499,15 @@ export const createIdentityRouter = ({
 
   router.get('/account/consent', async (req, res) => {
     const challenge = req.query.consent_challenge
+    const accountSessionToken = getAccountToken(req, config)
+    let provisionalSession = false
     try {
       const db = req.identityDb
-      const accountSessionToken = getAccountToken(req, config)
+      const currentSession = await getAccountCenterSession(db, accountSessionToken, {
+        now,
+        touch: false,
+      })
+      provisionalSession = Boolean(currentSession?.provisional)
       const prepared = await prepareConsent(db, admin, {
         challenge,
         accountSessionToken,
@@ -475,6 +530,13 @@ export const createIdentityRouter = ({
           <button type="submit" name="decision" value="deny" formnovalidate>拒绝授权</button>
         </form>`))
     } catch (error) {
+      if (provisionalSession) {
+        await revokeAccountCenterSession(
+          req.identityDb,
+          accountSessionToken,
+          { provisionalOnly: true },
+        ).catch(() => undefined)
+      }
       reportIdentityFailure('consent preparation', error)
       return sendHtmlError(res, error?.status === 503 ? 503 : 401, '账号会话或授权请求已失效，请重新登录。')
     }
@@ -482,11 +544,16 @@ export const createIdentityRouter = ({
 
   router.post('/account/consent', formParser, async (req, res) => {
     if (!exactSource(req, config, '/account/consent')) return sendHtmlError(res, 403, '请求来源验证失败。')
+    const accountSessionToken = getAccountToken(req, config)
+    let provisionalSession = false
     try {
       const db = req.identityDb
-      const accountSessionToken = getAccountToken(req, config)
       const session = await getAccountCenterSession(db, accountSessionToken, { now })
+      provisionalSession = Boolean(session?.provisional)
       if (!session || !verifyOpaqueToken(session.csrfHash, req.body?.csrf_token)) {
+        if (provisionalSession) {
+          await revokeAccountCenterSession(db, accountSessionToken, { provisionalOnly: true })
+        }
         return sendHtmlError(res, 403, '授权表单已失效。')
       }
       const operation = req.body?.decision === 'deny' ? rejectConsent : acceptConsent
@@ -497,8 +564,26 @@ export const createIdentityRouter = ({
         client: config.client,
         now,
       })
+      if (operation === rejectConsent || accepted.capacityRejected) {
+        if (provisionalSession) {
+          await revokeAccountCenterSession(db, accountSessionToken, { provisionalOnly: true })
+        }
+      } else if (!(await establishAccountCenterSession(db, accountSessionToken, { now }))) {
+        throw new OidcFlowError(
+          'ACCOUNT_SESSION_ESTABLISH_FAILED',
+          '账号中心会话在授权完成前失效',
+          { status: 503 },
+        )
+      }
       return res.redirect(303, accepted.redirectTo)
     } catch (error) {
+      if (provisionalSession) {
+        await revokeAccountCenterSession(
+          req.identityDb,
+          accountSessionToken,
+          { provisionalOnly: true },
+        ).catch(() => undefined)
+      }
       reportIdentityFailure('consent decision', error)
       return sendHtmlError(res, error?.status === 503 ? 503 : 400, '授权请求无效或已消费。')
     }
@@ -511,7 +596,6 @@ export const createIdentityRouter = ({
       const accountSessionToken = getAccountToken(req, config)
       const session = await getAccountCenterSession(db, accountSessionToken, { now })
       if (!session) {
-        if (accountSessionToken) clearAccountCookie(res, config)
         const csrfToken = await issueLogoutReauthCsrf(db, transaction, { now })
         return res.type('html').send(loginForm({
           action: '/account/logout/login',
@@ -545,16 +629,26 @@ export const createIdentityRouter = ({
     }
   })
 
-  router.post('/account/logout/login', loginLimiter, formParser, async (req, res) => {
-    if (!exactSource(req, config, '/account/logout')) return sendHtmlError(res, 403, '请求来源验证失败。')
+  router.post(
+    '/account/logout/login',
+    loginLimiter,
+    formParser,
+    requireExactAccountSource('/account/logout'),
+    async (req, res) => {
+    let createdSessionToken = null
     try {
       const db = req.identityDb
       if (!(await verifyLogoutReauthCsrf(db, req.body?.transaction, req.body?.csrf_token))) {
         return sendHtmlError(res, 403, '重新验证表单已失效。')
       }
-      const account = await authenticateAccount(db, req.body)
+      if (!consumePasswordAttempt(req, res)) return undefined
+      const account = await authenticateAccount(db, req.body, comparePassword)
       if (!account) return sendHtmlError(res, 401, '账号或密码错误，或账号不可用。')
       const session = await createAccountCenterSession(db, { userId: account.id, now })
+      createdSessionToken = session.token
+      if (!(await establishAccountCenterSession(db, session.token, { now }))) {
+        throw new Error('Account-center logout reauthentication session disappeared')
+      }
       await bindLogoutTransaction(db, {
         transactionToken: req.body?.transaction,
         accountSessionToken: session.token,
@@ -564,6 +658,9 @@ export const createIdentityRouter = ({
       redirect.searchParams.set('transaction', req.body.transaction)
       return res.redirect(303, redirect.toString())
     } catch (error) {
+      if (createdSessionToken) {
+        await revokeAccountCenterSession(req.identityDb, createdSessionToken).catch(() => undefined)
+      }
       return sendHtmlError(res, error?.status === 503 ? 503 : 400, '重新验证失败，请重新发起全局退出。')
     }
   })

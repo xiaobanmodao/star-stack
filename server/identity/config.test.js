@@ -49,9 +49,31 @@ describe('identity runtime config', () => {
     })
   })
 
-  it('canonicalizes the issuer to the exact no-trailing-slash origin', () => {
-    const config = loadIdentityConfig({ ...enabledEnv, OIDC_ISSUER: 'http://auth.localhost:5174/' })
-    expect(config.issuer).toBe('http://auth.localhost:5174')
+  it.each([
+    [{ ...enabledEnv, OIDC_ISSUER: 'http://auth.localhost:5174/' }, /exact|精确|issuer/i],
+    [{ ...enabledEnv, OIDC_ISSUER: 'http://localhost:5174' }, /exact|精确|issuer/i],
+    [{ ...enabledEnv, OIDC_ISSUER: 'https://auth.xingzhan.cc' }, /exact|精确|issuer/i],
+    [{
+      ...enabledEnv,
+      NODE_ENV: 'production',
+      OIDC_ISSUER: 'http://auth.xingzhan.cc',
+    }, /exact|https|精确|issuer/i],
+    [{
+      ...enabledEnv,
+      NODE_ENV: 'production',
+      OIDC_ISSUER: 'https://accounts.xingzhan.cc',
+    }, /exact|精确|issuer/i],
+  ])('rejects an enabled issuer outside the frozen environment contract', (unsafeEnv, expected) => {
+    expect(() => loadIdentityConfig(unsafeEnv)).toThrow(expected)
+  })
+
+  it('accepts only the exact production issuer when identity is enabled', () => {
+    const config = loadIdentityConfig({
+      ...enabledEnv,
+      NODE_ENV: 'production',
+      OIDC_ISSUER: 'https://auth.xingzhan.cc',
+    })
+    expect(config.issuer).toBe('https://auth.xingzhan.cc')
   })
 
   it('uses the exact production Hydra cookie names for the fixed Jieya client', () => {

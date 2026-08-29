@@ -19,7 +19,7 @@ import { verifyOidcIdentitySchema } from './utils/oidcIdentityMigration.js'
 
 const REQUIRED_SCHEMA = {
   users: ['id', 'name', 'password_hash', 'email', 'email_verified_at', 'is_admin', 'is_banned', 'account_subject', 'account_status', 'account_tombstoned_at', 'auth_generation', 'avatar', 'rating', 'bio', 'onboarded_at', 'avatar_frame', 'avatar_overlay', 'equipped_title', 'created_at'],
-  account_center_sessions: ['token_hash', 'user_id', 'account_subject', 'auth_generation', 'csrf_hash', 'created_at', 'expires_at', 'last_seen_at'],
+  account_center_sessions: ['token_hash', 'user_id', 'account_subject', 'auth_generation', 'csrf_hash', 'created_at', 'expires_at', 'last_seen_at', 'established_at'],
   oidc_interactions: ['challenge_hash', 'interaction_type', 'account_session_hash', 'account_subject', 'client_id', 'csrf_hash', 'status', 'created_at', 'expires_at', 'consumed_at'],
   oidc_login_sessions: ['id', 'account_subject', 'client_id', 'sid', 'auth_generation', 'consent_request_id', 'status', 'created_at', 'updated_at', 'expires_at', 'revoked_at'],
   identity_outbox: ['id', 'event_type', 'subject', 'client_id', 'sid', 'payload_json', 'status', 'attempts', 'next_attempt_at', 'last_error', 'dedupe_key', 'created_at', 'updated_at', 'completed_at'],

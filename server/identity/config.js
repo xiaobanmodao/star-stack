@@ -11,6 +11,10 @@ export const JIEYA_BROWSER_ORIGINS = Object.freeze({
   local: 'http://jieya.localhost:4180',
   production: 'https://jieya.xingzhan.cc',
 })
+export const IDENTITY_ISSUERS = Object.freeze({
+  local: 'http://auth.localhost:5174',
+  production: 'https://auth.xingzhan.cc',
+})
 
 // Hydra v26.2.0 appends `_dev` in development and a deterministic Murmur3
 // suffix for client-specific CSRF cookies. These values are frozen for the two
@@ -59,10 +63,12 @@ const requireSecret = (value, name) => {
 export const loadIdentityConfig = (env = process.env) => {
   const enabled = String(env.OIDC_ENABLED || '').toLowerCase() === 'true'
   const production = env.NODE_ENV === 'production'
-  const issuer = parseOriginOnly(
-    env.OIDC_ISSUER || (production ? 'https://auth.xingzhan.cc' : 'http://auth.localhost:5174'),
-    'OIDC issuer',
-  )
+  const expectedIssuer = production ? IDENTITY_ISSUERS.production : IDENTITY_ISSUERS.local
+  const rawIssuer = env.OIDC_ISSUER || expectedIssuer
+  const issuer = parseOriginOnly(rawIssuer, 'OIDC issuer')
+  if (enabled && rawIssuer !== expectedIssuer) {
+    throw new Error(`OIDC issuer must exactly match ${expectedIssuer} in this environment`)
+  }
   const hydraPublicUrl = parsePrivateOrigin(
     env.OIDC_HYDRA_PUBLIC_URL || 'http://127.0.0.1:4444',
     'Hydra Public URL',

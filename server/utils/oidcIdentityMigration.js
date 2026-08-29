@@ -1,7 +1,7 @@
 const REQUIRED_TABLE_COLUMNS = Object.freeze({
   account_center_sessions: [
     'token_hash', 'user_id', 'account_subject', 'auth_generation', 'csrf_hash',
-    'created_at', 'expires_at', 'last_seen_at',
+    'created_at', 'expires_at', 'last_seen_at', 'established_at',
   ],
   oidc_interactions: [
     'challenge_hash', 'interaction_type', 'account_session_hash', 'account_subject',
@@ -110,6 +110,7 @@ const createSchema = async (db) => {
       created_at TEXT NOT NULL,
       expires_at TEXT NOT NULL,
       last_seen_at TEXT NOT NULL,
+      established_at TEXT,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
     );
 
@@ -221,14 +222,20 @@ const createSchema = async (db) => {
 
 const addKnownCompatibilityColumns = async (db) => {
   const upgrades = [
+    ['account_center_sessions', 'established_at', 'TEXT'],
     ['oidc_interactions', 'csrf_hash', 'TEXT'],
     ['oidc_logout_transactions', 'browser_csrf_hash', 'TEXT'],
     ['oidc_login_sessions', 'expires_at', 'TEXT'],
   ]
+  const added = new Set()
   for (const [table, column, type] of upgrades) {
     const columns = new Set((await getColumns(db, table)).map((item) => item.name))
-    if (!columns.has(column)) await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`)
+    if (!columns.has(column)) {
+      await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`)
+      added.add(`${table}.${column}`)
+    }
   }
+  return added
 }
 
 export const ensureOidcIdentitySchema = async (db) => {
@@ -246,7 +253,15 @@ export const ensureOidcIdentitySchema = async (db) => {
     }
 
     await createSchema(db)
-    await addKnownCompatibilityColumns(db)
+    const addedColumns = await addKnownCompatibilityColumns(db)
+    if (addedColumns.has('account_center_sessions.established_at')) {
+      // Sessions that predate the provisional/established distinction were
+      // already accepted account-center sessions and must remain valid.
+      await db.run(
+        `UPDATE account_center_sessions SET established_at = created_at
+         WHERE established_at IS NULL`,
+      )
+    }
     await db.run(
       `UPDATE oidc_login_sessions
        SET expires_at = strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '+30 days')

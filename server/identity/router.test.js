@@ -3,6 +3,8 @@ import express from 'express'
 import { openIdentityFixture, TEST_SUBJECTS } from './testIdentityFixture.js'
 import { loadIdentityConfig } from './config.js'
 import { createIdentityRouter } from './router.js'
+import { createAccountCenterSession } from '../services/accountCenterSession.js'
+import { MAX_ACTIVE_LOGIN_SESSIONS_PER_ACCOUNT_CLIENT } from './oidcFlow.js'
 
 const resources = []
 const servers = []
@@ -15,6 +17,59 @@ const env = {
   OIDC_HYDRA_ADMIN_URL: 'http://127.0.0.1:4445',
   OIDC_TOKEN_HOOK_SECRET: 'hook-secret-with-at-least-thirty-two-bytes',
   OIDC_LOGOUT_BROKER_SECRET: 'broker-secret-with-at-least-thirty-two-bytes',
+}
+
+const authorizationRequestUrl = (overrides = {}) => {
+  const params = new URLSearchParams({
+    client_id: 'jieya-server-local',
+    redirect_uri: 'http://jieya.localhost:4180/auth/callback',
+    response_type: 'code',
+    scope: 'openid profile offline_access',
+    state: 'state-with-128-bits-of-randomness',
+    nonce: 'nonce-with-128-bits-of-randomness',
+    code_challenge: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+    code_challenge_method: 'S256',
+    ...overrides,
+  })
+  return `http://auth.localhost:5174/oauth2/auth?${params}`
+}
+
+const hydraLoginRequest = (challenge) => ({
+  challenge,
+  client: { client_id: 'jieya-server-local' },
+  request_url: authorizationRequestUrl(),
+  requested_scope: ['openid', 'profile', 'offline_access'],
+  session_id: `hydra-session-${challenge}`,
+  skip: false,
+  subject: '',
+})
+
+const hydraConsentRequest = (challenge, overrides = {}) => ({
+  challenge,
+  client: { client_id: 'jieya-server-local' },
+  request_url: authorizationRequestUrl(),
+  requested_scope: ['openid', 'profile', 'offline_access'],
+  requested_access_token_audience: [],
+  login_challenge: 'login-challenge-for-consent',
+  login_session_id: 'hydra-sid-for-consent',
+  consent_request_id: 'consent-request-for-consent',
+  subject: TEST_SUBJECTS.alice,
+  skip: false,
+  ...overrides,
+})
+
+const hiddenValue = (html, name) => html.match(
+  new RegExp(`name="${name}" value="([^"]+)"`),
+)?.[1]
+
+const deferred = () => {
+  let resolve
+  let reject
+  const promise = new Promise((onResolve, onReject) => {
+    resolve = onResolve
+    reject = onReject
+  })
+  return { promise, resolve, reject }
 }
 
 const startRouter = async (resource, admin, {
@@ -63,6 +118,9 @@ describe('identity HTTP boundary', () => {
     const { baseUrl } = await startRouter(resource, {}, {
       envOverrides: {
         NODE_ENV: nodeEnv,
+        OIDC_ISSUER: nodeEnv === 'production'
+          ? 'https://auth.xingzhan.cc'
+          : 'http://auth.localhost:5174',
         OIDC_CLIENT_ORIGIN: 'https://attacker.example',
       },
     })
@@ -136,6 +194,499 @@ describe('identity HTTP boundary', () => {
     expect(body).toMatchObject({ sub: TEST_SUBJECTS.alice, name: 'Alice' })
     expect(body).not.toHaveProperty('email')
     expect(body).not.toHaveProperty('auth_generation')
+  })
+
+  it('rate-limits one account across distributed sources before another bcrypt call', async () => {
+    const resource = await openIdentityFixture()
+    resources.push(resource)
+    const comparePassword = vi.fn(async () => false)
+    const challenge = 'distributed-account-password-limit'
+    const admin = { getLoginRequest: vi.fn(async () => hydraLoginRequest(challenge)) }
+    const { baseUrl, config } = await startRouter(resource, admin, {
+      trustProxy: true,
+      routerOptions: {
+        comparePassword,
+        limits: {
+          passwordRate: {
+            windowMs: 60_000,
+            perAccountMax: 2,
+            globalMax: 100,
+            maxTrackedAccounts: 200,
+          },
+        },
+      },
+    })
+    const page = await fetch(`${baseUrl}/account/login?login_challenge=${challenge}`)
+    const csrfToken = hiddenValue(await page.text(), 'csrf_token')
+    expect(csrfToken).toBeTruthy()
+    const attempt = (index) => fetch(`${baseUrl}/account/login`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: config.issuer,
+        referer: `${config.issuer}/account/login?login_challenge=${challenge}`,
+        'x-forwarded-for': `198.51.100.${index}`,
+      },
+      body: new URLSearchParams({
+        login_challenge: challenge,
+        csrf_token: csrfToken,
+        id: 'alice',
+        password: 'wrong-password',
+      }),
+      redirect: 'manual',
+    })
+
+    expect((await attempt(1)).status).toBe(401)
+    expect((await attempt(2)).status).toBe(401)
+    expect((await attempt(3)).status).toBe(429)
+    expect(comparePassword).toHaveBeenCalledTimes(2)
+  })
+
+  it('rate-limits password POSTs globally across sources before another bcrypt call', async () => {
+    const resource = await openIdentityFixture()
+    resources.push(resource)
+    const comparePassword = vi.fn(async () => false)
+    const challenge = 'distributed-global-password-limit'
+    const admin = { getLoginRequest: vi.fn(async () => hydraLoginRequest(challenge)) }
+    const { baseUrl, config } = await startRouter(resource, admin, {
+      trustProxy: true,
+      routerOptions: {
+        comparePassword,
+        limits: {
+          passwordRate: {
+            windowMs: 60_000,
+            perAccountMax: 100,
+            globalMax: 2,
+            maxTrackedAccounts: 4,
+          },
+        },
+      },
+    })
+    const page = await fetch(`${baseUrl}/account/login?login_challenge=${challenge}`)
+    const csrfToken = hiddenValue(await page.text(), 'csrf_token')
+    expect(csrfToken).toBeTruthy()
+    const attempt = (index) => fetch(`${baseUrl}/account/login`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: config.issuer,
+        referer: `${config.issuer}/account/login?login_challenge=${challenge}`,
+        'x-forwarded-for': `203.0.113.${index}`,
+      },
+      body: new URLSearchParams({
+        login_challenge: challenge,
+        csrf_token: csrfToken,
+        id: 'alice',
+        password: 'wrong-password',
+      }),
+      redirect: 'manual',
+    })
+
+    expect((await attempt(1)).status).toBe(401)
+    expect((await attempt(2)).status).toBe(401)
+    expect((await attempt(3)).status).toBe(429)
+    expect(comparePassword).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not spend password budget on invalid interaction or logout CSRF requests', async () => {
+    const resource = await openIdentityFixture()
+    resources.push(resource)
+    const comparePassword = vi.fn(async () => false)
+    const challenge = 'valid-after-invalid-csrf-flood'
+    const admin = { getLoginRequest: vi.fn(async () => hydraLoginRequest(challenge)) }
+    const { baseUrl, config } = await startRouter(resource, admin, {
+      trustProxy: true,
+      routerOptions: {
+        comparePassword,
+        limits: {
+          passwordRate: {
+            windowMs: 60_000,
+            perAccountMax: 100,
+            globalMax: 2,
+            maxTrackedAccounts: 4,
+          },
+        },
+      },
+    })
+
+    for (let index = 1; index <= 24; index += 1) {
+      const invalidLogin = await fetch(`${baseUrl}/account/login`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          origin: config.issuer,
+          referer: `${config.issuer}/account/login`,
+          'x-forwarded-for': `198.18.0.${index}`,
+        },
+        body: new URLSearchParams({
+          login_challenge: `missing-${index}`,
+          csrf_token: `invalid-${index}`,
+          id: 'alice',
+          password: 'wrong-password',
+        }),
+      })
+      expect(invalidLogin.status).toBe(403)
+
+      const invalidLogout = await fetch(`${baseUrl}/account/logout/login`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          origin: config.issuer,
+          referer: `${config.issuer}/account/logout`,
+          'x-forwarded-for': `198.19.0.${index}`,
+        },
+        body: new URLSearchParams({
+          transaction: `missing-${index}`,
+          csrf_token: `invalid-${index}`,
+          id: 'alice',
+          password: 'wrong-password',
+        }),
+      })
+      expect(invalidLogout.status).toBe(403)
+    }
+    expect(comparePassword).not.toHaveBeenCalled()
+
+    const page = await fetch(`${baseUrl}/account/login?login_challenge=${challenge}`)
+    const csrfToken = hiddenValue(await page.text(), 'csrf_token')
+    const validAttempt = (index) => fetch(`${baseUrl}/account/login`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: config.issuer,
+        referer: `${config.issuer}/account/login?login_challenge=${challenge}`,
+        'x-forwarded-for': `203.0.113.${index}`,
+      },
+      body: new URLSearchParams({
+        login_challenge: challenge,
+        csrf_token: csrfToken,
+        id: 'alice',
+        password: 'wrong-password',
+      }),
+    })
+    expect((await validAttempt(1)).status).toBe(401)
+    expect((await validAttempt(2)).status).toBe(401)
+    expect((await validAttempt(3)).status).toBe(429)
+    expect(comparePassword).toHaveBeenCalledTimes(2)
+  })
+
+  it('revokes a newly minted account session without deleting a newer browser cookie when Hydra login acceptance fails', async () => {
+    const resource = await openIdentityFixture()
+    resources.push(resource)
+    const challenge = 'failed-hydra-login-acceptance'
+    const admin = {
+      getLoginRequest: vi.fn(async () => hydraLoginRequest(challenge)),
+      acceptLoginRequest: vi.fn(async () => { throw new Error('Hydra unavailable') }),
+    }
+    const { baseUrl, config } = await startRouter(resource, admin, {
+      routerOptions: { comparePassword: vi.fn(async () => true) },
+    })
+    const page = await fetch(`${baseUrl}/account/login?login_challenge=${challenge}`)
+    const csrfToken = hiddenValue(await page.text(), 'csrf_token')
+    const response = await fetch(`${baseUrl}/account/login`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: config.issuer,
+        referer: `${config.issuer}/account/login?login_challenge=${challenge}`,
+      },
+      body: new URLSearchParams({
+        login_challenge: challenge,
+        csrf_token: csrfToken,
+        id: 'alice',
+        password: 'correct-shaped-password',
+      }),
+      redirect: 'manual',
+    })
+
+    expect(response.status).toBe(400)
+    expect(response.headers.get('set-cookie')).toBeNull()
+    expect(await resource.db.get(`SELECT COUNT(*) AS count FROM account_center_sessions`))
+      .toEqual({ count: 0 })
+  })
+
+  it('does not let a late failed login response delete a later successful login cookie', async () => {
+    const resource = await openIdentityFixture()
+    resources.push(resource)
+    const secondDb = await resource.openConnection()
+    const failedChallenge = 'late-failed-login'
+    const successfulChallenge = 'later-successful-login'
+    const failureEntered = deferred()
+    const releaseFailure = deferred()
+    const failedAdmin = {
+      getLoginRequest: vi.fn(async () => hydraLoginRequest(failedChallenge)),
+      acceptLoginRequest: vi.fn(async () => {
+        failureEntered.resolve()
+        await releaseFailure.promise
+        throw new Error('Hydra failed after another tab completed')
+      }),
+    }
+    const successfulAdmin = {
+      getLoginRequest: vi.fn(async () => hydraLoginRequest(successfulChallenge)),
+      acceptLoginRequest: vi.fn(async () => ({
+        redirect_to: 'http://jieya.localhost:4180/auth/callback?code=later-login',
+      })),
+    }
+    const failedRouter = await startRouter(resource, failedAdmin, {
+      routerOptions: {
+        getPublicDb: async () => resource.db,
+        comparePassword: vi.fn(async () => true),
+      },
+    })
+    const successfulRouter = await startRouter(resource, successfulAdmin, {
+      routerOptions: {
+        getPublicDb: async () => secondDb,
+        comparePassword: vi.fn(async () => true),
+      },
+    })
+    const failedPage = await fetch(
+      `${failedRouter.baseUrl}/account/login?login_challenge=${failedChallenge}`,
+    )
+    const successfulPage = await fetch(
+      `${successfulRouter.baseUrl}/account/login?login_challenge=${successfulChallenge}`,
+    )
+    const submit = (router, challenge, csrfToken) => fetch(`${router.baseUrl}/account/login`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: router.config.issuer,
+        referer: `${router.config.issuer}/account/login?login_challenge=${challenge}`,
+      },
+      body: new URLSearchParams({
+        login_challenge: challenge,
+        csrf_token: csrfToken,
+        id: 'alice',
+        password: 'correct-shaped-password',
+      }),
+      redirect: 'manual',
+    })
+
+    const failedRequest = submit(
+      failedRouter,
+      failedChallenge,
+      hiddenValue(await failedPage.text(), 'csrf_token'),
+    )
+    await failureEntered.promise
+    const successfulResponse = await submit(
+      successfulRouter,
+      successfulChallenge,
+      hiddenValue(await successfulPage.text(), 'csrf_token'),
+    )
+    expect(successfulResponse.status).toBe(303)
+    expect(successfulResponse.headers.get('set-cookie'))
+      .toContain(`${successfulRouter.config.accountCookieName}=`)
+    expect(successfulResponse.headers.get('set-cookie')).not.toContain('Max-Age=0')
+
+    releaseFailure.resolve()
+    const failedResponse = await failedRequest
+    expect(failedResponse.status).toBe(400)
+    expect(failedResponse.headers.get('set-cookie')).toBeNull()
+    expect(await resource.db.get(`SELECT COUNT(*) AS count FROM account_center_sessions`))
+      .toEqual({ count: 1 })
+  })
+
+  it.each([
+    ['SID capacity rejection', true],
+    ['Hydra consent failure', false],
+  ])('revokes the provisional session on %s without emitting a stale cookie deletion', async (_label, fillSidCap) => {
+    const resource = await openIdentityFixture()
+    resources.push(resource)
+    const accountSession = await createAccountCenterSession(resource.db, {
+      userId: 'alice',
+      now: () => now,
+      randomToken: () => `provisional-consent-token-${fillSidCap}`,
+      randomCsrf: () => `provisional-consent-csrf-${fillSidCap}`,
+    })
+    if (fillSidCap) {
+      for (let index = 0; index < MAX_ACTIVE_LOGIN_SESSIONS_PER_ACCOUNT_CLIENT; index += 1) {
+        await resource.db.run(
+          `INSERT INTO oidc_login_sessions
+             (account_subject, client_id, sid, auth_generation, consent_request_id,
+              status, created_at, updated_at, expires_at)
+           VALUES (?, 'jieya-server-local', ?, 0, ?, 'active', ?, ?, ?)`,
+          TEST_SUBJECTS.alice,
+          `router-cap-sid-${index}`,
+          `router-cap-consent-${index}`,
+          now.toISOString(),
+          now.toISOString(),
+          '2026-09-29T00:00:00.000Z',
+        )
+      }
+    }
+    const challenge = `router-consent-${fillSidCap}`
+    const admin = {
+      getConsentRequest: vi.fn(async () => hydraConsentRequest(challenge)),
+      revokeLoginSession: vi.fn(async () => undefined),
+      rejectConsentRequest: vi.fn(async () => ({
+        redirect_to: 'http://jieya.localhost:4180/auth/callback?error=temporarily_unavailable',
+      })),
+      acceptConsentRequest: vi.fn(async () => { throw new Error('Hydra consent unavailable') }),
+    }
+    const { baseUrl, config } = await startRouter(resource, admin)
+    const cookie = `${config.accountCookieName}=${encodeURIComponent(accountSession.token)}`
+    const page = await fetch(
+      `${baseUrl}/account/consent?consent_challenge=${encodeURIComponent(challenge)}`,
+      { headers: { cookie } },
+    )
+    expect(page.status).toBe(200)
+    const csrfToken = hiddenValue(await page.text(), 'csrf_token')
+    const response = await fetch(`${baseUrl}/account/consent`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: config.issuer,
+        referer: `${config.issuer}/account/consent?consent_challenge=${encodeURIComponent(challenge)}`,
+        cookie,
+      },
+      body: new URLSearchParams({
+        consent_challenge: challenge,
+        csrf_token: csrfToken,
+        decision: 'approve',
+        offline_access_confirmed: 'yes',
+      }),
+      redirect: 'manual',
+    })
+
+    expect(response.status).toBe(fillSidCap ? 303 : 400)
+    expect(response.headers.get('set-cookie')).toBeNull()
+    expect(await resource.db.get(`SELECT COUNT(*) AS count FROM account_center_sessions`))
+      .toEqual({ count: 0 })
+    if (fillSidCap) {
+      expect(admin.acceptConsentRequest).not.toHaveBeenCalled()
+      expect(admin.revokeLoginSession).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('does not let a late failed consent response delete a session established by another flow', async () => {
+    const resource = await openIdentityFixture()
+    resources.push(resource)
+    const secondDb = await resource.openConnection()
+    const accountSession = await createAccountCenterSession(resource.db, {
+      userId: 'alice',
+      now: () => now,
+      randomToken: () => 'consent-race-account-token',
+      randomCsrf: () => 'consent-race-account-csrf',
+    })
+    const failedChallenge = 'late-failed-consent'
+    const successfulChallenge = 'later-successful-consent'
+    const failureEntered = deferred()
+    const releaseFailure = deferred()
+    const failedAdmin = {
+      getConsentRequest: vi.fn(async () => hydraConsentRequest(failedChallenge, {
+        login_session_id: 'late-failed-consent-sid',
+        consent_request_id: 'late-failed-consent-request',
+      })),
+      acceptConsentRequest: vi.fn(async () => {
+        failureEntered.resolve()
+        await releaseFailure.promise
+        throw new Error('Hydra consent failed after another flow completed')
+      }),
+    }
+    const successfulAdmin = {
+      getConsentRequest: vi.fn(async () => hydraConsentRequest(successfulChallenge, {
+        login_session_id: 'later-successful-consent-sid',
+        consent_request_id: 'later-successful-consent-request',
+      })),
+      acceptConsentRequest: vi.fn(async () => ({
+        redirect_to: 'http://jieya.localhost:4180/auth/callback?code=later-consent',
+      })),
+    }
+    const failedRouter = await startRouter(resource, failedAdmin, {
+      routerOptions: { getPublicDb: async () => resource.db },
+    })
+    const successfulRouter = await startRouter(resource, successfulAdmin, {
+      routerOptions: { getPublicDb: async () => secondDb },
+    })
+    const cookie = `${failedRouter.config.accountCookieName}=${encodeURIComponent(accountSession.token)}`
+    await fetch(
+      `${failedRouter.baseUrl}/account/consent?consent_challenge=${failedChallenge}`,
+      { headers: { cookie } },
+    )
+    const successfulPage = await fetch(
+      `${successfulRouter.baseUrl}/account/consent?consent_challenge=${successfulChallenge}`,
+      { headers: { cookie } },
+    )
+    const currentCsrf = hiddenValue(await successfulPage.text(), 'csrf_token')
+    const submit = (router, challenge) => fetch(`${router.baseUrl}/account/consent`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: router.config.issuer,
+        referer: `${router.config.issuer}/account/consent?consent_challenge=${challenge}`,
+        cookie,
+      },
+      body: new URLSearchParams({
+        consent_challenge: challenge,
+        csrf_token: currentCsrf,
+        decision: 'approve',
+        offline_access_confirmed: 'yes',
+      }),
+      redirect: 'manual',
+    })
+
+    const failedRequest = submit(failedRouter, failedChallenge)
+    await failureEntered.promise
+    const successfulResponse = await submit(successfulRouter, successfulChallenge)
+    expect(successfulResponse.status).toBe(303)
+    expect(successfulResponse.headers.get('set-cookie')).toBeNull()
+
+    releaseFailure.resolve()
+    const failedResponse = await failedRequest
+    expect(failedResponse.status).toBe(400)
+    expect(failedResponse.headers.get('set-cookie')).toBeNull()
+    expect(await resource.db.get(
+      `SELECT established_at FROM account_center_sessions WHERE account_subject = ?`,
+      TEST_SUBJECTS.alice,
+    )).toEqual({ established_at: now.toISOString() })
+  })
+
+  it('marks a provisional account session established only after consent succeeds', async () => {
+    const resource = await openIdentityFixture()
+    resources.push(resource)
+    const accountSession = await createAccountCenterSession(resource.db, {
+      userId: 'alice',
+      now: () => now,
+      randomToken: () => 'successful-consent-account-token',
+      randomCsrf: () => 'successful-consent-account-csrf',
+    })
+    const challenge = 'successful-router-consent'
+    const admin = {
+      getConsentRequest: vi.fn(async () => hydraConsentRequest(challenge, {
+        login_session_id: 'successful-consent-sid',
+        consent_request_id: 'successful-consent-request',
+      })),
+      acceptConsentRequest: vi.fn(async () => ({
+        redirect_to: 'http://jieya.localhost:4180/auth/callback?code=fixture',
+      })),
+    }
+    const { baseUrl, config } = await startRouter(resource, admin)
+    const cookie = `${config.accountCookieName}=${encodeURIComponent(accountSession.token)}`
+    const page = await fetch(
+      `${baseUrl}/account/consent?consent_challenge=${encodeURIComponent(challenge)}`,
+      { headers: { cookie } },
+    )
+    const csrfToken = hiddenValue(await page.text(), 'csrf_token')
+    const response = await fetch(`${baseUrl}/account/consent`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: config.issuer,
+        referer: `${config.issuer}/account/consent?consent_challenge=${encodeURIComponent(challenge)}`,
+        cookie,
+      },
+      body: new URLSearchParams({
+        consent_challenge: challenge,
+        csrf_token: csrfToken,
+        decision: 'approve',
+        offline_access_confirmed: 'yes',
+      }),
+      redirect: 'manual',
+    })
+
+    expect(response.status).toBe(303)
+    expect(response.headers.get('set-cookie')).toBeNull()
+    expect(await resource.db.get(
+      `SELECT established_at FROM account_center_sessions`,
+    )).toEqual({ established_at: now.toISOString() })
   })
 
   it('rate-limits public account GETs per source and globally', async () => {
@@ -510,5 +1061,91 @@ describe('identity HTTP boundary', () => {
     )).toEqual(before)
     expect(await resource.db.get(`SELECT COUNT(*) AS count FROM sessions WHERE user_id = 'alice'`))
       .toEqual({ count: 1 })
+  })
+
+  it('does not let a late failed logout reauthentication delete a newer account cookie', async () => {
+    const resource = await openIdentityFixture()
+    resources.push(resource)
+    const secondDb = await resource.openConnection()
+    await resource.db.run(
+      `INSERT INTO oidc_login_sessions
+         (account_subject, client_id, sid, auth_generation, status,
+          created_at, updated_at, expires_at)
+       VALUES (?, 'jieya-server-local', 'logout-cookie-race-sid', 0, 'active', ?, ?, ?)`,
+      TEST_SUBJECTS.alice,
+      now.toISOString(),
+      now.toISOString(),
+      '2026-09-29T00:00:00.000Z',
+    )
+    const delayedCompareEntered = deferred()
+    const releaseDelayedCompare = deferred()
+    const delayedRouter = await startRouter(resource, {}, {
+      routerOptions: {
+        getPublicDb: async () => resource.db,
+        comparePassword: vi.fn(async () => {
+          delayedCompareEntered.resolve()
+          await releaseDelayedCompare.promise
+          return true
+        }),
+      },
+    })
+    const successfulRouter = await startRouter(resource, {}, {
+      routerOptions: {
+        getPublicDb: async () => secondDb,
+        comparePassword: vi.fn(async () => true),
+      },
+    })
+    const created = await fetch(
+      `${delayedRouter.baseUrl}/internal/oidc/logout-transactions`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'X-StarStack-Logout-Broker': env.OIDC_LOGOUT_BROKER_SECRET,
+        },
+        body: JSON.stringify({
+          subject: TEST_SUBJECTS.alice,
+          sid: 'logout-cookie-race-sid',
+          client_id: 'jieya-server-local',
+          state: 'logout-cookie-race-state',
+        }),
+      },
+    )
+    const transaction = new URL((await created.json()).url).searchParams.get('transaction')
+    const page = await fetch(
+      `${delayedRouter.baseUrl}/account/logout?transaction=${encodeURIComponent(transaction)}`,
+    )
+    const csrfToken = hiddenValue(await page.text(), 'csrf_token')
+    const submit = (router) => fetch(`${router.baseUrl}/account/logout/login`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: router.config.issuer,
+        referer: `${router.config.issuer}/account/logout?transaction=${encodeURIComponent(transaction)}`,
+      },
+      body: new URLSearchParams({
+        transaction,
+        csrf_token: csrfToken,
+        id: 'alice',
+        password: 'correct-shaped-password',
+      }),
+      redirect: 'manual',
+    })
+
+    const delayedRequest = submit(delayedRouter)
+    await delayedCompareEntered.promise
+    const successfulResponse = await submit(successfulRouter)
+    expect(successfulResponse.status).toBe(303)
+    expect(successfulResponse.headers.get('set-cookie'))
+      .toContain(`${successfulRouter.config.accountCookieName}=`)
+    expect(successfulResponse.headers.get('set-cookie')).not.toContain('Max-Age=0')
+
+    releaseDelayedCompare.resolve()
+    const delayedResponse = await delayedRequest
+    expect(delayedResponse.status).toBe(400)
+    expect(delayedResponse.headers.get('set-cookie')).toBeNull()
+    expect(await resource.db.get(
+      `SELECT COUNT(*) AS count FROM account_center_sessions WHERE established_at IS NOT NULL`,
+    )).toEqual({ count: 1 })
   })
 })
