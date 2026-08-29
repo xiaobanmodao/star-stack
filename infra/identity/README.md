@@ -6,7 +6,9 @@
 ~/.local/state/starstack/identity/hydra-test-57eae204b3826d2c/
 ```
 
-`57eae204b3826d2c` 是冻结 DSN 的 SHA-256 前 16 位，不是 Secret。状态目录必须是当前 UID 所有的真实目录且权限恰为 `0700`；凭据、状态标记、锁和 fixture SQLite 文件必须是非 symlink 普通文件、权限恰为 `0600` 且 `nlink === 1`。加载时会同时核验 `lstat`、`realpath`、UID、类型、权限、link count 与打开后的 inode，路径替换、symlink 或 hard link 会失败关闭。
+`57eae204b3826d2c` 是冻结 DSN 的 SHA-256 前 16 位，不是 Secret。状态目录必须是当前 UID 所有的真实目录且权限恰为 `0700`；凭据、状态标记、锁和 fixture SQLite 文件必须是非 symlink 普通文件、权限恰为 `0600` 且 `nlink === 1`。加载时会同时核验 `lstat`、`realpath`、UID、类型、权限、link count 与打开后的 inode；预存不安全路径、意外替换和遵守运行锁的同 UID worktree 冲突会失败关闭。
+
+这里的本地 fixture 安全边界假设当前操作系统 UID 可信，并要求所有本任务进程遵守机器级 `runtime.lock`。StarStack 会在每个 WAL/DDL/DML 写入阶段前复核已固定的目录与文件身份，保证复核前已存在的替换不会改动无关文件或生成 sidecar；它不宣称抵御恶意同 UID 进程卡在复核与 SQLite VFS 路径操作之间的精确竞态。该 UID 本已可以读取/改写测试数据库和进程环境、终止进程。严格零窗口需要独立 OS 用户或基于 pinned dirfd 的自定义 SQLite VFS/等价隔离，不在本地门禁范围内。
 
 固定版本：
 
@@ -46,7 +48,7 @@ HYDRA_TEST_DSN='postgres://hydra_test@127.0.0.1:55432/hydra_test?sslmode=disable
 npm run identity:hydra:run
 ```
 
-启动器会先安全创建或打开 canonical fixture 主库并固定 inode，把精确身份交给 StarStack；StarStack 使用 SQLite `NOFOLLOW` 标志打开，初始化后父子双方再复核主库及 rollback journal/WAL/SHM。随后才会幂等执行 Hydra migration、创建或更新 `jieya-server-local` 并启动 Hydra 与 StarStack；只有 SQLite 单元、固定客户端、Public Discovery 和 JWKS 全部验证通过后才输出 `ready: true`。它不占用 Jieya 的 `4180`；Jieya BFF 应自行监听该端口。按 `Ctrl+C` 会同时停止 Hydra 与 StarStack，不停止共享 PostgreSQL。
+启动器会先安全创建或打开 canonical fixture 主库并固定 inode，把精确身份交给 StarStack；StarStack 使用 SQLite `NOFOLLOW` 标志打开，并在 WAL/DDL/DML 前复核目录与主库身份，初始化后父子双方再复核主库及 rollback journal/WAL/SHM。随后才会幂等执行 Hydra migration、创建或更新 `jieya-server-local` 并启动 Hydra 与 StarStack；只有 SQLite 单元、固定客户端、Public Discovery 和 JWKS 全部验证通过后才输出 `ready: true`。它不占用 Jieya 的 `4180`；Jieya BFF 应自行监听该端口。按 `Ctrl+C` 会同时停止 Hydra 与 StarStack，不停止共享 PostgreSQL。
 
 界芽当前测试脚本仍需显式获得新的机器 canonical 路径：
 

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import net from 'node:net'
 import {
   access,
@@ -10,6 +11,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   realpath,
   rename,
   rm,
@@ -103,6 +105,10 @@ const waitForFile = async (file, timeoutMs = 5000) => {
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
 }
+
+const sha256File = async (file) => createHash('sha256')
+  .update(await readFile(file))
+  .digest('hex')
 
 afterEach(async () => {
   while (directories.length) await rm(directories.pop(), { recursive: true, force: true })
@@ -413,26 +419,92 @@ describe('local identity SQLite path safety', () => {
     try {
       await waitForFile(ready)
       let unrelatedTarget
+      let unrelatedDatabase
       if (kind === 'database file') {
         unrelatedTarget = path.join(container, 'unrelated.sqlite')
         await writeFile(unrelatedTarget, 'unrelated', { mode: originalMode })
+        unrelatedDatabase = unrelatedTarget
         await rename(database, path.join(stateRoot, 'fixture.original.sqlite'))
         await symlink(unrelatedTarget, database)
       } else {
         unrelatedTarget = path.join(container, 'unrelated-directory')
         await mkdir(unrelatedTarget, { mode: originalMode })
+        unrelatedDatabase = path.join(unrelatedTarget, 'fixture.sqlite')
+        await writeFile(unrelatedDatabase, 'unrelated-preexisting-database', { mode: 0o600 })
         await rename(stateRoot, displaced)
         await symlink(unrelatedTarget, stateRoot)
       }
+      const entriesBefore = kind === 'database directory'
+        ? (await readdir(unrelatedTarget)).sort()
+        : undefined
+      const hashBefore = await sha256File(unrelatedDatabase)
+      const databaseStatBefore = await lstat(unrelatedDatabase)
       await writeFile(proceed, 'continue')
       const exit = await waitForExit(child, 10000)
       expect(exit.code).toBe(0)
       await expect(readFile(resultFile, 'utf8')).resolves.toBe('rejected')
       expect((await lstat(unrelatedTarget)).mode & 0o777).toBe(originalMode)
+      await expect(sha256File(unrelatedDatabase)).resolves.toBe(hashBefore)
+      const databaseStatAfter = await lstat(unrelatedDatabase)
+      expect(databaseStatAfter.size).toBe(databaseStatBefore.size)
+      expect(databaseStatAfter.mode & 0o777).toBe(databaseStatBefore.mode & 0o777)
+      if (entriesBefore) expect((await readdir(unrelatedTarget)).sort()).toEqual(entriesBefore)
+      for (const suffix of ['-journal', '-wal', '-shm']) {
+        await expect(access(`${unrelatedDatabase}${suffix}`)).rejects.toMatchObject({ code: 'ENOENT' })
+      }
     } finally {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
       await parentGuard.close()
     }
+  }, 20000)
+
+  it('preserves the legacy non-guard database initialization path', async () => {
+    const container = await makeDirectory('starstack-legacy-db-init-')
+    const dataDirectory = path.join(container, 'data')
+    const database = path.join(dataDirectory, 'legacy.sqlite')
+    const resultFile = path.join(container, 'legacy.result.json')
+    await mkdir(dataDirectory, { mode: 0o755 })
+    await writeFile(database, '', { mode: 0o644 })
+    const dbModuleUrl = pathToFileURL(path.join(LOCAL_IDENTITY_PROJECT_ROOT, 'server', 'db.js')).href
+    const childSource = `
+      import { writeFile } from 'node:fs/promises'
+      const [moduleUrl, resultFile] = process.argv.slice(1)
+      const { getDb, initDb, closeDb } = await import(moduleUrl)
+      try {
+        await initDb()
+        const db = await getDb()
+        const users = await db.get('SELECT COUNT(*) AS count FROM users')
+        const problems = await db.get('SELECT COUNT(*) AS count FROM problems')
+        await writeFile(resultFile, JSON.stringify({ users: users.count, problems: problems.count }))
+      } finally {
+        await closeDb().catch(() => {})
+      }
+    `
+    const child = spawn(process.execPath, [
+      '--input-type=module',
+      '-e',
+      childSource,
+      dbModuleUrl,
+      resultFile,
+    ], {
+      cwd: LOCAL_IDENTITY_PROJECT_ROOT,
+      env: {
+        ...process.env,
+        DB_PATH: database,
+        OIDC_ENABLED: 'false',
+        ADMIN_ID: 'legacy-fixture-admin',
+        ADMIN_NAME: 'Legacy Fixture',
+        ADMIN_PASSWORD: 'legacy-test-only-password-123456',
+      },
+      stdio: ['ignore', 'ignore', 'ignore'],
+    })
+    const exit = await waitForExit(child, 10000)
+    expect(exit.code).toBe(0)
+    const result = JSON.parse(await readFile(resultFile, 'utf8'))
+    expect(result.users).toBeGreaterThanOrEqual(1)
+    expect(result.problems).toBeGreaterThanOrEqual(1)
+    expect((await lstat(dataDirectory)).mode & 0o777).toBe(0o700)
+    expect((await lstat(database)).mode & 0o777).toBe(0o600)
   }, 20000)
 })
 

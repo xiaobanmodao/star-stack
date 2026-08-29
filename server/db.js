@@ -35,6 +35,9 @@ const localIdentitySqliteGuardPromise = process.env.IDENTITY_TEST_SQLITE_GUARD
 
 const openDatabaseConnection = async () => {
   const localIdentitySqliteGuard = await localIdentitySqliteGuardPromise
+  // Reject a path replacement that happened after the parent process pinned
+  // the canonical SQLite unit, before handing the path to SQLite's VFS.
+  await localIdentitySqliteGuard?.verify({ allowNewSidecars: true })
   const db = await open({
     filename: DB_PATH,
     driver: sqlite3.Database,
@@ -43,6 +46,10 @@ const openDatabaseConnection = async () => {
     } : {}),
   })
   try {
+    // Opening the descriptor and checking the path are separate operations.
+    // Re-check before the first pragma so a replacement already present at
+    // this phase boundary cannot receive WAL/schema writes.
+    await localIdentitySqliteGuard?.verify({ allowNewSidecars: true })
     // 多个 API 请求和评测完成回调可能同时写入 SQLite；显式忙等待可减少
     // SQLITE_BUSY 瞬态错误，同时避免把写事务无限阻塞在应用层。
     db.configure('busyTimeout', 5000)
@@ -319,7 +326,13 @@ export const initDb = async () => {
       }
     }
   }
+  const localIdentitySqliteGuard = await localIdentitySqliteGuardPromise
+  // initDb may be called well after the connection was opened. Verify the
+  // canonical directory and main-file identity again before any WAL or schema
+  // statement can write through a path that was replaced in the meantime.
+  await localIdentitySqliteGuard?.verify({ allowNewSidecars: true })
   const db = await dbPromise
+  await localIdentitySqliteGuard?.verify({ allowNewSidecars: true })
   await db.exec(`
     PRAGMA foreign_keys = ON;
     PRAGMA journal_mode = WAL;
@@ -1077,7 +1090,7 @@ export const initDb = async () => {
     }
   }
 
-  await (await localIdentitySqliteGuardPromise)?.verify({ allowNewSidecars: true })
+  await localIdentitySqliteGuard?.verify({ allowNewSidecars: true })
 
 }
 
