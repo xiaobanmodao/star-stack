@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
+import { LOCAL_IDENTITY_PROJECT_RUNTIME_ROOT } from './localIdentityCredentials.mjs'
 
 const VERSION = '26.2.0'
 const CHECKSUMS_SHA256 = '778bebe8c3838359d3a37064a3ac17e1287c0eb4e31c4d7ad60e467c757941f3'
@@ -22,7 +23,7 @@ const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex')
 const asset = ASSETS[process.arch]
 if (process.platform !== 'darwin' || !asset) throw new Error('Local Hydra fetch supports macOS arm64/x64 only')
 
-const root = path.resolve('.identity-runtime')
+const root = LOCAL_IDENTITY_PROJECT_RUNTIME_ROOT
 const archive = path.join(root, asset.name)
 const checksumsUrl = `https://github.com/ory/hydra/releases/download/v${VERSION}/checksums.txt`
 const assetUrl = `https://github.com/ory/hydra/releases/download/v${VERSION}/${asset.name}`

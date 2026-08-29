@@ -1,6 +1,12 @@
 # StarStack 本地 Hydra 身份运行时
 
-这里是 SS-AUTH-002 的隔离开发运行时，不是生产部署文件。OIDC 默认关闭；任何 Secret、fixture SQLite 与下载的二进制均位于被 Git 忽略且权限为 `0600/0700` 的 `.identity-runtime/`。
+这里是 SS-AUTH-002 的隔离开发运行时，不是生产部署文件。OIDC 默认关闭。下载的 Hydra 二进制和一次性协议日志位于当前 checkout 中被 Git 忽略的 `.identity-runtime/`；共享 DSN 的 Secret、fixture SQLite 与运行锁不属于任何 checkout，统一位于当前操作系统用户的机器状态目录：
+
+```text
+~/.local/state/starstack/identity/hydra-test-57eae204b3826d2c/
+```
+
+`57eae204b3826d2c` 是冻结 DSN 的 SHA-256 前 16 位，不是 Secret。状态目录必须是当前 UID 所有的真实目录且权限恰为 `0700`；凭据、状态标记和锁必须是非 symlink 普通文件且权限恰为 `0600`。加载时会同时核验 `lstat`、`realpath`、UID、类型、权限与打开后的 inode，路径替换或 symlink 会失败关闭。
 
 固定版本：
 
@@ -19,14 +25,18 @@ HYDRA_TEST_DSN='postgres://hydra_test@127.0.0.1:55432/hydra_test?sslmode=disable
 npm run identity:hydra:protocol
 ```
 
-协议门禁是本地 fixture 的确定性重建，不是生产迁移：它只接受精确的 loopback `hydra_test` DSN，并在独占锁、零其他数据库连接和 PostgreSQL 16.15 客户端校验通过后，同步重建 Hydra schema、本地 StarStack fixture SQLite，并原子轮换 canonical 凭据。不得通过 `IDENTITY_TEST_CREDENTIALS_FILE` 或 `IDENTITY_TEST_STARSTACK_DB` 为共享 DSN 指定另一套文件。轮换 pending 文件存在时，普通运行器失败关闭，只能重新完成协议门禁；不得恢复来源或凭据不匹配的旧数据库快照。
+协议门禁是本地 fixture 的确定性重建，不是生产迁移：它只接受精确的 loopback `hydra_test` DSN，并在跨 checkout 的机器唯一锁、零其他数据库连接和 PostgreSQL 16.15 客户端校验通过后，同步重建 Hydra schema、本地 StarStack fixture SQLite，并把 Hydra 数据库与 canonical 凭据作为一个失败关闭的轮换单元。PostgreSQL reset 位于单个事务内；中断发生在提交前会回滚并删除本次 pending，提交后则先完成凭据切换再响应中断。不得通过 `IDENTITY_TEST_CREDENTIALS_FILE` 或 `IDENTITY_TEST_STARSTACK_DB` 为共享 DSN 指定另一套文件，也不得恢复来源或凭据不匹配的旧数据库快照。
 
-门禁成功后会保留同一个可继续联调的身份单元：
+机器状态目录中的关键文件为：
 
-- `.identity-runtime/ss-auth-002-starstack.sqlite`：纯本地 fixture StarStack 数据库；
-- `.identity-runtime/ss-auth-002-local-credentials.json`：测试账号及独立 Hydra/Client/Hook/Broker Secret，权限 `0600`。
+- `ss-auth-002-local-credentials.json`：测试账号及独立 Hydra/Client/Hook/Broker Secret，权限 `0600`；
+- `ss-auth-002-starstack.sqlite`：纯本地、可重建的 StarStack fixture 数据库；
+- `state-identity.json`：不含 Secret 的 DSN 身份标记；
+- `.credentials-rotation.pending.json`：只在未完成轮换时存在，存在即阻止普通运行器；
+- `runtime.lock`：覆盖 reset、migration、protocol 和 run-local 的独占运行锁；
+- `runtime.lock.operation`：只保护锁文件 acquire/release 的毫秒级临界区。
 
-协议末尾会停止自身服务，再实际启动一次 `run-local-runtime.mjs`，要求 Public Discovery 与 JWKS 均为 HTTP 200 且 signing `kid` 与协议重启前一致。新凭据值不会输出到日志；每次协议门禁都会使此前的本地 fixture 凭据失效。
+协议末尾会停止自身服务，再实际启动一次 `run-local-runtime.mjs`：不仅要求 Public Discovery/JWKS 为 HTTP 200，还会完成一次真实 Authorization Code + PKCE 签发，以 ID Token header 的 `kid` 证明 active RS256 signing key 与公开 JWKS、协议重启前 `kid` 一致。随后通过 Logout Broker 清理协议 SID，并删除只承载协议历史的 StarStack fixture SQLite，让下一个 Jieya E2E/手工联调以同一 Hydra JWK、Client 和凭据重建干净测试账号。新凭据值不会输出到日志；每次协议门禁都会使此前的本地 fixture 凭据失效。
 
 启动可供 Jieya BFF 联调的运行时：
 
@@ -37,6 +47,25 @@ npm run identity:hydra:run
 ```
 
 启动器会幂等执行 Hydra migration、创建或更新 `jieya-server-local`，然后启动 Hydra 与 StarStack；只有固定客户端、Public Discovery 和 JWKS 全部验证通过后才输出 `ready: true`。它不占用 Jieya 的 `4180`；Jieya BFF 应自行监听该端口。按 `Ctrl+C` 会同时停止 Hydra 与 StarStack，不停止共享 PostgreSQL。
+
+界芽当前测试脚本仍需显式获得新的机器 canonical 路径：
+
+```bash
+HYDRA_TEST_BINARY=/tmp/jy-auth-runtime-hydra-pg-16.15/hydra/hydra \
+HYDRA_TEST_DSN='postgres://hydra_test@127.0.0.1:55432/hydra_test?sslmode=disable' \
+IDENTITY_TEST_CREDENTIALS_FILE="$HOME/.local/state/starstack/identity/hydra-test-57eae204b3826d2c/ss-auth-002-local-credentials.json" \
+STARSTACK_ROOT=/Users/hht/Desktop/star-stack \
+npm run test:auth:e2e
+```
+
+## 中断与恢复
+
+- `SIGINT`/`SIGTERM` 会先停止并等待当前 migration、Hydra、StarStack 等全部直接子进程，再释放运行锁；5 秒内不退出的子进程会被强制终止。脚本不会在子进程监听器安装前宣告 ready。
+- 普通 stale `runtime.lock` 会在 operation guard 内按 PID、token 与 inode 复核后原子移入唯一 quarantine，再删除并获取新锁；多个 checkout 同时回收时最多一个成功。
+- `.credentials-rotation.pending.json` 存在时不要删除、改权限或单独替换凭据。先确认 `4444/4445/5174/4180` 无监听，再重新执行完整 `identity:hydra:protocol`；门禁会在同一机器锁下恢复或重新完成该轮换。
+- `runtime.lock.operation` 从不自动判定 stale，避免为修复 stale guard 再引入同一种 check→unlink 竞态。如果它在进程异常终止后残留，先同时确认四个端口无监听、锁文件记录的 PID 已不存在，并通过 PostgreSQL 查询确认 `hydra_test` 无其他连接；之后只把该 guard 原子 `mv` 到同目录唯一 quarantine 名称，不要直接 `rm`，再重跑完整协议门禁。
+- 状态目录、marker 或凭据发生 symlink、UID、类型、权限、realpath/inode 校验失败时，不要用 `chmod` 或复制单个旧文件绕过。确认进程和数据库连接均为空后，将整个 DSN 状态目录移动到仓库外的隔离 quarantine，运行完整协议门禁同时重建数据库与新凭据；旧目录中的测试 Secret 随即失效。
+- 恢复后必须再次验证：协议门禁成功、真实 ID Token `kid` 连续、界芽 E2E 6/6、凭据 `0600`、状态目录 `0700`、pending/两层锁不存在，以及四个端口全部释放。
 
 ## Compose 备用方案
 

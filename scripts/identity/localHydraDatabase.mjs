@@ -4,6 +4,7 @@ import path from 'node:path'
 import { assertLocalHydraTestDsn } from './localHydraDsn.mjs'
 
 export const LOCAL_HYDRA_RESET_SQL = `
+BEGIN;
 DO $$
 BEGIN
   IF EXISTS (
@@ -18,6 +19,7 @@ END
 $$;
 DROP SCHEMA public CASCADE;
 CREATE SCHEMA public;
+COMMIT;
 `
 
 const executableName = (name) => process.platform === 'win32' ? `${name}.exe` : name

@@ -72,7 +72,10 @@
 - Login `sid` 显式保存 30 天 `expires_at`；过期 active、超过 15 分钟的 `authorization_pending` 和超过 30 天的 revoked 行会清理，`revocation_pending` 永远保留到 outbox 成功，避免静默丢失撤销任务。
 - `identity_outbox` 设 10,000 行绝对上限、1,024 条未解决事件上限和单账号世代 64 条上限；历史异常 SID 枚举使用 `LIMIT 65` 预检并失败关闭。浏览器退出请求最多同步处理 8 条，后台每轮最多 25 条，其余持久化有界重试。
 - 本地 Hydra 工具只接受精确 DSN `postgres://hydra_test@127.0.0.1:55432/hydra_test?sslmode=disable`。`run-local-runtime` 与完整协议脚本都会在任何文件写入、Hydra spawn、migration 或 Client 注册之前拒绝其他 DSN；坏 DSN 零副作用测试覆盖两侧入口。
-- 精确 `hydra_test` DSN 与仓库内 canonical 凭据/fixture SQLite 绑定，禁止用路径覆盖引入另一套 `secrets.system`。协议门禁在独占锁和零其他数据库连接下同步重建 Hydra schema、fixture SQLite 并原子轮换 mode `0600` 的凭据；pending 轮换会阻止普通运行器启动。`run-local-runtime` 仅在 Discovery、JWKS 和固定客户端均通过后输出 ready，协议末尾会真实重启该命令并核对稳定 signing `kid`。
+- 精确 `hydra_test` DSN 与 checkout 外、按 DSN 指纹唯一的机器状态目录绑定；所有 worktree/clone 共享同一 mode-`0700` 目录、mode-`0600` canonical 凭据、fixture SQLite 和运行锁，禁止用路径覆盖引入另一套 `secrets.system`。目录/文件加载验证 realpath、UID、类型、权限和打开前后 inode，symlink 或替换竞态失败关闭。
+- 运行锁以短时 operation guard 串行 acquire/release；stale 主锁按 PID、token、inode 复核后原子 quarantine，双 checkout 并发回收最多一个成功。operation guard 本身不递归自动删除，异常残留必须按运行手册确认端口、PID 与数据库连接后人工 quarantine。
+- 协议门禁在机器锁和零其他数据库连接下，用单一 PostgreSQL 事务重建 Hydra schema，并以 pending 状态把数据库 reset 与凭据轮换失败关闭；提交前信号会回滚/清 pending，提交后会先完成凭据安装。`run-local-runtime` 仅在 Discovery、JWKS 和固定客户端均通过后输出 ready；协议末尾真实重启该命令、签发新的 ID Token，并以其 header `kid` 证明 active RS256 key 与公开 JWKS 及重启前 `kid` 一致。
+- `SIGINT`/`SIGTERM` 统一停止并等待 migration/Hydra/StarStack 子进程、释放锁和端口；Hydra 在 readiness listener 建立前退出会立即失败，不再假 ready。协议证据完成后只清理可重建的 StarStack fixture SQLite，保留已证明的 Hydra PostgreSQL/JWK/Client 与 canonical 凭据供 Jieya E2E 使用。
 - 身份功能启用时 issuer 按环境失败关闭：开发只能是精确的 `http://auth.localhost:5174`，生产只能是精确的 `https://auth.xingzhan.cc`；尾斜杠、其他 host、HTTP 生产地址以及包含 path/query/fragment/credentials 的值均被拒绝。
 
 ## 真实运行时发现并闭环的兼容点
@@ -100,7 +103,7 @@
 
 `npm run identity:hydra:protocol` 已证明：
 
-- Discovery、JWKS、RS256/kid；
+- Discovery、JWKS、RS256/kid，以及真实 ID Token header `kid` 存在于 Public JWKS；
 - issuer 无尾斜杠、五个关键 Discovery endpoint、`jieya-server-local` 与 callback 均为精确值；
 - Authorization Code + confidential client + PKCE S256；
 - Login/Consent、明确 offline consent、最小 ID Token/UserInfo；
@@ -115,15 +118,16 @@
 - 身份页面 `same-origin` Referrer Policy 可生成通过 exact Origin/Referer 门禁的同源 POST；
 - 身份页 CSP 只允许 `'self'` 与冻结的 Jieya origin，完整协议门禁会对实际响应头做精确指令断言；
 - Hydra 进程重启后已消费 code/refresh 仍失败，SQLite 世代/outbox 状态仍存在。
-- 协议门禁完成后使用同一 canonical 凭据原地启动 `run-local-runtime`，Public Discovery/JWKS 均返回 200 且 signing `kid` 不变；随后 Jieya 真实 BFF E2E 覆盖登录、20 次 Refresh 旋转、双会话重启、全局/Back-Channel Logout 与身份故障降级。
+- 协议门禁完成后使用同一 canonical 凭据原地启动 `run-local-runtime`，Public Discovery/JWKS 均返回 200，并再次完成 Authorization Code + PKCE；新 ID Token 的 active signing `kid` 与协议阶段一致且存在于 JWKS。随后通过 Broker 清理协议 SID、重建消费侧 fixture，Jieya 真实 BFF E2E 6/6 覆盖登录、20 次 Refresh 旋转、双会话重启、全局/Back-Channel Logout 与身份故障降级。
 - 公开账号页/UserInfo 每源与全局限流、慢 introspection/slow login 与私网 Token Hook 隔离、队列快速 `503`、512 interaction 上限、16 SID 上限、outbox 三层容量及迁移/Retention 竞争均由自动化测试覆盖。
+- 自动化还覆盖 12 个进程跨两个模拟 checkout 同时回收 stale lock、锁 release inode 替换、凭据目录/文件 symlink 与 mode/TOCTOU、Hydra readiness 前早退，以及协议在 PostgreSQL reset 提交前收到 SIGTERM 后清理子进程、pending、锁和端口。
 
 另以真实 Chromium DOM 流程完成 Login → Consent → Jieya 授权回调，以及 Logout Broker → 确认退出 → Jieya 退出回调；两条跨源导航均到达固定 `jieya.localhost:4180`，退出 `state` 精确匹配且控制台无 CSP 错误。
 
 最终本地门禁：
 
 - `npm run lint`：通过；
-- `npm test -- --run`：43 个文件、220 项通过；
+- `npm test -- --run`：44 个文件、230 项通过；
 - `npm run build`：通过；
 - `npm run test:smoke`：隔离数据库通过；
 - `node server/migrate.js` 重复迁移与 `npm run db:verify`：50 张表、0 个外键问题；
@@ -131,7 +135,7 @@
 - 依赖审计：`react-router-dom` 已精确锁定为 `7.18.2`，其传递依赖 `react-router` 同步精确锁定为 `7.18.2`，已消除 GHSA-qwww-vcr4-c8h2；根项目生产依赖为 0 Critical / 0 High。
 - 根项目仍有 Monaco `0.55.1` → DOMPurify `3.4.12` 链路的 2 个 Moderate；npm 当前只提供把 Monaco 倒退到 `0.53.0` 的破坏性修复建议，因此作为非身份、既有风险保留，后续等待 Monaco/DOMPurify 的前向兼容修复，不以编辑器能力回退换取审计清零。
 - 后端 sqlite3/node-gyp/tar 的既有上游 High 项继续保留在发布风险记录；本任务没有为身份运行时新增 npm 协议或密码学依赖。
-- 已按本地生成值和常见私钥/Token 模式扫描 332 个纳入版本控制或待提交的文件，未发现 Secret 泄漏。
+- 已按本地生成值和常见私钥/Token 模式扫描 339 个纳入版本控制或待提交的文件，未发现 Secret 泄漏。
 
 ## 备份与回滚
 

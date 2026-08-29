@@ -13,7 +13,6 @@ import {
 } from 'node:fs/promises'
 import net from 'node:net'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import {
   HYDRA_BROWSER_COOKIE_NAMES,
@@ -24,17 +23,23 @@ import { assertLocalHydraTestDsn } from './localHydraDsn.mjs'
 import {
   assertCanonicalLocalIdentityCredentialsPath,
   assertCanonicalLocalIdentityStarStackDatabasePath,
-  LOCAL_IDENTITY_RUNTIME_ROOT,
+  LOCAL_IDENTITY_PROJECT_RUNTIME_ROOT,
   stageLocalIdentityCredentialsRotation,
 } from './localIdentityCredentials.mjs'
 import { resetLocalHydraTestDatabase } from './localHydraDatabase.mjs'
+import {
+  IdentityProcessSupervisor,
+  waitForManagedHttp,
+} from './localIdentityProcessSupervisor.mjs'
 import { acquireLocalIdentityRuntimeLock } from './localIdentityRuntimeLock.mjs'
 
 const requireFromServer = createRequire(new URL('../../server/package.json', import.meta.url))
 const sqlite3 = requireFromServer('sqlite3')
 const { open } = requireFromServer('sqlite')
 
-const runtimeRoot = LOCAL_IDENTITY_RUNTIME_ROOT
+const supervisor = new IdentityProcessSupervisor()
+supervisor.installSignalHandlers()
+const runtimeRoot = LOCAL_IDENTITY_PROJECT_RUNTIME_ROOT
 const hydraBinary = process.env.HYDRA_TEST_BINARY || path.join(runtimeRoot, 'hydra')
 const hydraDsn = assertLocalHydraTestDsn(process.env.HYDRA_TEST_DSN)
 const credentialsPath = assertCanonicalLocalIdentityCredentialsPath(
@@ -65,7 +70,6 @@ if (JSON.stringify(localIdentityConfig.hydraCookies.names)
 }
 const allowedHydraCookieNames = new Set(expectedLiveHydraCookieNames)
 const observedHydraCookieNames = new Set()
-const processes = []
 let bffServer
 let succeeded = false
 let workDir
@@ -78,43 +82,37 @@ let logoutBrokerSecret
 let systemSecret
 let cookieSecret
 
-const isChildRunning = (child) => child.exitCode === null && child.signalCode === null
+const waitForExit = (managed) => managed.exited
 
-const waitForExit = (child) => isChildRunning(child)
-  ? new Promise((resolve) => child.once('exit', resolve))
-  : Promise.resolve(child.exitCode ?? child.signalCode)
-
-const run = (command, args, { env = process.env } = {}) => new Promise((resolve, reject) => {
-  const child = spawn(command, args, {
+const run = async (command, args, { env = process.env } = {}) => {
+  const managed = supervisor.spawn(command, args, {
     cwd: process.cwd(),
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let stdout = ''
-  let stderr = ''
-  child.stdout.on('data', (chunk) => {
+  managed.child.stdout.on('data', (chunk) => {
     stdout = `${stdout}${chunk.toString()}`.slice(-4000)
   })
-  child.stderr.on('data', (chunk) => {
-    stderr = `${stderr}${chunk.toString()}`.slice(-12000)
-  })
-  child.once('error', reject)
-  child.once('exit', (code) => {
-    if (code === 0) resolve(stdout)
-    else reject(new Error(`${path.basename(command)} exited with ${code}: ${stderr.slice(-4000)}`))
-  })
-})
+  // Consume stderr without echoing it: fixture secrets live in child env and
+  // failures must never make their values part of task output.
+  managed.child.stderr.resume()
+  const result = await managed.exited
+  supervisor.throwIfShuttingDown()
+  if (result.error) throw result.error
+  if (result.code !== 0) throw new Error(`${path.basename(command)} exited with ${result.code}`)
+  return stdout
+}
 
 const spawnService = (name, command, args, env) => {
   const output = openSync(path.join(workDir, `${name}.log`), 'a', 0o600)
-  const child = spawn(command, args, {
+  const managed = supervisor.spawn(command, args, {
     cwd: process.cwd(),
     env,
     stdio: ['ignore', output, output],
   })
   closeSync(output)
-  processes.push(child)
-  return child
+  return managed
 }
 
 const assertPortFree = (port, host = '127.0.0.1') => new Promise((resolve, reject) => {
@@ -123,27 +121,12 @@ const assertPortFree = (port, host = '127.0.0.1') => new Promise((resolve, rejec
   server.listen(port, host, () => server.close(resolve))
 })
 
-const waitForHttp = async (url, { expected = [200], timeoutMs = 20000, child } = {}) => {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    if (child && !isChildRunning(child)) {
-      throw new Error(`Service exited before ${url} became ready`)
-    }
-    try {
-      const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(1000) })
-      if (expected.includes(response.status)) return response
-    } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 150))
-  }
-  throw new Error(`Timed out waiting for ${url}`)
-}
+const waitForHttp = (url, options = {}) => waitForManagedHttp(url, {
+  ...options,
+  supervisor,
+})
 
-const stopProcesses = async () => {
-  const running = processes.filter(isChildRunning).reverse()
-  const exits = running.map(waitForExit)
-  for (const child of running) child.kill('SIGTERM')
-  await Promise.all(exits)
-}
+const stopProcesses = async () => supervisor.stop()
 
 const closeBffServer = async () => {
   if (!bffServer) return
@@ -155,6 +138,7 @@ const closeBffServer = async () => {
 const waitForPortsFree = async (ports, timeoutMs = 10000) => {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
+    supervisor.throwIfShuttingDown()
     try {
       await Promise.all(ports.map((port) => assertPortFree(port)))
       return
@@ -167,6 +151,7 @@ const waitForPortsFree = async (ports, timeoutMs = 10000) => {
 const waitForLogPattern = async (file, pattern, timeoutMs = 10000) => {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
+    supervisor.throwIfShuttingDown()
     try {
       if (pattern.test(await readFile(file, 'utf8'))) return
     } catch {}
@@ -506,6 +491,7 @@ const logoutTokens = []
 
 try {
   releaseRuntimeLock = await acquireLocalIdentityRuntimeLock()
+  supervisor.throwIfShuttingDown()
   await mkdir(runtimeRoot, { recursive: true, mode: 0o700 })
   await chmod(runtimeRoot, 0o700)
   workDir = await mkdtemp(path.join(runtimeRoot, 'protocol-'))
@@ -517,17 +503,29 @@ try {
     throw new Error('Hydra protocol gate requires exactly v26.2.0')
   }
   const rotation = await stageLocalIdentityCredentialsRotation(credentialsPath)
-  await resetLocalHydraTestDatabase({
-    dsn: hydraDsn,
-    hydraBinary,
-    run,
-  })
-  await Promise.all([
-    rm(starStackDatabase, { force: true }),
-    rm(`${starStackDatabase}-wal`, { force: true }),
-    rm(`${starStackDatabase}-shm`, { force: true }),
-  ])
-  await rotation.commit()
+  let databaseResetCommitted = false
+  try {
+    await resetLocalHydraTestDatabase({
+      dsn: hydraDsn,
+      hydraBinary,
+      run,
+    })
+    databaseResetCommitted = true
+    // Once PostgreSQL has committed the reset, finish replacing the fixture
+    // SQLite file and canonical credentials even if a signal arrived in this
+    // tiny critical section. The pending marker otherwise keeps every normal
+    // runtime failed closed until a protocol rerun completes the same unit.
+    await Promise.all([
+      rm(starStackDatabase, { force: true }),
+      rm(`${starStackDatabase}-wal`, { force: true }),
+      rm(`${starStackDatabase}-shm`, { force: true }),
+    ])
+    await rotation.commit()
+  } catch (error) {
+    if (!databaseResetCommitted) await rotation.abort()
+    throw error
+  }
+  supervisor.throwIfShuttingDown()
   ;({
     fixtureId,
     fixturePassword,
@@ -569,10 +567,14 @@ try {
 
   console.log('2/7 启动固定 Hydra v26.2.0 与临时 StarStack 身份服务')
   let hydra = spawnService('hydra', hydraBinary, ['serve', 'all', '--dev', '--sqa-opt-out'], hydraEnv)
-  await waitForHttp('http://127.0.0.1:4445/health/ready')
+  await waitForHttp('http://127.0.0.1:4445/health/ready', { child: hydra })
   await registerClient()
-  spawnService('starstack', process.execPath, ['server/index.js'], starStackEnv)
-  await waitForHttp('http://127.0.0.1:5174/api/health', { expected: [200, 503], timeoutMs: 30000 })
+  const starStack = spawnService('starstack', process.execPath, ['server/index.js'], starStackEnv)
+  await waitForHttp('http://127.0.0.1:5174/api/health', {
+    expected: [200, 503],
+    timeoutMs: 30000,
+    child: starStack,
+  })
 
   const discoveryResponse = await fetch(new URL('/.well-known/openid-configuration', issuer))
   if (discoveryResponse.status !== 200) throw new Error('OIDC Discovery is unavailable')
@@ -604,6 +606,9 @@ try {
   if (!tokens.access_token || !tokens.refresh_token || !tokens.id_token) throw new Error('Token response is incomplete')
   const idClaims = decodeJwtPayload(tokens.id_token)
   const idHeader = decodeJwtHeader(tokens.id_token)
+  if (!jwks.keys?.some((key) => key.kid === idHeader.kid && key.kty === 'RSA')) {
+    throw new Error('The actually issued ID Token kid is absent from Public JWKS')
+  }
   const audiences = Array.isArray(idClaims.aud) ? idClaims.aud : [idClaims.aud]
   if (idHeader.alg !== 'RS256' || typeof idHeader.kid !== 'string' || !idHeader.kid
     || !idClaims.sid || idClaims.nonce !== authorization.nonce
@@ -727,6 +732,7 @@ try {
   if (oldRefresh.status < 400) throw new Error('Pre-logout Refresh Token survived global logout')
   const bclDeadline = Date.now() + 5000
   while (logoutTokens.length === 0 && Date.now() < bclDeadline) {
+    supervisor.throwIfShuttingDown()
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
   if (logoutTokens.length === 0) throw new Error('Hydra did not deliver Back-Channel Logout')
@@ -740,15 +746,18 @@ try {
   }
 
   console.log('6/7 重启 Hydra 后确认重放仍失败并检查持久状态')
-  hydra.kill('SIGTERM')
+  hydra.child.kill('SIGTERM')
   await waitForExit(hydra)
   hydra = spawnService('hydra-restarted', hydraBinary, ['serve', 'all', '--dev', '--sqa-opt-out'], hydraEnv)
-  await waitForHttp('http://127.0.0.1:4445/health/ready')
+  await waitForHttp('http://127.0.0.1:4445/health/ready', { child: hydra })
   const restartedJwks = await (await fetch(new URL('/.well-known/jwks.json', issuer))).json()
   const signingKids = jwks.keys.map((key) => key.kid).filter(Boolean).sort()
   const restartedKids = restartedJwks.keys?.map((key) => key.kid).filter(Boolean).sort()
   if (JSON.stringify(restartedKids) !== JSON.stringify(signingKids)) {
     throw new Error('Hydra signing keys changed across a database-backed restart')
+  }
+  if (!restartedKids.includes(idHeader.kid)) {
+    throw new Error('The active ID Token signing kid disappeared after Hydra restart')
   }
   const afterRestartCodeReplay = await exchangeCode(authorization)
   if (afterRestartCodeReplay.status < 400) throw new Error('Consumed code replay succeeded after Hydra restart')
@@ -786,9 +795,8 @@ try {
   }
 
   console.log('7/7 使用同一 canonical 凭据原地启动 run-local 并验证稳定 Discovery/JWKS')
-  await closeBffServer()
   await stopProcesses()
-  await waitForPortsFree([4444, 4445, 5174, 4180])
+  await waitForPortsFree([4444, 4445, 5174])
   await releaseRuntimeLock()
   releaseRuntimeLock = undefined
   const localRuntime = spawnService(
@@ -828,13 +836,74 @@ try {
   if (JSON.stringify(continuityKids) !== JSON.stringify(restartedKids)) {
     throw new Error('run-local changed the canonical Hydra signing kid after the protocol gate')
   }
+  const continuityJar = new CookieJar()
+  const continuityAuthorization = await authorize({ sessionJar: continuityJar })
+  const continuityTokenResponse = await exchangeCode(continuityAuthorization)
+  if (continuityTokenResponse.status !== 200) {
+    throw new Error(`run-local continuity authorization failed with ${continuityTokenResponse.status}`)
+  }
+  const continuityTokens = await continuityTokenResponse.json()
+  const continuityIdHeader = decodeJwtHeader(continuityTokens.id_token)
+  if (continuityIdHeader.alg !== 'RS256'
+    || continuityIdHeader.kid !== idHeader.kid
+    || !continuityJwks.keys?.some((key) => key.kid === continuityIdHeader.kid && key.kty === 'RSA')) {
+    throw new Error('run-local did not sign a real ID Token with the canonical Public JWKS kid')
+  }
+  // Do not leave the additional continuity authorization consuming one of the
+  // account's 16 active sid slots. Exercise the same broker boundary to revoke
+  // all fixture sessions while the Back-Channel endpoint is still available.
+  const continuityClaims = decodeJwtPayload(continuityTokens.id_token)
+  const cleanupBroker = await fetch(new URL('/internal/oidc/logout-transactions', issuer), {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'X-StarStack-Logout-Broker': logoutBrokerSecret,
+    },
+    body: JSON.stringify({
+      subject: profile.sub,
+      sid: continuityClaims.sid,
+      client_id: 'jieya-server-local',
+      state: randomUrlValue(),
+    }),
+  })
+  if (cleanupBroker.status !== 201) {
+    throw new Error(`Continuity cleanup broker failed with ${cleanupBroker.status}`)
+  }
+  const cleanupTransaction = await cleanupBroker.json()
+  const cleanupPage = await requestWithJar(continuityJar, cleanupTransaction.url)
+  if (cleanupPage.status !== 200) {
+    throw new Error(`Continuity cleanup page failed with ${cleanupPage.status}`)
+  }
+  const cleanupHtml = await cleanupPage.text()
+  const cleanupResponse = await requestWithJar(continuityJar, new URL('/account/logout', issuer), {
+    method: 'POST',
+    headers: browserEquivalentFormHeaders(cleanupPage, cleanupTransaction.url),
+    body: new URLSearchParams({
+      transaction: hidden(cleanupHtml, 'transaction'),
+      csrf_token: hidden(cleanupHtml, 'csrf_token'),
+    }),
+  })
+  if (cleanupResponse.status !== 303) {
+    throw new Error(`Continuity fixture cleanup failed with ${cleanupResponse.status}`)
+  }
   await waitForLogPattern(
     path.join(workDir, 'run-local-continuity.log'),
     /"ready":\s*true/,
   )
-  localRuntime.kill('SIGTERM')
+  localRuntime.child.kill('SIGTERM')
   await waitForExit(localRuntime)
   await waitForPortsFree([4444, 4445, 5174])
+  // The protocol fixture deliberately drives account generations, revoked
+  // sid retention and outbox history. Those assertions are complete above,
+  // but carrying that disposable StarStack state into a subsequent Jieya E2E
+  // changes its independent-session fixture. Keep the proven Hydra
+  // PostgreSQL/JWK/client state and credentials, while letting the next
+  // consumer recreate only the local StarStack fixture account database.
+  await Promise.all([
+    rm(starStackDatabase, { force: true }),
+    rm(`${starStackDatabase}-wal`, { force: true }),
+    rm(`${starStackDatabase}-shm`, { force: true }),
+  ])
 
   succeeded = true
   console.log(JSON.stringify({
@@ -853,13 +922,19 @@ try {
     exactJieyaFormActionPolicy: true,
     hydraCookieIsolation: true,
     restartReplayRejected: true,
-    runLocalDiscoveryJwksContinuity: true,
+    runLocalSignedIdTokenKidContinuity: true,
+    consumerFixtureReset: true,
     postgres16Runtime: true,
   }, null, 2))
+} catch (error) {
+  if (!supervisor.shutdownRequested) throw error
 } finally {
   await stopProcesses()
   await closeBffServer()
   if (releaseRuntimeLock) await releaseRuntimeLock()
-  if (workDir && succeeded) await rm(workDir, { recursive: true, force: true })
+  if (workDir && (succeeded || supervisor.shutdownRequested)) {
+    await rm(workDir, { recursive: true, force: true })
+  }
   else if (workDir) console.error(`Protocol test artifacts retained at ${workDir}`)
+  supervisor.removeSignalHandlers()
 }
