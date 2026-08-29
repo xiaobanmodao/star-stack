@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs'
-import { getDb } from '../db.js'
+import { getDb, getIdentityDb } from '../db.js'
 import { requireAdmin } from '../middleware/auth.js'
 import { localDay } from '../utils/dateHelpers.js'
 import { broadcastToScope } from './chatController.js'
@@ -16,7 +16,11 @@ import {
   serializeProblemMetadata,
 } from '../utils/problemMetadata.js'
 import { createAccountSubject } from '../utils/accountIdentityMigration.js'
-import { AccountLifecycleError, transitionAccountStatus } from '../services/accountLifecycle.js'
+import {
+  AccountLifecycleError,
+  changeAccountPassword,
+  transitionAccountStatus,
+} from '../services/accountLifecycle.js'
 
 const parsePositiveInteger = (value) => {
   const parsed = Number.parseInt(String(value ?? ''), 10)
@@ -163,8 +167,7 @@ export const resetPassword = async (req, res) => {
   if (!target) return res.status(404).json({ message: '用户不存在' })
   if (target.account_status === 'deleted') return res.status(409).json({ message: '已注销账号不可重置密码' })
   const passwordHash = await bcrypt.hash(password, 10)
-  await db.run(`UPDATE users SET password_hash = ? WHERE id = ?`, passwordHash, targetId)
-  await db.run(`DELETE FROM sessions WHERE user_id = ?`, targetId)
+  await changeAccountPassword(await getIdentityDb(), { accountId: targetId, passwordHash })
   await recordAdminAction(db, {
     adminId: auth.user.id,
     adminName: getAdminName(auth.user),
@@ -180,7 +183,7 @@ export const banUser = async (req, res) => {
   const targetId = req.params.id
   const { banned } = req.body || {}
   try {
-    await transitionAccountStatus(db, {
+    await transitionAccountStatus(await getIdentityDb(), {
       accountId: targetId,
       status: banned ? 'suspended' : 'active',
       validate: async ({ db: transactionDb, account, status }) => {
@@ -226,7 +229,7 @@ export const deleteAdminUser = async (req, res) => {
   const targetId = req.params.id
   if (targetId === adminUser.id) return res.status(400).json({ message: '不能删除自己' })
   try {
-    await transitionAccountStatus(db, {
+    await transitionAccountStatus(await getIdentityDb(), {
       accountId: targetId,
       status: 'deleted',
       validate: async ({ db: transactionDb, account }) => {

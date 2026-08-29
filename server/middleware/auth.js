@@ -68,7 +68,8 @@ export const getUserByToken = async (db, token) => {
   }
   const user = await db.get(
     `SELECT id, name, password_hash, email, email_verified_at, is_admin, is_banned,
-            account_status, avatar, bio, onboarded_at, rating,
+            account_subject, account_status, auth_generation,
+            avatar, bio, onboarded_at, rating,
             avatar_frame, avatar_overlay, equipped_title, created_at
      FROM users WHERE id = ?`,
     session.user_id

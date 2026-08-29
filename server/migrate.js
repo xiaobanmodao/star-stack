@@ -15,9 +15,15 @@
 
 import { closeDb, getDb, initDb } from './db.js'
 import { verifyAccountIdentityData } from './utils/accountIdentityMigration.js'
+import { verifyOidcIdentitySchema } from './utils/oidcIdentityMigration.js'
 
 const REQUIRED_SCHEMA = {
-  users: ['id', 'name', 'password_hash', 'email', 'email_verified_at', 'is_admin', 'is_banned', 'account_subject', 'account_status', 'account_tombstoned_at', 'avatar', 'rating', 'bio', 'onboarded_at', 'avatar_frame', 'avatar_overlay', 'equipped_title', 'created_at'],
+  users: ['id', 'name', 'password_hash', 'email', 'email_verified_at', 'is_admin', 'is_banned', 'account_subject', 'account_status', 'account_tombstoned_at', 'auth_generation', 'avatar', 'rating', 'bio', 'onboarded_at', 'avatar_frame', 'avatar_overlay', 'equipped_title', 'created_at'],
+  account_center_sessions: ['token_hash', 'user_id', 'account_subject', 'auth_generation', 'csrf_hash', 'created_at', 'expires_at', 'last_seen_at'],
+  oidc_interactions: ['challenge_hash', 'interaction_type', 'account_session_hash', 'account_subject', 'client_id', 'csrf_hash', 'status', 'created_at', 'expires_at', 'consumed_at'],
+  oidc_login_sessions: ['id', 'account_subject', 'client_id', 'sid', 'auth_generation', 'consent_request_id', 'status', 'created_at', 'updated_at', 'revoked_at'],
+  identity_outbox: ['id', 'event_type', 'subject', 'client_id', 'sid', 'payload_json', 'status', 'attempts', 'next_attempt_at', 'last_error', 'dedupe_key', 'created_at', 'updated_at', 'completed_at'],
+  oidc_logout_transactions: ['token_hash', 'account_subject', 'client_id', 'sid', 'state', 'account_session_hash', 'browser_csrf_hash', 'status', 'created_at', 'expires_at', 'bound_at', 'consumed_at'],
   email_verifications: ['email', 'code_hash', 'expires_at', 'attempts', 'last_sent_at', 'created_at'],
   sessions: ['token', 'user_id', 'created_at'],
   problems: ['id', 'slug', 'title', 'difficulty', 'tags', 'statement', 'input_desc', 'output_desc', 'data_range', 'samples', 'topic_tags', 'technique_tags', 'estimated_minutes', 'recommended_for', 'quality_status', 'editorial_status', 'revision_summary', 'creator_id', 'status', 'created_at'],
@@ -75,6 +81,10 @@ const REQUIRED_INDEXES = [
   'idx_email_verifications_expires',
   'idx_users_email_unique',
   'idx_users_account_subject_unique',
+  'idx_account_center_sessions_subject',
+  'idx_oidc_login_sessions_subject_status',
+  'idx_identity_outbox_due',
+  'idx_oidc_logout_transactions_expires',
   'idx_messages_conversation_id',
   'idx_notifications_user_id',
   'idx_problems_status_id',
@@ -118,6 +128,7 @@ const verifySchema = async (db) => {
   }
 
   await verifyAccountIdentityData(db)
+  await verifyOidcIdentitySchema(db)
 
   return { tableCount: tables.size }
 }

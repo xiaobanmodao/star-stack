@@ -1,0 +1,92 @@
+name: starstack-identity-dev
+
+services:
+  postgres:
+    image: postgres:16.15-alpine3.24@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    environment:
+      POSTGRES_DB: hydra
+      POSTGRES_USER: hydra
+      POSTGRES_PASSWORD: ${HYDRA_POSTGRES_PASSWORD:?set HYDRA_POSTGRES_PASSWORD}
+    volumes:
+      - hydra-postgres-data:/var/lib/postgresql/data
+    networks:
+      - identity-database
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hydra -d hydra"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: "no"
+
+  hydra-migrate:
+    image: oryd/hydra:v26.2.0-distroless@sha256:ad53a123ddf869fc23ea74f3d76b47e2966dc52f559e93ab31f81440f4d60c5e
+    command: migrate sql up -e --yes
+    environment:
+      DSN: postgres://hydra:${HYDRA_POSTGRES_PASSWORD:?set HYDRA_POSTGRES_PASSWORD}@postgres:5432/hydra?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - identity-database
+    restart: "no"
+
+  hydra:
+    image: oryd/hydra:v26.2.0-distroless@sha256:ad53a123ddf869fc23ea74f3d76b47e2966dc52f559e93ab31f81440f4d60c5e
+    command: serve all --dev
+    environment:
+      DSN: postgres://hydra:${HYDRA_POSTGRES_PASSWORD:?set HYDRA_POSTGRES_PASSWORD}@postgres:5432/hydra?sslmode=disable
+      SECRETS_SYSTEM: ${HYDRA_SYSTEM_SECRET:?set HYDRA_SYSTEM_SECRET}
+      SECRETS_COOKIE: ${HYDRA_COOKIE_SECRET:?set HYDRA_COOKIE_SECRET}
+      URLS_SELF_ISSUER: http://auth.localhost:5174
+      URLS_LOGIN: http://auth.localhost:5174/account/login
+      URLS_CONSENT: http://auth.localhost:5174/account/consent
+      URLS_LOGOUT: http://auth.localhost:5174/account/error
+      URLS_ERROR: http://auth.localhost:5174/account/error
+      WEBFINGER_OIDC_DISCOVERY_USERINFO_URL: http://auth.localhost:5174/oauth2/userinfo
+      STRATEGIES_ACCESS_TOKEN: opaque
+      OAUTH2_PKCE_ENFORCED: "true"
+      OAUTH2_SESSION_ENCRYPT_AT_REST: "true"
+      OAUTH2_TOKEN_HOOK_URL: http://host.docker.internal:5174/internal/oidc/token-hook
+      OAUTH2_TOKEN_HOOK_AUTH_TYPE: api_key
+      OAUTH2_TOKEN_HOOK_AUTH_CONFIG_IN: header
+      OAUTH2_TOKEN_HOOK_AUTH_CONFIG_NAME: X-StarStack-Hydra-Hook
+      OAUTH2_TOKEN_HOOK_AUTH_CONFIG_VALUE: ${OIDC_TOKEN_HOOK_SECRET:?set OIDC_TOKEN_HOOK_SECRET}
+      TTL_LOGIN_CONSENT_REQUEST: 10m
+      TTL_AUTH_CODE: 1m
+      TTL_ID_TOKEN: 5m
+      TTL_ACCESS_TOKEN: 10m
+      TTL_REFRESH_TOKEN: 720h
+      OAUTH2_GRANT_REFRESH_TOKEN_ROTATION_GRACE_PERIOD: 0s
+      OAUTH2_GRANT_REFRESH_TOKEN_ROTATION_GRACE_REUSE_COUNT: "0"
+      OAUTH2_GRANT_JWT_IAT_OPTIONAL: "false"
+      OAUTH2_EXPOSE_INTERNAL_ERRORS: "false"
+      SERVE_PUBLIC_CORS_ENABLED: "false"
+      SERVE_ADMIN_CORS_ENABLED: "false"
+      SERVE_COOKIES_SAME_SITE_MODE: Lax
+      SERVE_COOKIES_NAMES_LOGIN_CSRF: starstack_hydra_login_csrf
+      SERVE_COOKIES_NAMES_CONSENT_CSRF: starstack_hydra_consent_csrf
+      SERVE_COOKIES_NAMES_SESSION: starstack_hydra_session
+      SERVE_COOKIES_NAMES_DEVICE_CSRF: starstack_hydra_device_csrf
+      SERVE_COOKIES_PATHS_SESSION: /oauth2
+      LOG_LEVEL: warn
+      LOG_LEAK_SENSITIVE_VALUES: "false"
+    ports:
+      - "127.0.0.1:4444:4444"
+      - "127.0.0.1:4445:4445"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+    networks:
+      - identity-database
+      - identity-hook
+    restart: "no"
+
+volumes:
+  hydra-postgres-data:
+
+networks:
+  identity-database:
+    internal: true
+  identity-hook:

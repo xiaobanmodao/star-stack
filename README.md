@@ -146,6 +146,8 @@ OJ
 - `server/index.js` API 主入口
 - `server/judge.js` 判题与运行逻辑（C++/Java/Python，含预热机制）
 - `server/db.js` 数据库初始化
+- `server/identity/` Hydra Login/Consent、Token Hook、UserInfo 和受控 Public 代理
+- `infra/identity/` 固定版本的本地 Hydra/PostgreSQL 运行时与操作说明
 
 ## 当前维护重点
 
@@ -155,6 +157,14 @@ OJ
 - 依赖审计中暂时没有上游修复版本的条目保留在发布记录中，不通过强制升级破坏当前 React Router、Monaco 或编辑器能力；后续依赖有修复版本时再单独升级验证。
 
 ## 近期变更
+
+### 2026-08-30 - Hydra 身份运行时（本地门禁）
+
+- StarStack 作为 Ory Hydra 的 Login/Consent 应用，继续唯一保存账号、密码、不可变 `account_subject` 与账号状态；Hydra 独立保存 OAuth2/OIDC 协议对象。
+- 新增认证世代、账号中心会话、持久化撤销 outbox、自定义 Logout Broker、Token Hook 与最小 UserInfo；身份事务使用独立 SQLite 连接和统一操作锁，账号封禁、密码安全变更和全局退出在 Hydra 物理撤销窗口内失败关闭。
+- `jieya-server-local` 使用 Authorization Code + PKCE S256、`client_secret_basic` 与精确本地 callback；浏览器不应持有 StarStack Token，Jieya BFF 负责创建自己的应用会话。
+- Hydra Public 代理仅转发按版本、环境和固定 Client ID 计算出的精确 Hydra Cookie；账号中心 Cookie 双向隔离，Hydra Cookie 固定为 `/oauth2`、`HttpOnly`、`SameSite=Lax`（生产再强制 `Secure`）。身份表单使用 `Referrer-Policy: same-origin`，与 exact Origin/Referer + CSRF 校验保持一致且不向跨源泄漏路径。
+- OIDC 默认关闭，未接入生产 DNS/Nginx/PM2。真实 Hydra v26.2.0 + PostgreSQL 16.15 的启动、协议测试、备份与停止线见 `infra/identity/README.md`。
 
 ### 2026-08-27 - 练习 Rating 基础能力
 

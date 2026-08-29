@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs'
 import { createHash, randomBytes } from 'crypto'
-import { getDb } from '../db.js'
+import { getDb, getIdentityDb } from '../db.js'
 import {
   clearSessionCookie,
   getAuthToken,
@@ -24,6 +24,7 @@ import {
   normalizeEmail,
 } from '../utils/emailVerification.js'
 import { createAccountSubject } from '../utils/accountIdentityMigration.js'
+import { changeAccountPassword } from '../services/accountLifecycle.js'
 
 const createToken = () => randomBytes(24).toString('hex')
 export const getSessionFingerprint = (token) => createHash('sha256').update(String(token)).digest('hex').slice(0, 16)
@@ -501,10 +502,14 @@ export const updatePassword = async (req, res) => {
     return res.status(400).json({ message: '旧密码错误' })
   }
   const passwordHash = await bcrypt.hash(newPassword, 10)
-  await db.run(`UPDATE users SET password_hash = ? WHERE id = ?`, passwordHash, user.id)
-  // 密码变更后注销其他设备，当前会话保持有效，避免旧 Token 继续可用。
-  await db.run(`DELETE FROM sessions WHERE user_id = ? AND token != ?`, user.id, token)
-  return res.json({ ok: true, revokedOtherSessions: true })
+  await changeAccountPassword(await getIdentityDb(), { accountId: user.id, passwordHash })
+  clearSessionCookie(res)
+  return res.json({
+    ok: true,
+    revokedOtherSessions: true,
+    revokedAllSessions: true,
+    requiresLogin: true,
+  })
 }
 
 export const updateAvatar = async (req, res) => {

@@ -9,21 +9,26 @@ import {
   createAccountSubject,
   ensureAccountIdentitySchema,
 } from './utils/accountIdentityMigration.js'
+import { ensureOidcIdentitySchema } from './utils/oidcIdentityMigration.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DEFAULT_DATA_DIR = path.join(__dirname, 'data')
 const DB_PATH = path.resolve(process.env.DB_PATH || path.join(DEFAULT_DATA_DIR, 'starstack.sqlite'))
 const DATA_DIR = path.dirname(DB_PATH)
 
-const dbPromise = open({
+const openDatabaseConnection = () => open({
   filename: DB_PATH,
   driver: sqlite3.Database,
-}).then((db) => {
+}).then(async (db) => {
   // 多个 API 请求和评测完成回调可能同时写入 SQLite；显式忙等待可减少
   // SQLITE_BUSY 瞬态错误，同时避免把写事务无限阻塞在应用层。
   db.configure('busyTimeout', 5000)
+  await db.exec(`PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;`)
   return db
 })
+
+const dbPromise = openDatabaseConnection()
+let identityDbPromise = null
 
 const BUILTIN_PROBLEMS = [
   {
@@ -295,6 +300,7 @@ export const initDb = async () => {
       account_status TEXT NOT NULL DEFAULT 'active'
         CHECK (account_status IN ('active', 'suspended', 'deleted')),
       account_tombstoned_at TEXT,
+      auth_generation INTEGER NOT NULL DEFAULT 0 CHECK (auth_generation >= 0),
       onboarded_at TEXT,
       avatar_frame TEXT NOT NULL DEFAULT 'none',
       avatar_overlay TEXT NOT NULL DEFAULT 'none',
@@ -400,6 +406,7 @@ export const initDb = async () => {
 
   await ensureLegacyColumns(db)
   await ensureAccountIdentitySchema(db)
+  await ensureOidcIdentitySchema(db)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_submissions_problem_status ON submissions (problem_id, status);
     CREATE INDEX IF NOT EXISTS idx_submissions_status_queue ON submissions (status, queue_position, id);
@@ -1040,7 +1047,21 @@ export const getDb = async () => {
   return db
 }
 
+// Identity requests and the durable Hydra outbox use a dedicated SQLite
+// connection. This lets SQLite coordinate through WAL/busy_timeout instead of
+// allowing unrelated main-app statements to leak into an identity transaction
+// on the same connection.
+export const getIdentityDb = async () => {
+  if (!identityDbPromise) identityDbPromise = openDatabaseConnection()
+  return identityDbPromise
+}
+
 export const closeDb = async () => {
+  if (identityDbPromise) {
+    const identityDb = await identityDbPromise
+    if (identityDb.open) await identityDb.close()
+    identityDbPromise = null
+  }
   const db = await dbPromise
   if (db.open) await db.close()
 }

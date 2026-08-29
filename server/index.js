@@ -1,6 +1,6 @@
 import express from 'express'
 import cors from 'cors'
-import { getDb, initDb } from './db.js'
+import { getDb, getIdentityDb, initDb } from './db.js'
 import { getAuthToken, getUserByToken } from './middleware/auth.js'
 import { createCsrfProtection } from './middleware/csrf.js'
 import { errorHandler } from './middleware/errorHandler.js'
@@ -20,6 +20,11 @@ import {
   recoverPendingSubmissions,
   setLeaderboardSaveCallback,
 } from './controllers/submissionsController.js'
+import { loadIdentityConfig } from './identity/config.js'
+import { createHydraAdminClient } from './identity/hydraAdminClient.js'
+import { createIdentityRouter } from './identity/router.js'
+import { createHydraPublicProxy } from './identity/hydraPublicProxy.js'
+import { processIdentityOutboxBatch } from './services/identityOutbox.js'
 
 import authRouter from './routes/auth.js'
 import userRouter from './routes/user.js'
@@ -39,6 +44,13 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
 
 const app = express()
 app.disable('x-powered-by')
+const identityConfig = loadIdentityConfig()
+const identityAdmin = identityConfig.enabled
+  ? createHydraAdminClient({
+      baseUrl: identityConfig.hydraAdminUrl,
+      issuer: identityConfig.issuer,
+    })
+  : null
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -61,6 +73,19 @@ const configuredProxyHops = Number.parseInt(
   10,
 )
 app.set('trust proxy', Number.isInteger(configuredProxyHops) && configuredProxyHops >= 0 ? configuredProxyHops : 0)
+
+// OIDC is opt-in and intentionally mounted before the main JSON/CORS stack:
+// Hydra protocol requests include form bodies and secrets that must never be
+// parsed, echoed or logged by the regular API middleware.
+if (identityConfig.enabled) {
+  app.use(createIdentityRouter({
+    getDb: getIdentityDb,
+    admin: identityAdmin,
+    config: identityConfig,
+  }))
+  app.use(createHydraPublicProxy({ config: identityConfig }))
+}
+
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('X-Frame-Options', 'SAMEORIGIN')
@@ -638,11 +663,55 @@ const cleanupOperationalRecords = async () => {
     const verifications = await db.run(`DELETE FROM email_verifications WHERE expires_at < ?`, now)
     const clientErrors = await db.run(`DELETE FROM client_errors WHERE created_at < ?`, clientErrorCutoff)
     const auditLogs = await db.run(`DELETE FROM admin_audit_logs WHERE created_at < ?`, auditCutoff)
-    const removed = (sessions.changes || 0) + (verifications.changes || 0) + (clientErrors.changes || 0) + (auditLogs.changes || 0)
+    const accountCenterSessions = await db.run(`DELETE FROM account_center_sessions WHERE expires_at < ?`, now)
+    const interactions = await db.run(
+      `DELETE FROM oidc_interactions
+       WHERE expires_at < ? OR (consumed_at IS NOT NULL AND consumed_at < ?)`,
+      now,
+      clientErrorCutoff,
+    )
+    const logoutTransactions = await db.run(
+      `DELETE FROM oidc_logout_transactions
+       WHERE expires_at < ? OR (consumed_at IS NOT NULL AND consumed_at < ?)`,
+      now,
+      clientErrorCutoff,
+    )
+    const outbox = await db.run(
+      `DELETE FROM identity_outbox WHERE status = 'completed' AND completed_at < ?`,
+      auditCutoff,
+    )
+    const removed = (sessions.changes || 0) + (verifications.changes || 0)
+      + (clientErrors.changes || 0) + (auditLogs.changes || 0)
+      + (accountCenterSessions.changes || 0) + (interactions.changes || 0)
+      + (logoutTransactions.changes || 0) + (outbox.changes || 0)
     if (removed > 0) console.log(`[retention] cleaned sessions=${sessions.changes || 0} verifications=${verifications.changes || 0} clientErrors=${clientErrors.changes || 0} auditLogs=${auditLogs.changes || 0}`)
   } catch (error) {
     console.error('[retention] operational cleanup failed:', error)
   }
+}
+
+let identityOutboxRunning = false
+const processIdentityOutbox = async () => {
+  if (!identityConfig.enabled || identityOutboxRunning) return
+  identityOutboxRunning = true
+  try {
+    const db = await getIdentityDb()
+    const results = await processIdentityOutboxBatch(db, identityAdmin, { limit: 25 })
+    const completed = results.filter((result) => result.processed).length
+    const failed = results.filter((result) => result.retrying || result.dead).length
+    if (completed || failed) console.log(`[identity-outbox] completed=${completed} pending_or_dead=${failed}`)
+  } catch (error) {
+    console.error('[identity-outbox] worker failed:', error?.name || 'Error')
+  } finally {
+    identityOutboxRunning = false
+  }
+}
+
+const scheduleIdentityOutbox = () => {
+  if (!identityConfig.enabled) return
+  void processIdentityOutbox()
+  setInterval(() => { void processIdentityOutbox() }, 5000)
+  console.log(`[identity] Hydra adapter enabled for issuer ${identityConfig.issuer}`)
 }
 
 const scheduleOperationalCleanup = () => {
@@ -671,7 +740,10 @@ initDb()
       initPush()
       setLeaderboardSaveCallback(queueLeaderboardHistorySave)
       scheduleLeaderboardHistory()
-      void saveLeaderboardHistory(true)
+      // Sequence the first history write before starting the dedicated identity
+      // outbox connection to reduce startup write-lock contention. Later outbox
+      // failures remain durable and retry on the normal interval.
+      void saveLeaderboardHistory(true).finally(scheduleIdentityOutbox)
       scheduleMessageCleanup()
       scheduleOperationalCleanup()
     })

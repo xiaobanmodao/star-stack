@@ -38,6 +38,7 @@ server/data/db.json
 # Generated audit artifacts and local browser profile
 .audit/
 .audit-chrome/
+.identity-runtime/
 
 # Local secrets / push credentials
 server/.vapid.json
