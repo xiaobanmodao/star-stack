@@ -92,6 +92,18 @@ const stateRootForHome = (home) => path.join(
   `hydra-test-${LOCAL_IDENTITY_DSN_FINGERPRINT}`,
 )
 
+const waitForFile = async (file, timeoutMs = 5000) => {
+  const deadline = Date.now() + timeoutMs
+  while (true) {
+    try {
+      await access(file)
+      return
+    } catch {}
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${path.basename(file)}`)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
+
 afterEach(async () => {
   while (directories.length) await rm(directories.pop(), { recursive: true, force: true })
 })
@@ -346,6 +358,82 @@ describe('local identity SQLite path safety', () => {
     await expect(guard.verify()).rejects.toThrow(/hard link|link count|nlink/i)
     await guard.close()
   })
+
+  it.each([
+    ['database file', 0o644],
+    ['database directory', 0o755],
+  ])('does not chmod an unrelated %s after the server pins the original inode', async (kind, originalMode) => {
+    const container = await makeDirectory('starstack-identity-server-late-replacement-')
+    const stateRoot = path.join(container, 'state')
+    const database = path.join(stateRoot, 'fixture.sqlite')
+    const displaced = path.join(container, 'state.displaced')
+    const ready = path.join(container, 'server.ready')
+    const proceed = path.join(container, 'server.proceed')
+    const resultFile = path.join(container, 'server.result')
+    await mkdir(stateRoot, { mode: 0o700 })
+    const parentGuard = await prepareSecureSqliteUnit({ databasePath: database })
+    const dbModuleUrl = pathToFileURL(path.join(LOCAL_IDENTITY_PROJECT_ROOT, 'server', 'db.js')).href
+    const childSource = `
+      import { access, writeFile } from 'node:fs/promises'
+      const [moduleUrl, ready, proceed, resultFile] = process.argv.slice(1)
+      const { getDb, initDb, closeDb } = await import(moduleUrl)
+      await getDb()
+      await writeFile(ready, 'ready')
+      while (true) {
+        try { await access(proceed); break } catch { await new Promise(r => setTimeout(r, 5)) }
+      }
+      try {
+        await initDb()
+        await writeFile(resultFile, 'unexpected-success')
+        process.exitCode = 2
+      } catch {
+        await writeFile(resultFile, 'rejected')
+      } finally {
+        await closeDb().catch(() => {})
+      }
+    `
+    const child = spawn(process.execPath, [
+      '--input-type=module',
+      '-e',
+      childSource,
+      dbModuleUrl,
+      ready,
+      proceed,
+      resultFile,
+    ], {
+      cwd: LOCAL_IDENTITY_PROJECT_ROOT,
+      env: {
+        ...process.env,
+        DB_PATH: database,
+        IDENTITY_TEST_SQLITE_GUARD: parentGuard.environmentValue,
+        OIDC_ENABLED: 'false',
+      },
+      stdio: ['ignore', 'ignore', 'ignore'],
+    })
+    try {
+      await waitForFile(ready)
+      let unrelatedTarget
+      if (kind === 'database file') {
+        unrelatedTarget = path.join(container, 'unrelated.sqlite')
+        await writeFile(unrelatedTarget, 'unrelated', { mode: originalMode })
+        await rename(database, path.join(stateRoot, 'fixture.original.sqlite'))
+        await symlink(unrelatedTarget, database)
+      } else {
+        unrelatedTarget = path.join(container, 'unrelated-directory')
+        await mkdir(unrelatedTarget, { mode: originalMode })
+        await rename(stateRoot, displaced)
+        await symlink(unrelatedTarget, stateRoot)
+      }
+      await writeFile(proceed, 'continue')
+      const exit = await waitForExit(child, 10000)
+      expect(exit.code).toBe(0)
+      await expect(readFile(resultFile, 'utf8')).resolves.toBe('rejected')
+      expect((await lstat(unrelatedTarget)).mode & 0o777).toBe(originalMode)
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+      await parentGuard.close()
+    }
+  }, 20000)
 })
 
 describe('local identity child lifecycle', () => {

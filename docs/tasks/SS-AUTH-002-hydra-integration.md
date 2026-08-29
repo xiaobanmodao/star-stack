@@ -73,7 +73,7 @@
 - `identity_outbox` 设 10,000 行绝对上限、1,024 条未解决事件上限和单账号世代 64 条上限；历史异常 SID 枚举使用 `LIMIT 65` 预检并失败关闭。浏览器退出请求最多同步处理 8 条，后台每轮最多 25 条，其余持久化有界重试。
 - 本地 Hydra 工具只接受精确 DSN `postgres://hydra_test@127.0.0.1:55432/hydra_test?sslmode=disable`。`run-local-runtime` 与完整协议脚本都会在任何文件写入、Hydra spawn、migration 或 Client 注册之前拒绝其他 DSN；坏 DSN 零副作用测试覆盖两侧入口。
 - 精确 `hydra_test` DSN 与 checkout 外、按 DSN 指纹唯一的机器状态目录绑定；所有 worktree/clone 共享同一 mode-`0700` 目录、mode-`0600` canonical 凭据、fixture SQLite 和运行锁，禁止用路径覆盖引入另一套 `secrets.system`。安全文件加载验证 realpath、UID、类型、权限、`nlink === 1` 和打开前后 inode，symlink、hard link 或替换竞态失败关闭。
-- canonical fixture SQLite 主库由运行器安全创建/打开并固定 inode，父进程将精确文件身份交给 StarStack 子进程；子进程以 `SQLITE_OPEN_NOFOLLOW` 打开后再次匹配，初始化 WAL 后双方复核 rollback journal、WAL 与 SHM 的 UID、类型、`0600`、单一 link 和 inode，全部通过前不输出 ready。协议重建删除旧 fixture 前也先执行同一安全门禁，不能用删除掩盖已逸出的 hard link。
+- canonical fixture SQLite 主库由运行器安全创建/打开并固定 inode，父进程将精确文件身份交给 StarStack 子进程；子进程以 `SQLITE_OPEN_NOFOLLOW` 打开后再次匹配，初始化 WAL 后双方复核 rollback journal、WAL 与 SHM 的 UID、类型、`0600`、单一 link 和 inode，全部通过前不输出 ready。guard 模式不再执行任何 legacy 路径型 `chmod`，即使主库或目录在打开后被换成 symlink，也只会失败关闭而不会先修改无关目标。协议重建删除旧 fixture 前也先执行同一安全门禁，不能用删除掩盖已逸出的 hard link。
 - 运行锁以短时 operation guard 串行 acquire/release；stale 主锁按 PID、token、inode 复核后原子 quarantine，双 checkout 并发回收最多一个成功。operation guard 本身不递归自动删除，异常残留必须按运行手册确认端口、PID 与数据库连接后人工 quarantine。
 - 协议门禁在机器锁和零其他数据库连接下，用单一 PostgreSQL 事务重建 Hydra schema，并以 pending 状态把数据库 reset 与凭据轮换失败关闭；提交前信号会回滚/清 pending，提交后会先完成凭据安装。`run-local-runtime` 仅在 Discovery、JWKS 和固定客户端均通过后输出 ready；协议末尾真实重启该命令、签发新的 ID Token，并以其 header `kid` 证明 active RS256 key 与公开 JWKS 及重启前 `kid` 一致。
 - `SIGINT`/`SIGTERM` 统一停止并等待 migration/Hydra/StarStack 子进程、释放锁和端口；Hydra 在 readiness listener 建立前退出会立即失败，不再假 ready。协议证据完成后只清理可重建的 StarStack fixture SQLite，保留已证明的 Hydra PostgreSQL/JWK/Client 与 canonical 凭据供 Jieya E2E 使用。
@@ -128,7 +128,7 @@
 最终本地门禁：
 
 - `npm run lint`：通过；
-- `npm test -- --run`：44 个文件、237 项通过；
+- `npm test -- --run`：44 个文件、239 项通过；
 - `npm run build`：通过；
 - `npm run test:smoke`：隔离数据库通过；
 - `node server/migrate.js` 重复迁移与 `npm run db:verify`：50 张表、0 个外键问题；

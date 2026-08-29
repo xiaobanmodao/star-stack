@@ -19,6 +19,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DEFAULT_DATA_DIR = path.join(__dirname, 'data')
 const DB_PATH = path.resolve(process.env.DB_PATH || path.join(DEFAULT_DATA_DIR, 'starstack.sqlite'))
 const DATA_DIR = path.dirname(DB_PATH)
+const localIdentitySqliteGuardEnabled = Boolean(process.env.IDENTITY_TEST_SQLITE_GUARD)
 const localIdentitySqliteGuardRequired = process.env.OIDC_ENABLED === 'true'
   && process.env.OIDC_ISSUER === 'http://auth.localhost:5174'
 if (localIdentitySqliteGuardRequired && !process.env.IDENTITY_TEST_SQLITE_GUARD) {
@@ -300,15 +301,22 @@ const ensureBuiltinProblems = async (db) => {
 }
 
 export const initDb = async () => {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 })
-  }
-  // SQLite contains passwords, sessions and private messages. Keep the live
-  // database and WAL sidecars readable only by the service account.
-  try { fs.chmodSync(DATA_DIR, 0o700) } catch {}
-  for (const filePath of [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`]) {
-    if (fs.existsSync(filePath)) {
-      try { fs.chmodSync(filePath, 0o600) } catch {}
+  // The local identity runtime has already pinned secure file descriptors and
+  // passes the exact inode set into this process. Path-based chmod would
+  // follow a symlink introduced after that pin and mutate an unrelated target
+  // before the final guard verification. In guarded mode, creation, mode and
+  // sidecar checks belong exclusively to the descriptor-backed guard.
+  if (!localIdentitySqliteGuardEnabled) {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 })
+    }
+    // SQLite contains passwords, sessions and private messages. Keep the live
+    // database and WAL sidecars readable only by the service account.
+    try { fs.chmodSync(DATA_DIR, 0o700) } catch {}
+    for (const filePath of [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`]) {
+      if (fs.existsSync(filePath)) {
+        try { fs.chmodSync(filePath, 0o600) } catch {}
+      }
     }
   }
   const db = await dbPromise
