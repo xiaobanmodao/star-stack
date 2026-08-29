@@ -5,6 +5,10 @@ import { fileURLToPath } from 'url'
 import bcrypt from 'bcryptjs'
 import { randomBytes } from 'crypto'
 import fs from 'fs'
+import {
+  createAccountSubject,
+  ensureAccountIdentitySchema,
+} from './utils/accountIdentityMigration.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DEFAULT_DATA_DIR = path.join(__dirname, 'data')
@@ -287,6 +291,10 @@ export const initDb = async () => {
       email_verified_at TEXT,
       is_admin INTEGER NOT NULL DEFAULT 0,
       is_banned INTEGER NOT NULL DEFAULT 0,
+      account_subject TEXT NOT NULL UNIQUE,
+      account_status TEXT NOT NULL DEFAULT 'active'
+        CHECK (account_status IN ('active', 'suspended', 'deleted')),
+      account_tombstoned_at TEXT,
       onboarded_at TEXT,
       avatar_frame TEXT NOT NULL DEFAULT 'none',
       avatar_overlay TEXT NOT NULL DEFAULT 'none',
@@ -391,6 +399,7 @@ export const initDb = async () => {
   `)
 
   await ensureLegacyColumns(db)
+  await ensureAccountIdentitySchema(db)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_submissions_problem_status ON submissions (problem_id, status);
     CREATE INDEX IF NOT EXISTS idx_submissions_status_queue ON submissions (status, queue_position, id);
@@ -472,12 +481,16 @@ export const initDb = async () => {
     // 初始管理员密码：优先取环境变量；否则生成随机密码并打印（避免硬编码弱口令）
     const adminPassword = process.env.ADMIN_PASSWORD || randomBytes(9).toString('base64url')
     const passwordHash = bcrypt.hashSync(adminPassword, 10)
+    const accountSubject = createAccountSubject()
     await db.run(
-      `INSERT INTO users (id, name, password_hash, is_admin, is_banned, created_at)
-       VALUES (?, ?, ?, 1, 0, ?)`,
+      `INSERT INTO users (
+         id, name, password_hash, is_admin, is_banned,
+         account_subject, account_status, created_at
+       ) VALUES (?, ?, ?, 1, 0, ?, 'active', ?)`,
       adminId,
       adminName,
       passwordHash,
+      accountSubject,
       new Date().toISOString()
     )
     if (!process.env.ADMIN_PASSWORD) {

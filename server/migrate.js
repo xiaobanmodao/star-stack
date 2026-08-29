@@ -14,9 +14,10 @@
  */
 
 import { closeDb, getDb, initDb } from './db.js'
+import { verifyAccountIdentityData } from './utils/accountIdentityMigration.js'
 
 const REQUIRED_SCHEMA = {
-  users: ['id', 'name', 'password_hash', 'email', 'email_verified_at', 'is_admin', 'is_banned', 'avatar', 'rating', 'bio', 'onboarded_at', 'avatar_frame', 'avatar_overlay', 'equipped_title', 'created_at'],
+  users: ['id', 'name', 'password_hash', 'email', 'email_verified_at', 'is_admin', 'is_banned', 'account_subject', 'account_status', 'account_tombstoned_at', 'avatar', 'rating', 'bio', 'onboarded_at', 'avatar_frame', 'avatar_overlay', 'equipped_title', 'created_at'],
   email_verifications: ['email', 'code_hash', 'expires_at', 'attempts', 'last_sent_at', 'created_at'],
   sessions: ['token', 'user_id', 'created_at'],
   problems: ['id', 'slug', 'title', 'difficulty', 'tags', 'statement', 'input_desc', 'output_desc', 'data_range', 'samples', 'topic_tags', 'technique_tags', 'estimated_minutes', 'recommended_for', 'quality_status', 'editorial_status', 'revision_summary', 'creator_id', 'status', 'created_at'],
@@ -73,6 +74,7 @@ const REQUIRED_INDEXES = [
   'idx_problems_status_difficulty',
   'idx_email_verifications_expires',
   'idx_users_email_unique',
+  'idx_users_account_subject_unique',
   'idx_messages_conversation_id',
   'idx_notifications_user_id',
   'idx_problems_status_id',
@@ -96,7 +98,7 @@ const verifySchema = async (db) => {
     }
   }
 
-  if (missingTables.length || missingColumns.length) {
+  if (missingTables.length || missingColumns.length || missingIndexes.length) {
     const details = [
       missingTables.length ? `缺少表：${missingTables.join(', ')}` : '',
       missingColumns.length ? `缺少字段：${missingColumns.join(', ')}` : '',
@@ -114,6 +116,8 @@ const verifySchema = async (db) => {
   if (integrity?.integrity_check !== 'ok') {
     throw new Error(`SQLite 完整性检查失败：${integrity?.integrity_check || '未知错误'}`)
   }
+
+  await verifyAccountIdentityData(db)
 
   return { tableCount: tables.size }
 }

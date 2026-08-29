@@ -23,6 +23,7 @@ import {
   isValidEmail,
   normalizeEmail,
 } from '../utils/emailVerification.js'
+import { createAccountSubject } from '../utils/accountIdentityMigration.js'
 
 const createToken = () => randomBytes(24).toString('hex')
 export const getSessionFingerprint = (token) => createHash('sha256').update(String(token)).digest('hex').slice(0, 16)
@@ -244,10 +245,13 @@ export const register = async (req, res) => {
 
   const passwordHash = await bcrypt.hash(password, 10)
   const createdAt = new Date().toISOString()
+  const accountSubject = createAccountSubject()
   await db.run(
-    `INSERT INTO users (id, name, password_hash, email, email_verified_at, is_admin, is_banned, created_at)
-     VALUES (?, ?, ?, ?, ?, 0, 0, ?)`,
-    id, name, passwordHash, email, createdAt, createdAt
+    `INSERT INTO users (
+       id, name, password_hash, email, email_verified_at, is_admin, is_banned,
+       account_subject, account_status, created_at
+     ) VALUES (?, ?, ?, ?, ?, 0, 0, ?, 'active', ?)`,
+    id, name, passwordHash, email, createdAt, accountSubject, createdAt
   )
   await db.run(`DELETE FROM email_verifications WHERE email = ?`, email)
   const token = createToken()
@@ -342,7 +346,9 @@ export const login = async (req, res) => {
   }
   const db = await getDb()
   const user = await db.get(
-    `SELECT id, name, password_hash, email, is_admin, is_banned, avatar, avatar_frame, avatar_overlay, equipped_title, onboarded_at FROM users WHERE id = ?`,
+    `SELECT id, name, password_hash, email, is_admin, is_banned, account_status,
+            avatar, avatar_frame, avatar_overlay, equipped_title, onboarded_at
+     FROM users WHERE id = ?`,
     id
   )
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
@@ -350,7 +356,10 @@ export const login = async (req, res) => {
     return res.status(401).json({ message: 'ID 或密码错误' })
   }
   clearLoginFailures(clientIp)
-  if (user.is_banned) {
+  if (user.account_status === 'deleted') {
+    return res.status(401).json({ message: 'ID 或密码错误' })
+  }
+  if (user.is_banned || user.account_status !== 'active') {
     return res.status(403).json({ message: '账号已被封禁' })
   }
   await recalculateUserRating(db, user.id)
@@ -374,7 +383,7 @@ export const getMe = async (req, res) => {
   if (!user) {
     return res.status(401).json({ message: '登录已失效' })
   }
-  if (user.is_banned) {
+  if (user.is_banned || user.account_status !== 'active') {
     await db.run(`DELETE FROM sessions WHERE token = ?`, token)
     return res.status(403).json({ message: '账号已被封禁' })
   }

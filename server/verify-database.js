@@ -4,6 +4,7 @@ import sqlite3 from 'sqlite3'
 import { open } from 'sqlite'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { verifyAccountIdentityData } from './utils/accountIdentityMigration.js'
 
 const databasePath = process.env.DB_PATH || path.join(path.dirname(fileURLToPath(import.meta.url)), 'data', 'starstack.sqlite')
 const requiredTables = [
@@ -11,7 +12,7 @@ const requiredTables = [
   'user_stats', 'daily_activity', 'solved_problems',
 ]
 const requiredColumns = {
-  users: ['id', 'name', 'password_hash', 'email', 'is_admin', 'is_banned', 'avatar', 'avatar_frame', 'avatar_overlay', 'equipped_title'],
+  users: ['id', 'name', 'password_hash', 'email', 'is_admin', 'is_banned', 'account_subject', 'account_status', 'account_tombstoned_at', 'avatar', 'avatar_frame', 'avatar_overlay', 'equipped_title'],
   sessions: ['token', 'user_id', 'created_at'],
   problems: ['id', 'slug', 'title', 'difficulty', 'tags', 'topic_tags', 'technique_tags', 'estimated_minutes', 'recommended_for', 'quality_status', 'editorial_status', 'revision_summary', 'status', 'creator_id'],
   testcases: ['id', 'problem_id', 'input', 'output', 'is_sample', 'time_limit_ms'],
@@ -23,6 +24,7 @@ const requiredIndexes = [
   'idx_notifications_user_id',
   'idx_problems_status_id',
   'idx_problems_quality_status',
+  'idx_users_account_subject_unique',
 ]
 
 const db = await open({
@@ -55,11 +57,13 @@ try {
   const availableIndexes = new Set(indexes.map((index) => index.name))
   const missingIndexes = requiredIndexes.filter((index) => !availableIndexes.has(index))
   if (missingIndexes.length > 0) throw new Error(`数据库缺少必需索引：${missingIndexes.join(', ')}`)
+  const accountIdentities = await verifyAccountIdentityData(db)
   console.log(JSON.stringify({
     ok: true,
     database: path.basename(databasePath),
     tableCount: tables.length,
     foreignKeyIssues: 0,
+    accountIdentities,
   }, null, 2))
 } finally {
   await db.close()

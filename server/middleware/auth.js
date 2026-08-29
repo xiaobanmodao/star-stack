@@ -67,7 +67,8 @@ export const getUserByToken = async (db, token) => {
     return null
   }
   const user = await db.get(
-    `SELECT id, name, password_hash, email, email_verified_at, is_admin, is_banned, avatar, bio, onboarded_at, rating,
+    `SELECT id, name, password_hash, email, email_verified_at, is_admin, is_banned,
+            account_status, avatar, bio, onboarded_at, rating,
             avatar_frame, avatar_overlay, equipped_title, created_at
      FROM users WHERE id = ?`,
     session.user_id
@@ -88,9 +89,9 @@ export const requireAdmin = async (req, res) => {
     res.status(403).json({ message: '无权限' })
     return null
   }
-  if (user.is_banned) {
+  if (user.is_banned || user.account_status !== 'active') {
     await db.run(`DELETE FROM sessions WHERE token = ?`, token)
-    res.status(403).json({ message: '账号已被封禁' })
+    res.status(403).json({ message: user.account_status === 'deleted' ? '账号已注销' : '账号已被封禁' })
     return null
   }
   const auth = { db, user }
@@ -121,9 +122,9 @@ export const requireUser = async (req, res) => {
     res.status(401).json({ message: '登录已失效' })
     return null
   }
-  if (user.is_banned) {
+  if (user.is_banned || user.account_status !== 'active') {
     await db.run(`DELETE FROM sessions WHERE token = ?`, token)
-    res.status(403).json({ message: '账号已被封禁' })
+    res.status(403).json({ message: user.account_status === 'deleted' ? '账号已注销' : '账号已被封禁' })
     return null
   }
   return { db, user }
