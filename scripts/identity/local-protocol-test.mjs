@@ -10,7 +10,6 @@ import {
   mkdtemp,
   readFile,
   rm,
-  writeFile,
 } from 'node:fs/promises'
 import net from 'node:net'
 import path from 'node:path'
@@ -22,22 +21,31 @@ import {
   loadIdentityConfig,
 } from '../../server/identity/config.js'
 import { assertLocalHydraTestDsn } from './localHydraDsn.mjs'
+import {
+  assertCanonicalLocalIdentityCredentialsPath,
+  assertCanonicalLocalIdentityStarStackDatabasePath,
+  LOCAL_IDENTITY_RUNTIME_ROOT,
+  stageLocalIdentityCredentialsRotation,
+} from './localIdentityCredentials.mjs'
+import { resetLocalHydraTestDatabase } from './localHydraDatabase.mjs'
+import { acquireLocalIdentityRuntimeLock } from './localIdentityRuntimeLock.mjs'
 
 const requireFromServer = createRequire(new URL('../../server/package.json', import.meta.url))
 const sqlite3 = requireFromServer('sqlite3')
 const { open } = requireFromServer('sqlite')
 
-const runtimeRoot = path.resolve('.identity-runtime')
+const runtimeRoot = LOCAL_IDENTITY_RUNTIME_ROOT
 const hydraBinary = process.env.HYDRA_TEST_BINARY || path.join(runtimeRoot, 'hydra')
 const hydraDsn = assertLocalHydraTestDsn(process.env.HYDRA_TEST_DSN)
+const credentialsPath = assertCanonicalLocalIdentityCredentialsPath(
+  process.env.IDENTITY_TEST_CREDENTIALS_FILE,
+)
+const starStackDatabase = assertCanonicalLocalIdentityStarStackDatabasePath(
+  process.env.IDENTITY_TEST_STARSTACK_DB,
+)
 await access(hydraBinary).catch(() => {
   throw new Error('Hydra binary is missing; set HYDRA_TEST_BINARY or run npm run identity:hydra:fetch')
 })
-await mkdir(runtimeRoot, { recursive: true, mode: 0o700 })
-await chmod(runtimeRoot, 0o700)
-const workDir = await mkdtemp(path.join(runtimeRoot, 'protocol-'))
-const starStackDatabase = process.env.IDENTITY_TEST_STARSTACK_DB
-  || path.join(runtimeRoot, 'ss-auth-002-starstack.sqlite')
 const issuer = 'http://auth.localhost:5174'
 const adminOrigin = 'http://127.0.0.1:4445'
 const localIdentityConfig = loadIdentityConfig({ NODE_ENV: 'development' })
@@ -57,57 +65,24 @@ if (JSON.stringify(localIdentityConfig.hydraCookies.names)
 }
 const allowedHydraCookieNames = new Set(expectedLiveHydraCookieNames)
 const observedHydraCookieNames = new Set()
-const credentialsPath = process.env.IDENTITY_TEST_CREDENTIALS_FILE
-  || path.join(runtimeRoot, 'ss-auth-002-local-credentials.json')
-
-const createCredentials = () => ({
-  fixtureId: 'oidc-fixture-user',
-  fixturePassword: randomBytes(32).toString('base64url'),
-  clientSecret: randomBytes(48).toString('base64url'),
-  tokenHookSecret: randomBytes(48).toString('base64url'),
-  logoutBrokerSecret: randomBytes(48).toString('base64url'),
-  systemSecret: randomBytes(48).toString('base64url'),
-  cookieSecret: randomBytes(48).toString('base64url'),
-})
-
-const loadCredentials = async () => {
-  try {
-    return JSON.parse(await readFile(credentialsPath, 'utf8'))
-  } catch (error) {
-    if (error?.code !== 'ENOENT') throw error
-    const generated = createCredentials()
-    await writeFile(credentialsPath, `${JSON.stringify(generated, null, 2)}\n`, {
-      encoding: 'utf8',
-      flag: 'wx',
-      mode: 0o600,
-    })
-    await chmod(credentialsPath, 0o600)
-    return generated
-  }
-}
-
-const credentials = await loadCredentials()
-await chmod(credentialsPath, 0o600)
-for (const [name, value] of Object.entries(credentials)) {
-  const minimumLength = name === 'fixtureId' ? 3 : 32
-  if (typeof value !== 'string' || value.length < minimumLength) {
-    throw new Error(`Local identity credential ${name} is missing or too short`)
-  }
-}
-const {
-  fixtureId,
-  fixturePassword,
-  clientSecret,
-  tokenHookSecret,
-  logoutBrokerSecret,
-  systemSecret,
-  cookieSecret,
-} = credentials
 const processes = []
 let bffServer
 let succeeded = false
+let workDir
+let releaseRuntimeLock
+let fixtureId
+let fixturePassword
+let clientSecret
+let tokenHookSecret
+let logoutBrokerSecret
+let systemSecret
+let cookieSecret
 
-const waitForExit = (child) => new Promise((resolve) => child.once('exit', resolve))
+const isChildRunning = (child) => child.exitCode === null && child.signalCode === null
+
+const waitForExit = (child) => isChildRunning(child)
+  ? new Promise((resolve) => child.once('exit', resolve))
+  : Promise.resolve(child.exitCode ?? child.signalCode)
 
 const run = (command, args, { env = process.env } = {}) => new Promise((resolve, reject) => {
   const child = spawn(command, args, {
@@ -148,9 +123,12 @@ const assertPortFree = (port, host = '127.0.0.1') => new Promise((resolve, rejec
   server.listen(port, host, () => server.close(resolve))
 })
 
-const waitForHttp = async (url, { expected = [200], timeoutMs = 20000 } = {}) => {
+const waitForHttp = async (url, { expected = [200], timeoutMs = 20000, child } = {}) => {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
+    if (child && !isChildRunning(child)) {
+      throw new Error(`Service exited before ${url} became ready`)
+    }
     try {
       const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(1000) })
       if (expected.includes(response.status)) return response
@@ -158,6 +136,43 @@ const waitForHttp = async (url, { expected = [200], timeoutMs = 20000 } = {}) =>
     await new Promise((resolve) => setTimeout(resolve, 150))
   }
   throw new Error(`Timed out waiting for ${url}`)
+}
+
+const stopProcesses = async () => {
+  const running = processes.filter(isChildRunning).reverse()
+  const exits = running.map(waitForExit)
+  for (const child of running) child.kill('SIGTERM')
+  await Promise.all(exits)
+}
+
+const closeBffServer = async () => {
+  if (!bffServer) return
+  const server = bffServer
+  bffServer = undefined
+  await new Promise((resolve) => server.close(resolve))
+}
+
+const waitForPortsFree = async (ports, timeoutMs = 10000) => {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      await Promise.all(ports.map((port) => assertPortFree(port)))
+      return
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  throw new Error(`Local identity ports did not close: ${ports.join(', ')}`)
+}
+
+const waitForLogPattern = async (file, pattern, timeoutMs = 10000) => {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      if (pattern.test(await readFile(file, 'utf8'))) return
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  throw new Error(`Local runtime did not emit its bounded readiness marker`)
 }
 
 class CookieJar {
@@ -384,7 +399,7 @@ const decodeJwtHeader = (token) => {
 const localNoProxy = ['localhost', '127.0.0.1', '::1', '.localhost', 'auth.localhost', 'jieya.localhost']
   .join(',')
 
-const hydraEnv = {
+const createHydraEnv = () => ({
   ...process.env,
   NO_PROXY: [process.env.NO_PROXY, localNoProxy].filter(Boolean).join(','),
   no_proxy: [process.env.no_proxy, localNoProxy].filter(Boolean).join(','),
@@ -423,9 +438,9 @@ const hydraEnv = {
   SERVE_COOKIES_PATHS_SESSION: HYDRA_BROWSER_COOKIE_PATH,
   LOG_LEVEL: 'warn',
   LOG_LEAK_SENSITIVE_VALUES: 'false',
-}
+})
 
-const starStackEnv = {
+const createStarStackEnv = () => ({
   ...process.env,
   NODE_ENV: 'development',
   HOST: '127.0.0.1',
@@ -441,7 +456,7 @@ const starStackEnv = {
   OIDC_TOKEN_HOOK_SECRET: tokenHookSecret,
   OIDC_LOGOUT_BROKER_SECRET: logoutBrokerSecret,
   ALLOWED_ORIGINS: issuer,
-}
+})
 
 const registerClient = async () => {
   const itemUrl = new URL('/admin/clients/jieya-server-local', adminOrigin)
@@ -490,6 +505,10 @@ const registerClient = async () => {
 const logoutTokens = []
 
 try {
+  releaseRuntimeLock = await acquireLocalIdentityRuntimeLock()
+  await mkdir(runtimeRoot, { recursive: true, mode: 0o700 })
+  await chmod(runtimeRoot, 0o700)
+  workDir = await mkdtemp(path.join(runtimeRoot, 'protocol-'))
   await Promise.all([
     ...[4444, 4445, 5174, 4180].map((port) => assertPortFree(port)),
   ])
@@ -497,7 +516,31 @@ try {
   if (!/^Version:\s+v26\.2\.0\s*$/m.test(hydraVersion)) {
     throw new Error('Hydra protocol gate requires exactly v26.2.0')
   }
-  console.log('1/6 迁移 Hydra PostgreSQL 测试数据库')
+  const rotation = await stageLocalIdentityCredentialsRotation(credentialsPath)
+  await resetLocalHydraTestDatabase({
+    dsn: hydraDsn,
+    hydraBinary,
+    run,
+  })
+  await Promise.all([
+    rm(starStackDatabase, { force: true }),
+    rm(`${starStackDatabase}-wal`, { force: true }),
+    rm(`${starStackDatabase}-shm`, { force: true }),
+  ])
+  await rotation.commit()
+  ;({
+    fixtureId,
+    fixturePassword,
+    clientSecret,
+    tokenHookSecret,
+    logoutBrokerSecret,
+    systemSecret,
+    cookieSecret,
+  } = rotation.credentials)
+  const hydraEnv = createHydraEnv()
+  const starStackEnv = createStarStackEnv()
+
+  console.log('1/7 重建 canonical Hydra/StarStack 测试身份单元并执行迁移')
   await run(hydraBinary, ['migrate', 'sql', 'up', '-e', '--yes'], { env: hydraEnv })
 
   bffServer = createServer((req, res) => {
@@ -524,7 +567,7 @@ try {
     })
   })
 
-  console.log('2/6 启动固定 Hydra v26.2.0 与临时 StarStack 身份服务')
+  console.log('2/7 启动固定 Hydra v26.2.0 与临时 StarStack 身份服务')
   let hydra = spawnService('hydra', hydraBinary, ['serve', 'all', '--dev', '--sqa-opt-out'], hydraEnv)
   await waitForHttp('http://127.0.0.1:4445/health/ready')
   await registerClient()
@@ -553,7 +596,7 @@ try {
     throw new Error('Hydra JWKS does not expose an RSA signing key')
   }
 
-  console.log('3/6 验证 Discovery/JWKS、授权码 + PKCE、Token Hook 与最小 UserInfo')
+  console.log('3/7 验证 Discovery/JWKS、授权码 + PKCE、Token Hook 与最小 UserInfo')
   const authorization = await authorize()
   const tokenResponse = await exchangeCode(authorization)
   if (tokenResponse.status !== 200) throw new Error(`Authorization code exchange failed with ${tokenResponse.status}`)
@@ -581,7 +624,7 @@ try {
     throw new Error('UserInfo claims are not minimal')
   }
 
-  console.log('4/6 验证 code/Refresh 一次性消费与重放失败')
+  console.log('4/7 验证 code/Refresh 一次性消费与重放失败')
   const replayCode = await exchangeCode(authorization)
   if (replayCode.status < 400) throw new Error('Authorization code replay unexpectedly succeeded')
   const refreshAuthorization = await authorize()
@@ -608,7 +651,7 @@ try {
     throw new Error('Refresh Token replay did not invalidate the rotated token family')
   }
 
-  console.log('5/6 验证自定义全局退出、旧授权竞态与 Back-Channel Logout')
+  console.log('5/7 验证自定义全局退出、旧授权竞态与 Back-Channel Logout')
   const logoutAuthorization = await authorize()
   const logoutTokenResponse = await exchangeCode(logoutAuthorization)
   if (logoutTokenResponse.status !== 200) throw new Error('Logout fixture authorization failed')
@@ -696,7 +739,7 @@ try {
     throw new Error('Back-Channel Logout Token header or claims are invalid')
   }
 
-  console.log('6/6 重启 Hydra 后确认重放仍失败并检查持久状态')
+  console.log('6/7 重启 Hydra 后确认重放仍失败并检查持久状态')
   hydra.kill('SIGTERM')
   await waitForExit(hydra)
   hydra = spawnService('hydra-restarted', hydraBinary, ['serve', 'all', '--dev', '--sqa-opt-out'], hydraEnv)
@@ -742,6 +785,57 @@ try {
     }
   }
 
+  console.log('7/7 使用同一 canonical 凭据原地启动 run-local 并验证稳定 Discovery/JWKS')
+  await closeBffServer()
+  await stopProcesses()
+  await waitForPortsFree([4444, 4445, 5174, 4180])
+  await releaseRuntimeLock()
+  releaseRuntimeLock = undefined
+  const localRuntime = spawnService(
+    'run-local-continuity',
+    process.execPath,
+    ['scripts/identity/run-local-runtime.mjs'],
+    {
+      ...process.env,
+      HYDRA_TEST_BINARY: hydraBinary,
+      HYDRA_TEST_DSN: hydraDsn,
+      IDENTITY_TEST_CREDENTIALS_FILE: credentialsPath,
+      IDENTITY_TEST_STARSTACK_DB: starStackDatabase,
+    },
+  )
+  await waitForHttp('http://127.0.0.1:5174/api/health', {
+    expected: [200, 503],
+    timeoutMs: 30000,
+    child: localRuntime,
+  })
+  const continuityDiscoveryResponse = await waitForHttp(
+    new URL('/.well-known/openid-configuration', issuer),
+    { expected: [200], timeoutMs: 30000, child: localRuntime },
+  )
+  const continuityDiscovery = await continuityDiscoveryResponse.json()
+  if (continuityDiscovery.issuer !== issuer
+    || continuityDiscovery.jwks_uri !== `${issuer}/.well-known/jwks.json`) {
+    throw new Error('run-local Discovery changed after the protocol gate')
+  }
+  const continuityJwksResponse = await fetch(continuityDiscovery.jwks_uri, {
+    signal: AbortSignal.timeout(5000),
+  })
+  if (continuityJwksResponse.status !== 200) {
+    throw new Error(`run-local JWKS returned ${continuityJwksResponse.status}`)
+  }
+  const continuityJwks = await continuityJwksResponse.json()
+  const continuityKids = continuityJwks.keys?.map((key) => key.kid).filter(Boolean).sort()
+  if (JSON.stringify(continuityKids) !== JSON.stringify(restartedKids)) {
+    throw new Error('run-local changed the canonical Hydra signing kid after the protocol gate')
+  }
+  await waitForLogPattern(
+    path.join(workDir, 'run-local-continuity.log'),
+    /"ready":\s*true/,
+  )
+  localRuntime.kill('SIGTERM')
+  await waitForExit(localRuntime)
+  await waitForPortsFree([4444, 4445, 5174])
+
   succeeded = true
   console.log(JSON.stringify({
     ok: true,
@@ -759,14 +853,13 @@ try {
     exactJieyaFormActionPolicy: true,
     hydraCookieIsolation: true,
     restartReplayRejected: true,
+    runLocalDiscoveryJwksContinuity: true,
     postgres16Runtime: true,
   }, null, 2))
 } finally {
-  for (const child of processes.reverse()) {
-    if (child.exitCode === null) child.kill('SIGTERM')
-  }
-  await Promise.all(processes.map((child) => child.exitCode === null ? waitForExit(child) : undefined))
-  if (bffServer) await new Promise((resolve) => bffServer.close(resolve))
-  if (succeeded) await rm(workDir, { recursive: true, force: true })
-  else console.error(`Protocol test artifacts retained at ${workDir}`)
+  await stopProcesses()
+  await closeBffServer()
+  if (releaseRuntimeLock) await releaseRuntimeLock()
+  if (workDir && succeeded) await rm(workDir, { recursive: true, force: true })
+  else if (workDir) console.error(`Protocol test artifacts retained at ${workDir}`)
 }

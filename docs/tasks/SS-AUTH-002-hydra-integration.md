@@ -72,6 +72,7 @@
 - Login `sid` 显式保存 30 天 `expires_at`；过期 active、超过 15 分钟的 `authorization_pending` 和超过 30 天的 revoked 行会清理，`revocation_pending` 永远保留到 outbox 成功，避免静默丢失撤销任务。
 - `identity_outbox` 设 10,000 行绝对上限、1,024 条未解决事件上限和单账号世代 64 条上限；历史异常 SID 枚举使用 `LIMIT 65` 预检并失败关闭。浏览器退出请求最多同步处理 8 条，后台每轮最多 25 条，其余持久化有界重试。
 - 本地 Hydra 工具只接受精确 DSN `postgres://hydra_test@127.0.0.1:55432/hydra_test?sslmode=disable`。`run-local-runtime` 与完整协议脚本都会在任何文件写入、Hydra spawn、migration 或 Client 注册之前拒绝其他 DSN；坏 DSN 零副作用测试覆盖两侧入口。
+- 精确 `hydra_test` DSN 与仓库内 canonical 凭据/fixture SQLite 绑定，禁止用路径覆盖引入另一套 `secrets.system`。协议门禁在独占锁和零其他数据库连接下同步重建 Hydra schema、fixture SQLite 并原子轮换 mode `0600` 的凭据；pending 轮换会阻止普通运行器启动。`run-local-runtime` 仅在 Discovery、JWKS 和固定客户端均通过后输出 ready，协议末尾会真实重启该命令并核对稳定 signing `kid`。
 - 身份功能启用时 issuer 按环境失败关闭：开发只能是精确的 `http://auth.localhost:5174`，生产只能是精确的 `https://auth.xingzhan.cc`；尾斜杠、其他 host、HTTP 生产地址以及包含 path/query/fragment/credentials 的值均被拒绝。
 
 ## 真实运行时发现并闭环的兼容点
@@ -114,6 +115,7 @@
 - 身份页面 `same-origin` Referrer Policy 可生成通过 exact Origin/Referer 门禁的同源 POST；
 - 身份页 CSP 只允许 `'self'` 与冻结的 Jieya origin，完整协议门禁会对实际响应头做精确指令断言；
 - Hydra 进程重启后已消费 code/refresh 仍失败，SQLite 世代/outbox 状态仍存在。
+- 协议门禁完成后使用同一 canonical 凭据原地启动 `run-local-runtime`，Public Discovery/JWKS 均返回 200 且 signing `kid` 不变；随后 Jieya 真实 BFF E2E 覆盖登录、20 次 Refresh 旋转、双会话重启、全局/Back-Channel Logout 与身份故障降级。
 - 公开账号页/UserInfo 每源与全局限流、慢 introspection/slow login 与私网 Token Hook 隔离、队列快速 `503`、512 interaction 上限、16 SID 上限、outbox 三层容量及迁移/Retention 竞争均由自动化测试覆盖。
 
 另以真实 Chromium DOM 流程完成 Login → Consent → Jieya 授权回调，以及 Logout Broker → 确认退出 → Jieya 退出回调；两条跨源导航均到达固定 `jieya.localhost:4180`，退出 `state` 精确匹配且控制台无 CSP 错误。
@@ -121,7 +123,7 @@
 最终本地门禁：
 
 - `npm run lint`：通过；
-- `npm test -- --run`：43 个文件、216 项通过；
+- `npm test -- --run`：43 个文件、220 项通过；
 - `npm run build`：通过；
 - `npm run test:smoke`：隔离数据库通过；
 - `node server/migrate.js` 重复迁移与 `npm run db:verify`：50 张表、0 个外键问题；

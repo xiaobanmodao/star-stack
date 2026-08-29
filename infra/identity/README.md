@@ -19,10 +19,14 @@ HYDRA_TEST_DSN='postgres://hydra_test@127.0.0.1:55432/hydra_test?sslmode=disable
 npm run identity:hydra:protocol
 ```
 
-门禁成功后会保留：
+协议门禁是本地 fixture 的确定性重建，不是生产迁移：它只接受精确的 loopback `hydra_test` DSN，并在独占锁、零其他数据库连接和 PostgreSQL 16.15 客户端校验通过后，同步重建 Hydra schema、本地 StarStack fixture SQLite，并原子轮换 canonical 凭据。不得通过 `IDENTITY_TEST_CREDENTIALS_FILE` 或 `IDENTITY_TEST_STARSTACK_DB` 为共享 DSN 指定另一套文件。轮换 pending 文件存在时，普通运行器失败关闭，只能重新完成协议门禁；不得恢复来源或凭据不匹配的旧数据库快照。
+
+门禁成功后会保留同一个可继续联调的身份单元：
 
 - `.identity-runtime/ss-auth-002-starstack.sqlite`：纯本地 fixture StarStack 数据库；
 - `.identity-runtime/ss-auth-002-local-credentials.json`：测试账号及独立 Hydra/Client/Hook/Broker Secret，权限 `0600`。
+
+协议末尾会停止自身服务，再实际启动一次 `run-local-runtime.mjs`，要求 Public Discovery 与 JWKS 均为 HTTP 200 且 signing `kid` 与协议重启前一致。新凭据值不会输出到日志；每次协议门禁都会使此前的本地 fixture 凭据失效。
 
 启动可供 Jieya BFF 联调的运行时：
 
@@ -32,7 +36,7 @@ HYDRA_TEST_DSN='postgres://hydra_test@127.0.0.1:55432/hydra_test?sslmode=disable
 npm run identity:hydra:run
 ```
 
-启动器会幂等执行 Hydra migration、创建或更新 `jieya-server-local`，然后启动 Hydra 与 StarStack。它不占用 Jieya 的 `4180`；Jieya BFF 应自行监听该端口。按 `Ctrl+C` 会同时停止 Hydra 与 StarStack，不停止共享 PostgreSQL。
+启动器会幂等执行 Hydra migration、创建或更新 `jieya-server-local`，然后启动 Hydra 与 StarStack；只有固定客户端、Public Discovery 和 JWKS 全部验证通过后才输出 `ready: true`。它不占用 Jieya 的 `4180`；Jieya BFF 应自行监听该端口。按 `Ctrl+C` 会同时停止 Hydra 与 StarStack，不停止共享 PostgreSQL。
 
 ## Compose 备用方案
 

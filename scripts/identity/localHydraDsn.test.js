@@ -8,6 +8,7 @@ import {
   LOCAL_HYDRA_TEST_DSN,
   assertLocalHydraTestDsn,
 } from './localHydraDsn.mjs'
+import { LOCAL_IDENTITY_CREDENTIALS_PATH } from './localIdentityCredentials.mjs'
 
 const directories = []
 const identityScripts = [
@@ -79,5 +80,61 @@ describe('local Hydra test DSN guard', () => {
     await expect(access(credentials)).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(access(starStackDatabase)).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(access(runtimeDirectory)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it.each(identityScripts)('binds the shared Hydra database to its canonical credentials before %s can spawn or write', async (script) => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'starstack-hydra-credentials-guard-'))
+    directories.push(directory)
+    const marker = path.join(directory, 'hydra-spawned')
+    const credentials = path.join(directory, 'alternate-credentials.json')
+    const starStackDatabase = path.join(directory, 'starstack.sqlite')
+    const fakeHydra = path.join(directory, 'fake-hydra.mjs')
+    await writeFile(fakeHydra, `#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs'\nwriteFileSync(process.env.HYDRA_SPAWN_MARKER, 'spawned')\nconsole.log('Version: incompatible')\n`)
+    await chmod(fakeHydra, 0o700)
+
+    const result = await runScript(script, {
+      cwd: directory,
+      env: {
+        ...process.env,
+        HYDRA_TEST_DSN: LOCAL_HYDRA_TEST_DSN,
+        HYDRA_TEST_BINARY: fakeHydra,
+        HYDRA_SPAWN_MARKER: marker,
+        IDENTITY_TEST_CREDENTIALS_FILE: credentials,
+        IDENTITY_TEST_STARSTACK_DB: starStackDatabase,
+      },
+    })
+
+    expect(result.code).not.toBe(0)
+    expect(result.stderr).toMatch(/canonical|固定|credentials/i)
+    await expect(access(marker)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(access(credentials)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(access(starStackDatabase)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it.each(identityScripts)('binds the shared Hydra database to its canonical StarStack fixture before %s can spawn', async (script) => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'starstack-hydra-fixture-guard-'))
+    directories.push(directory)
+    const marker = path.join(directory, 'hydra-spawned')
+    const starStackDatabase = path.join(directory, 'alternate-starstack.sqlite')
+    const fakeHydra = path.join(directory, 'fake-hydra.mjs')
+    await writeFile(fakeHydra, `#!/usr/bin/env node\nimport { writeFileSync } from 'node:fs'\nwriteFileSync(process.env.HYDRA_SPAWN_MARKER, 'spawned')\nconsole.log('Version: incompatible')\n`)
+    await chmod(fakeHydra, 0o700)
+
+    const result = await runScript(script, {
+      cwd: directory,
+      env: {
+        ...process.env,
+        HYDRA_TEST_DSN: LOCAL_HYDRA_TEST_DSN,
+        HYDRA_TEST_BINARY: fakeHydra,
+        HYDRA_SPAWN_MARKER: marker,
+        IDENTITY_TEST_CREDENTIALS_FILE: LOCAL_IDENTITY_CREDENTIALS_PATH,
+        IDENTITY_TEST_STARSTACK_DB: starStackDatabase,
+      },
+    })
+
+    expect(result.code).not.toBe(0)
+    expect(result.stderr).toMatch(/canonical|固定|fixture/i)
+    await expect(access(marker)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(access(starStackDatabase)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
-import { randomBytes } from 'node:crypto'
-import { access, chmod, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { access } from 'node:fs/promises'
 import net from 'node:net'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
@@ -10,53 +9,33 @@ import {
   HYDRA_BROWSER_COOKIE_PATH,
 } from '../../server/identity/config.js'
 import { assertLocalHydraTestDsn } from './localHydraDsn.mjs'
+import {
+  assertCanonicalLocalIdentityCredentialsPath,
+  assertCanonicalLocalIdentityStarStackDatabasePath,
+  loadLocalIdentityCredentials,
+  LOCAL_IDENTITY_RUNTIME_ROOT,
+} from './localIdentityCredentials.mjs'
+import { acquireLocalIdentityRuntimeLock } from './localIdentityRuntimeLock.mjs'
 
-const runtimeRoot = path.resolve('.identity-runtime')
-const credentialsPath = process.env.IDENTITY_TEST_CREDENTIALS_FILE
-  || path.join(runtimeRoot, 'ss-auth-002-local-credentials.json')
-const starStackDatabase = process.env.IDENTITY_TEST_STARSTACK_DB
-  || path.join(runtimeRoot, 'ss-auth-002-starstack.sqlite')
-const hydraBinary = process.env.HYDRA_TEST_BINARY || path.join(runtimeRoot, 'hydra')
+const runtimeRoot = LOCAL_IDENTITY_RUNTIME_ROOT
 const hydraDsn = assertLocalHydraTestDsn(process.env.HYDRA_TEST_DSN)
+const credentialsPath = assertCanonicalLocalIdentityCredentialsPath(
+  process.env.IDENTITY_TEST_CREDENTIALS_FILE,
+)
+const starStackDatabase = assertCanonicalLocalIdentityStarStackDatabasePath(
+  process.env.IDENTITY_TEST_STARSTACK_DB,
+)
+const hydraBinary = process.env.HYDRA_TEST_BINARY || path.join(runtimeRoot, 'hydra')
 await access(hydraBinary).catch(() => {
   throw new Error('Hydra binary is missing; set HYDRA_TEST_BINARY or run identity:hydra:fetch')
 })
-await mkdir(runtimeRoot, { recursive: true, mode: 0o700 })
-await chmod(runtimeRoot, 0o700)
-
-const createCredentials = () => ({
-  fixtureId: 'oidc-fixture-user',
-  fixturePassword: randomBytes(32).toString('base64url'),
-  clientSecret: randomBytes(48).toString('base64url'),
-  tokenHookSecret: randomBytes(48).toString('base64url'),
-  logoutBrokerSecret: randomBytes(48).toString('base64url'),
-  systemSecret: randomBytes(48).toString('base64url'),
-  cookieSecret: randomBytes(48).toString('base64url'),
-})
-
-const loadCredentials = async () => {
-  try {
-    return JSON.parse(await readFile(credentialsPath, 'utf8'))
-  } catch (error) {
-    if (error?.code !== 'ENOENT') throw error
-    const generated = createCredentials()
-    await writeFile(credentialsPath, `${JSON.stringify(generated, null, 2)}\n`, {
-      encoding: 'utf8',
-      flag: 'wx',
-      mode: 0o600,
-    })
-    await chmod(credentialsPath, 0o600)
-    return generated
-  }
-}
-
-const credentials = await loadCredentials()
-await chmod(credentialsPath, 0o600)
-for (const [name, value] of Object.entries(credentials)) {
-  const minimumLength = name === 'fixtureId' ? 3 : 32
-  if (typeof value !== 'string' || value.length < minimumLength) {
-    throw new Error(`Local identity credential ${name} is missing or too short`)
-  }
+const releaseRuntimeLock = await acquireLocalIdentityRuntimeLock()
+let credentials
+try {
+  credentials = await loadLocalIdentityCredentials(credentialsPath)
+} catch (error) {
+  await releaseRuntimeLock()
+  throw error
 }
 
 const issuer = 'http://auth.localhost:5174'
@@ -170,11 +149,21 @@ const waitForHttp = async (url, { expected = [200], timeoutMs = 30000 } = {}) =>
   throw new Error(`Timed out waiting for ${url}`)
 }
 
-const stop = () => {
+const stop = async () => {
+  const exits = []
   for (const child of children) {
-    if (child.exitCode === null) child.kill('SIGTERM')
+    if (child.exitCode === null && child.signalCode === null) {
+      exits.push(new Promise((resolve) => child.once('exit', resolve)))
+      child.kill('SIGTERM')
+    }
   }
+  await Promise.all(exits)
 }
+
+const shutdownSignal = new Promise((resolve) => {
+  process.once('SIGINT', () => resolve('SIGINT'))
+  process.once('SIGTERM', () => resolve('SIGTERM'))
+})
 
 try {
   await Promise.all([4444, 4445, 5174].map(assertPortFree))
@@ -193,6 +182,12 @@ try {
   }, { quiet: true })
   const starStack = start(process.execPath, ['server/index.js'], starStackEnv)
   await waitForHttp('http://127.0.0.1:5174/api/health', { expected: [200, 503] })
+  await run(process.execPath, ['scripts/identity/verify-hydra-runtime.mjs'], {
+    ...process.env,
+    NODE_ENV: 'development',
+    OIDC_ISSUER: issuer,
+    OIDC_HYDRA_ADMIN_URL: adminOrigin,
+  }, { quiet: true })
   console.log(JSON.stringify({
     ready: true,
     issuer,
@@ -202,15 +197,12 @@ try {
     credentialsFile: credentialsPath,
   }, null, 2))
 
-  const signal = new Promise((resolve) => {
-    process.once('SIGINT', () => resolve('SIGINT'))
-    process.once('SIGTERM', () => resolve('SIGTERM'))
-  })
   const exited = Promise.race([hydra, starStack].map((child) => new Promise((resolve) => {
     child.once('exit', (code) => resolve(`child-exit:${code}`))
   })))
-  const reason = await Promise.race([signal, exited])
+  const reason = await Promise.race([shutdownSignal, exited])
   if (reason.startsWith('child-exit')) process.exitCode = 1
 } finally {
-  stop()
+  await stop()
+  await releaseRuntimeLock()
 }
