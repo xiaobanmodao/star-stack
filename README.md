@@ -161,7 +161,8 @@ OJ
 ### 2026-08-30 - Hydra 身份运行时（本地门禁）
 
 - StarStack 作为 Ory Hydra 的 Login/Consent 应用，继续唯一保存账号、密码、不可变 `account_subject` 与账号状态；Hydra 独立保存 OAuth2/OIDC 协议对象。
-- 新增认证世代、账号中心会话、持久化撤销 outbox、自定义 Logout Broker、Token Hook 与最小 UserInfo；身份事务使用独立 SQLite 连接和统一操作锁，账号封禁、密码安全变更和全局退出在 Hydra 物理撤销窗口内失败关闭。
+- 新增认证世代、账号中心会话、持久化撤销 outbox、自定义 Logout Broker、Token Hook 与最小 UserInfo；公开账号页、UserInfo 与私网安全操作使用隔离 SQLite 连接及有界队列，账号封禁、密码安全变更和全局退出在 Hydra 物理撤销窗口内失败关闭。
+- 身份入口增加每源/全局限流、512 条交互容量、每账号/客户端 16 个 active SID、Outbox 绝对/未解决/单世代三层上限和固定小批量 drain；OIDC SID 显式 30 天过期并保留未完成撤销。Hydra 本地工具只允许精确的 loopback `hydra_test` DSN，坏 DSN 会在任何迁移或进程启动前失败关闭。
 - `jieya-server-local` 使用 Authorization Code + PKCE S256、`client_secret_basic` 与精确本地 callback；浏览器不应持有 StarStack Token，Jieya BFF 负责创建自己的应用会话。
 - Hydra Public 代理仅转发按版本、环境和固定 Client ID 计算出的精确 Hydra Cookie；账号中心 Cookie 双向隔离，Hydra Cookie 固定为 `/oauth2`、`HttpOnly`、`SameSite=Lax`（生产再强制 `Secure`）。身份表单使用 `Referrer-Policy: same-origin`，与 exact Origin/Referer + CSRF 校验保持一致且不向跨源泄漏路径。
 - OIDC 默认关闭，未接入生产 DNS/Nginx/PM2。真实 Hydra v26.2.0 + PostgreSQL 16.15 的启动、协议测试、备份与停止线见 `infra/identity/README.md`。

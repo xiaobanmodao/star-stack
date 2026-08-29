@@ -64,6 +64,8 @@ describe('OIDC identity schema migration', () => {
     for (const name of [
       'idx_account_center_sessions_subject',
       'idx_oidc_login_sessions_subject_status',
+      'idx_oidc_login_sessions_status_updated',
+      'idx_oidc_login_sessions_status_expires',
       'idx_identity_outbox_due',
       'idx_oidc_logout_transactions_expires',
     ]) expect(indexes.has(name)).toBe(true)
@@ -97,8 +99,20 @@ describe('OIDC identity schema migration', () => {
   it('adds security columns introduced after an earlier Phase 2 schema without replacing data', async () => {
     const db = await openFixture()
     await ensureOidcIdentitySchema(db)
+    await db.run(
+      `INSERT INTO oidc_login_sessions
+         (account_subject, client_id, sid, auth_generation, status,
+          created_at, updated_at, expires_at)
+       VALUES (?, 'jieya-server-local', 'legacy-sid', 0, 'active', ?, ?, ?)`,
+      subjects[0],
+      '2026-08-30T00:00:00.000Z',
+      '2026-08-30T00:00:00.000Z',
+      '2026-09-29T00:00:00.000Z',
+    )
     await db.exec(`ALTER TABLE oidc_interactions DROP COLUMN csrf_hash`)
     await db.exec(`ALTER TABLE oidc_logout_transactions DROP COLUMN browser_csrf_hash`)
+    await db.exec(`DROP INDEX idx_oidc_login_sessions_status_expires`)
+    await db.exec(`ALTER TABLE oidc_login_sessions DROP COLUMN expires_at`)
 
     await ensureOidcIdentitySchema(db)
 
@@ -108,8 +122,15 @@ describe('OIDC identity schema migration', () => {
     const logoutColumns = new Set((await db.all(
       `PRAGMA table_info(oidc_logout_transactions)`,
     )).map((column) => column.name))
+    const loginSessionColumns = new Set((await db.all(
+      `PRAGMA table_info(oidc_login_sessions)`,
+    )).map((column) => column.name))
     expect(interactionColumns.has('csrf_hash')).toBe(true)
     expect(logoutColumns.has('browser_csrf_hash')).toBe(true)
+    expect(loginSessionColumns.has('expires_at')).toBe(true)
+    expect(await db.get(
+      `SELECT expires_at FROM oidc_login_sessions WHERE sid = 'legacy-sid'`,
+    )).toEqual({ expires_at: '2026-09-29T00:00:00.000Z' })
   })
 
   it('rejects null, negative and decreasing generations', async () => {

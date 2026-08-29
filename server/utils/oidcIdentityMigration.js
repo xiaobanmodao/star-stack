@@ -9,7 +9,7 @@ const REQUIRED_TABLE_COLUMNS = Object.freeze({
   ],
   oidc_login_sessions: [
     'id', 'account_subject', 'client_id', 'sid', 'auth_generation',
-    'consent_request_id', 'status', 'created_at', 'updated_at', 'revoked_at',
+    'consent_request_id', 'status', 'created_at', 'updated_at', 'expires_at', 'revoked_at',
   ],
   identity_outbox: [
     'id', 'event_type', 'subject', 'client_id', 'sid', 'payload_json', 'status',
@@ -29,6 +29,8 @@ const REQUIRED_INDEXES = Object.freeze([
   'idx_oidc_interactions_expires',
   'idx_oidc_login_sessions_subject_status',
   'idx_oidc_login_sessions_client_sid',
+  'idx_oidc_login_sessions_status_updated',
+  'idx_oidc_login_sessions_status_expires',
   'idx_identity_outbox_due',
   'idx_identity_outbox_subject',
   'idx_oidc_logout_transactions_expires',
@@ -71,6 +73,14 @@ export const verifyOidcIdentitySchema = async (db) => {
   const missingIndexes = REQUIRED_INDEXES.filter((name) => !indexes.has(name))
   if (missingIndexes.length > 0) {
     throw new Error(`Missing OIDC identity indexes: ${missingIndexes.join(', ')}`)
+  }
+  const invalidLoginSessionExpiry = await db.get(
+    `SELECT id FROM oidc_login_sessions
+     WHERE expires_at IS NULL OR trim(expires_at) = '' OR julianday(expires_at) IS NULL
+     LIMIT 1`,
+  )
+  if (invalidLoginSessionExpiry) {
+    throw new Error(`Invalid oidc_login_sessions.expires_at for row ${invalidLoginSessionExpiry.id}`)
   }
 
   const [users, accountCenterSessions, loginSessions, outboxEvents, logoutTransactions] = await Promise.all([
@@ -129,6 +139,7 @@ const createSchema = async (db) => {
         CHECK (status IN ('authorization_pending', 'active', 'revocation_pending', 'revoked')),
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
       revoked_at TEXT,
       UNIQUE(client_id, sid)
     );
@@ -179,6 +190,8 @@ const createSchema = async (db) => {
       ON oidc_login_sessions(account_subject, status);
     CREATE INDEX IF NOT EXISTS idx_oidc_login_sessions_client_sid
       ON oidc_login_sessions(client_id, sid);
+    CREATE INDEX IF NOT EXISTS idx_oidc_login_sessions_status_updated
+      ON oidc_login_sessions(status, updated_at, revoked_at);
     CREATE INDEX IF NOT EXISTS idx_identity_outbox_due
       ON identity_outbox(status, next_attempt_at, created_at);
     CREATE INDEX IF NOT EXISTS idx_identity_outbox_subject
@@ -210,6 +223,7 @@ const addKnownCompatibilityColumns = async (db) => {
   const upgrades = [
     ['oidc_interactions', 'csrf_hash', 'TEXT'],
     ['oidc_logout_transactions', 'browser_csrf_hash', 'TEXT'],
+    ['oidc_login_sessions', 'expires_at', 'TEXT'],
   ]
   for (const [table, column, type] of upgrades) {
     const columns = new Set((await getColumns(db, table)).map((item) => item.name))
@@ -233,6 +247,15 @@ export const ensureOidcIdentitySchema = async (db) => {
 
     await createSchema(db)
     await addKnownCompatibilityColumns(db)
+    await db.run(
+      `UPDATE oidc_login_sessions
+       SET expires_at = strftime('%Y-%m-%dT%H:%M:%fZ', created_at, '+30 days')
+       WHERE expires_at IS NULL OR trim(expires_at) = ''`,
+    )
+    await db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_oidc_login_sessions_status_expires
+        ON oidc_login_sessions(status, expires_at);
+    `)
     await verifyOidcIdentitySchema(db)
     await db.exec('COMMIT')
   } catch (error) {

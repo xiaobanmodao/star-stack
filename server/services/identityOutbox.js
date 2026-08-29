@@ -4,6 +4,8 @@ const claimQueues = new WeakMap()
 const DEFAULT_STALE_MS = 60 * 1000
 const DEFAULT_RETRY_BASE_MS = 2000
 const DEFAULT_MAX_ATTEMPTS = 20
+export const MAX_IDENTITY_OUTBOX_BATCH_SIZE = 25
+export const MAX_SYNC_IDENTITY_OUTBOX_DRAIN = 8
 
 const runSerialized = (db, operation) => {
   const previous = claimQueues.get(db) || Promise.resolve()
@@ -181,9 +183,16 @@ export const processIdentityOutboxOnce = async (
   return operationLocked ? process() : runIdentityOperation(db, process)
 }
 
-export const processIdentityOutboxBatch = async (db, admin, { limit = 25, ...options } = {}) => {
+export const processIdentityOutboxBatch = async (
+  db,
+  admin,
+  { limit = MAX_IDENTITY_OUTBOX_BATCH_SIZE, ...options } = {},
+) => {
+  const boundedLimit = Number.isSafeInteger(limit)
+    ? Math.min(Math.max(limit, 0), MAX_IDENTITY_OUTBOX_BATCH_SIZE)
+    : MAX_IDENTITY_OUTBOX_BATCH_SIZE
   const results = []
-  for (let index = 0; index < limit; index += 1) {
+  for (let index = 0; index < boundedLimit; index += 1) {
     const result = await processIdentityOutboxOnce(db, admin, options)
     if (result.idle) break
     results.push(result)
@@ -199,18 +208,10 @@ export const processIdentityOutboxGeneration = async (
   if (typeof subject !== 'string' || !subject || !Number.isInteger(generation) || generation < 0) {
     throw new Error('A valid subject and auth generation are required')
   }
-  const pending = await db.get(
-    `SELECT COUNT(*) AS count FROM identity_outbox
-     WHERE subject = ?
-       AND CAST(json_extract(payload_json, '$.generation') AS INTEGER) = ?
-       AND status IN ('pending', 'processing')`,
-    subject,
-    generation,
-  )
   return processIdentityOutboxBatch(db, admin, {
     ...options,
     subject,
     generation,
-    limit: pending.count,
+    limit: MAX_SYNC_IDENTITY_OUTBOX_DRAIN,
   })
 }

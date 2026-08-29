@@ -29,6 +29,8 @@ const openDatabaseConnection = () => open({
 
 const dbPromise = openDatabaseConnection()
 let identityDbPromise = null
+let identityPublicDbPromise = null
+let identityUserInfoDbPromise = null
 
 const BUILTIN_PROBLEMS = [
   {
@@ -1056,7 +1058,30 @@ export const getIdentityDb = async () => {
   return identityDbPromise
 }
 
+// Public browser interactions and UserInfo introspection use isolated
+// connections so a slow/untrusted request cannot occupy the connection used
+// by private token hooks, logout broker operations or the durable outbox.
+export const getIdentityPublicDb = async () => {
+  if (!identityPublicDbPromise) identityPublicDbPromise = openDatabaseConnection()
+  return identityPublicDbPromise
+}
+
+export const getIdentityUserInfoDb = async () => {
+  if (!identityUserInfoDbPromise) identityUserInfoDbPromise = openDatabaseConnection()
+  return identityUserInfoDbPromise
+}
+
 export const closeDb = async () => {
+  if (identityUserInfoDbPromise) {
+    const identityUserInfoDb = await identityUserInfoDbPromise
+    if (identityUserInfoDb.open) await identityUserInfoDb.close()
+    identityUserInfoDbPromise = null
+  }
+  if (identityPublicDbPromise) {
+    const identityPublicDb = await identityPublicDbPromise
+    if (identityPublicDb.open) await identityPublicDb.close()
+    identityPublicDbPromise = null
+  }
   if (identityDbPromise) {
     const identityDb = await identityDbPromise
     if (identityDb.open) await identityDb.close()

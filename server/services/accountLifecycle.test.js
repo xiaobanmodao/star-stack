@@ -184,13 +184,15 @@ describe('account lifecycle', () => {
     ]) {
       await db.run(
         `INSERT INTO oidc_login_sessions
-           (account_subject, client_id, sid, auth_generation, status, created_at, updated_at)
-         VALUES (?, ?, ?, 0, 'active', ?, ?)`,
+           (account_subject, client_id, sid, auth_generation, status,
+            created_at, updated_at, expires_at)
+         VALUES (?, ?, ?, 0, 'active', ?, ?, ?)`,
         subjects[0],
         clientId,
         sid,
         timestamp,
         timestamp,
+        '2026-09-29T12:00:00.000Z',
       )
     }
 

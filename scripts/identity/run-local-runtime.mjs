@@ -9,6 +9,7 @@ import {
   HYDRA_BROWSER_COOKIE_NAMES,
   HYDRA_BROWSER_COOKIE_PATH,
 } from '../../server/identity/config.js'
+import { assertLocalHydraTestDsn } from './localHydraDsn.mjs'
 
 const runtimeRoot = path.resolve('.identity-runtime')
 const credentialsPath = process.env.IDENTITY_TEST_CREDENTIALS_FILE
@@ -16,11 +17,7 @@ const credentialsPath = process.env.IDENTITY_TEST_CREDENTIALS_FILE
 const starStackDatabase = process.env.IDENTITY_TEST_STARSTACK_DB
   || path.join(runtimeRoot, 'ss-auth-002-starstack.sqlite')
 const hydraBinary = process.env.HYDRA_TEST_BINARY || path.join(runtimeRoot, 'hydra')
-const hydraDsn = process.env.HYDRA_TEST_DSN
-
-if (typeof hydraDsn !== 'string' || !/^postgres(?:ql)?:\/\//.test(hydraDsn)) {
-  throw new Error('HYDRA_TEST_DSN must point to the isolated PostgreSQL test database')
-}
+const hydraDsn = assertLocalHydraTestDsn(process.env.HYDRA_TEST_DSN)
 await access(hydraBinary).catch(() => {
   throw new Error('Hydra binary is missing; set HYDRA_TEST_BINARY or run identity:hydra:fetch')
 })

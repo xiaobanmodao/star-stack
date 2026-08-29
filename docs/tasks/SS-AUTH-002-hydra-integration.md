@@ -35,7 +35,7 @@
 - 新增账号中心会话、Hydra 交互绑定、已知 Login `sid`、持久化 outbox、自定义 Logout Broker 事务表。
 - 迁移使用 `BEGIN IMMEDIATE`，可重复执行；识别并补充已知的后续安全字段，但对未知/残缺表结构失败关闭。
 - 封禁、解封、密码安全变更与删除统一进入账号生命周期服务；状态/世代、主站与账号中心会话撤销、outbox 在同一 SQLite 事务提交。
-- 身份请求、账号生命周期和 outbox 共用独立 SQLite 连接与统一操作锁；失败测试证明它们不会在共享连接上嵌套 `BEGIN` 或把无关写入混入身份事务。
+- 身份运行时按信任域拆分 SQLite 连接：公开账号页、UserInfo、私网 Token Hook/Logout Broker/outbox 分离；私网安全操作不再等待公开 Hydra 慢调用。每条串行操作队列都有硬上限并在满载时快速返回 `503`。
 - 生命周期事件会先登记全部已知 `sid` 的 Login Session 撤销，再按每个已知 client 登记 Consent/Token 链撤销。
 
 ### Login、Consent 与协议边界
@@ -58,6 +58,16 @@
 - POST 确认在 SQLite 原子推进世代、撤销 StarStack 会话、登记全部已知 `sid` 和 outbox；同世代 `revoke_session` 全部完成前，`revoke_consent` 不可领取，确保 Back-Channel Logout 不被提前删除 Consent 破坏。
 - 当前账号/世代的撤销会在浏览器回跳前同步尝试；物理失败保持持久化重试。即使 Hydra 尚未物理清理，Token Hook、UserInfo 与 Login/Consent 已按新世代失败关闭。
 - Hydra Refresh rotation 明确配置 0 秒 grace 与 0 次复用，不依赖隐含默认值。
+
+### DoS 与容量闭环
+
+- 公开账号 `GET` 固定为每源 60 次/分钟、进程总量 300 次/分钟；UserInfo 固定为每源 300 次/分钟、总量 600 次/分钟，并额外限制 16 个并发 introspection。无凭据的私网请求在解析 JSON 和进入关键队列前即被拒绝。
+- 公开身份操作队列最多容纳 32 个正在执行或等待的请求，私网关键队列最多 64 个；断开的公开请求获得锁后立即释放，不会形成永久队首阻塞。
+- `oidc_interactions` 在同一个 `BEGIN IMMEDIATE` 临界区清理过期记录、执行原子 count/insert，并硬限制为 512 条；双连接边界竞争最多一个成功。
+- 每个 `(account_subject, client_id)` 最多保留 16 个未撤销 Login `sid`。超限 Consent 不签发 Grant，先撤销新 Hydra Login Session，再以标准错误拒绝 Consent；并发边界同样通过 SQLite 写锁原子裁决。
+- Login `sid` 显式保存 30 天 `expires_at`；过期 active、超过 15 分钟的 `authorization_pending` 和超过 30 天的 revoked 行会清理，`revocation_pending` 永远保留到 outbox 成功，避免静默丢失撤销任务。
+- `identity_outbox` 设 10,000 行绝对上限、1,024 条未解决事件上限和单账号世代 64 条上限；历史异常 SID 枚举使用 `LIMIT 65` 预检并失败关闭。浏览器退出请求最多同步处理 8 条，后台每轮最多 25 条，其余持久化有界重试。
+- 本地 Hydra 工具只接受精确 DSN `postgres://hydra_test@127.0.0.1:55432/hydra_test?sslmode=disable`。`run-local-runtime` 与完整协议脚本都会在任何文件写入、Hydra spawn、migration 或 Client 注册之前拒绝其他 DSN；坏 DSN 零副作用测试覆盖两侧入口。
 
 ## 真实运行时发现并闭环的兼容点
 
@@ -99,21 +109,22 @@
 - 身份页面 `same-origin` Referrer Policy 可生成通过 exact Origin/Referer 门禁的同源 POST；
 - 身份页 CSP 只允许 `'self'` 与冻结的 Jieya origin，完整协议门禁会对实际响应头做精确指令断言；
 - Hydra 进程重启后已消费 code/refresh 仍失败，SQLite 世代/outbox 状态仍存在。
+- 公开账号页/UserInfo 每源与全局限流、慢 introspection/slow login 与私网 Token Hook 隔离、队列快速 `503`、512 interaction 上限、16 SID 上限、outbox 三层容量及迁移/Retention 竞争均由自动化测试覆盖。
 
 另以真实 Chromium DOM 流程完成 Login → Consent → Jieya 授权回调，以及 Logout Broker → 确认退出 → Jieya 退出回调；两条跨源导航均到达固定 `jieya.localhost:4180`，退出 `state` 精确匹配且控制台无 CSP 错误。
 
 最终本地门禁：
 
 - `npm run lint`：通过；
-- `npm test -- --run`：38 个文件、163 项通过；
+- `npm test -- --run`：42 个文件、187 项通过；
 - `npm run build`：通过；
 - `npm run test:smoke`：隔离数据库通过；
-- `node server/migrate.js` 重复迁移与 `npm run db:verify`：47 张表、0 个外键问题；
-- SQLite 一致性备份恢复：47 张表可恢复；
+- `node server/migrate.js` 重复迁移与 `npm run db:verify`：50 张表、0 个外键问题；
+- SQLite 一致性备份恢复：50 张表可恢复；
 - 依赖审计：`react-router-dom` 已精确锁定为 `7.18.2`，其传递依赖 `react-router` 同步精确锁定为 `7.18.2`，已消除 GHSA-qwww-vcr4-c8h2；根项目生产依赖为 0 Critical / 0 High。
 - 根项目仍有 Monaco `0.55.1` → DOMPurify `3.4.12` 链路的 2 个 Moderate；npm 当前只提供把 Monaco 倒退到 `0.53.0` 的破坏性修复建议，因此作为非身份、既有风险保留，后续等待 Monaco/DOMPurify 的前向兼容修复，不以编辑器能力回退换取审计清零。
 - 后端 sqlite3/node-gyp/tar 的既有上游 High 项继续保留在发布风险记录；本任务没有为身份运行时新增 npm 协议或密码学依赖。
-- 已按本地生成值和常见私钥/Token 模式扫描 325 个纳入版本控制的文件，未发现 Secret 泄漏。
+- 已按本地生成值和常见私钥/Token 模式扫描 332 个纳入版本控制或待提交的文件，未发现 Secret 泄漏。
 
 ## 备份与回滚
 

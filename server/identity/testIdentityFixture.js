@@ -21,6 +21,7 @@ export const openIdentityFixture = async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'starstack-identity-test-'))
   const filename = path.join(directory, 'fixture.sqlite')
   const db = await open({ filename, driver: sqlite3.Database })
+  const connections = [db]
   await db.exec(await readFile(fixturePath, 'utf8'))
   const generated = [TEST_SUBJECTS.alice, TEST_SUBJECTS.banned]
   await ensureAccountIdentitySchema(db, { generateSubject: () => generated.shift() })
@@ -28,8 +29,17 @@ export const openIdentityFixture = async () => {
   return {
     db,
     filename,
+    openConnection: async () => {
+      const connection = await open({ filename, driver: sqlite3.Database })
+      connection.configure('busyTimeout', 5000)
+      await connection.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;')
+      connections.push(connection)
+      return connection
+    },
     close: async () => {
-      await db.close().catch(() => undefined)
+      for (const connection of connections.reverse()) {
+        await connection.close().catch(() => undefined)
+      }
       await rm(directory, { recursive: true, force: true })
     },
   }

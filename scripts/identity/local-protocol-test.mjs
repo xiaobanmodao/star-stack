@@ -21,6 +21,7 @@ import {
   HYDRA_BROWSER_COOKIE_PATH,
   loadIdentityConfig,
 } from '../../server/identity/config.js'
+import { assertLocalHydraTestDsn } from './localHydraDsn.mjs'
 
 const requireFromServer = createRequire(new URL('../../server/package.json', import.meta.url))
 const sqlite3 = requireFromServer('sqlite3')
@@ -28,10 +29,7 @@ const { open } = requireFromServer('sqlite')
 
 const runtimeRoot = path.resolve('.identity-runtime')
 const hydraBinary = process.env.HYDRA_TEST_BINARY || path.join(runtimeRoot, 'hydra')
-const hydraDsn = process.env.HYDRA_TEST_DSN
-if (typeof hydraDsn !== 'string' || !/^postgres(?:ql)?:\/\//.test(hydraDsn)) {
-  throw new Error('HYDRA_TEST_DSN must point to the isolated PostgreSQL 16.15 test database')
-}
+const hydraDsn = assertLocalHydraTestDsn(process.env.HYDRA_TEST_DSN)
 await access(hydraBinary).catch(() => {
   throw new Error('Hydra binary is missing; set HYDRA_TEST_BINARY or run npm run identity:hydra:fetch')
 })

@@ -18,7 +18,7 @@ const requiredColumns = {
   users: ['id', 'name', 'password_hash', 'email', 'is_admin', 'is_banned', 'account_subject', 'account_status', 'account_tombstoned_at', 'auth_generation', 'avatar', 'avatar_frame', 'avatar_overlay', 'equipped_title'],
   account_center_sessions: ['token_hash', 'user_id', 'account_subject', 'auth_generation', 'csrf_hash', 'created_at', 'expires_at', 'last_seen_at'],
   oidc_interactions: ['challenge_hash', 'interaction_type', 'account_session_hash', 'account_subject', 'client_id', 'csrf_hash', 'status', 'created_at', 'expires_at', 'consumed_at'],
-  oidc_login_sessions: ['id', 'account_subject', 'client_id', 'sid', 'auth_generation', 'consent_request_id', 'status', 'created_at', 'updated_at', 'revoked_at'],
+  oidc_login_sessions: ['id', 'account_subject', 'client_id', 'sid', 'auth_generation', 'consent_request_id', 'status', 'created_at', 'updated_at', 'expires_at', 'revoked_at'],
   identity_outbox: ['id', 'event_type', 'subject', 'client_id', 'sid', 'status', 'attempts', 'next_attempt_at', 'created_at', 'updated_at'],
   oidc_logout_transactions: ['token_hash', 'account_subject', 'client_id', 'sid', 'state', 'browser_csrf_hash', 'status', 'created_at', 'expires_at', 'consumed_at'],
   sessions: ['token', 'user_id', 'created_at'],
@@ -35,6 +35,8 @@ const requiredIndexes = [
   'idx_users_account_subject_unique',
   'idx_account_center_sessions_subject',
   'idx_oidc_login_sessions_subject_status',
+  'idx_oidc_login_sessions_status_updated',
+  'idx_oidc_login_sessions_status_expires',
   'idx_identity_outbox_due',
   'idx_oidc_logout_transactions_expires',
 ]

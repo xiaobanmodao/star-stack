@@ -1,10 +1,15 @@
-import { randomUUID } from 'node:crypto'
 import {
   createOpaqueToken,
   hashOpaqueToken,
   verifyOpaqueToken,
 } from '../identity/opaqueToken.js'
 import { getAccountCenterSession, verifyAccountCenterCsrf } from './accountCenterSession.js'
+import {
+  IdentityOutboxCapacityError,
+  MAX_UNRESOLVED_IDENTITY_OUTBOX_EVENTS_PER_GENERATION,
+  enqueueIdentityOutboxEvent,
+} from './identityOutboxStore.js'
+import { cleanupIdentityRetention } from './identityRetention.js'
 
 const LOGOUT_TRANSACTION_TTL_MS = 5 * 60 * 1000
 const transactionQueues = new WeakMap()
@@ -54,21 +59,22 @@ export const createLogoutTransaction = async (
 ) => {
   assertBrokerInput(input)
   assertClient(client, input.clientId)
+  const createdAt = parseDate(now())
   const binding = await db.get(
     `SELECT s.id FROM oidc_login_sessions s
      JOIN users u ON u.account_subject = s.account_subject
      WHERE s.account_subject = ? AND s.client_id = ? AND s.sid = ?
-       AND s.status = 'active' AND u.account_status = 'active'`,
+       AND s.status = 'active' AND s.expires_at > ? AND u.account_status = 'active'`,
     input.subject,
     input.clientId,
     input.sid,
+    createdAt.toISOString(),
   )
   if (!binding) throw new LogoutBrokerError('SESSION_NOT_BOUND', 'subject/client/sid 未绑定有效登录会话')
 
   const token = randomToken()
   const tokenHash = hashOpaqueToken(token)
   if (!tokenHash) throw new LogoutBrokerError('TOKEN_GENERATION_FAILED', '无法创建退出事务')
-  const createdAt = parseDate(now())
   const expiresAt = new Date(createdAt.getTime() + LOGOUT_TRANSACTION_TTL_MS)
   try {
     await db.run(
@@ -168,29 +174,6 @@ const assertExactBrowserSource = ({ origin, referer }, expectedOrigin) => {
   }
 }
 
-const insertOutbox = async (db, {
-  eventType, subject, clientId, sid = null, generation, timestamp,
-}) => {
-  const dedupeKey = `${eventType}:${subject}:${clientId}:${sid || '*'}:${generation}`
-  await db.run(
-    `INSERT INTO identity_outbox
-       (id, event_type, subject, client_id, sid, payload_json, status, attempts,
-        next_attempt_at, dedupe_key, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?)
-     ON CONFLICT(dedupe_key) DO NOTHING`,
-    randomUUID(),
-    eventType,
-    subject,
-    clientId,
-    sid,
-    JSON.stringify({ generation }),
-    timestamp,
-    dedupeKey,
-    timestamp,
-    timestamp,
-  )
-}
-
 export const confirmLogoutTransaction = async (
   db,
   {
@@ -244,11 +227,25 @@ export const confirmLogoutTransaction = async (
         throw new LogoutBrokerError('ACCOUNT_NOT_ACTIVE', '账号状态或认证世代已变化')
       }
       const generation = account.auth_generation + 1
+      await cleanupIdentityRetention(db, { now: () => nowDate })
       const oidcSessions = await db.all(
         `SELECT DISTINCT client_id, sid FROM oidc_login_sessions
-         WHERE account_subject = ? AND status <> 'revoked'`,
+         WHERE account_subject = ? AND status <> 'revoked'
+         LIMIT ?`,
         session.subject,
+        MAX_UNRESOLVED_IDENTITY_OUTBOX_EVENTS_PER_GENERATION + 1,
       )
+      const affectedClients = new Set([
+        transaction.client_id,
+        ...oidcSessions.map((oidcSession) => oidcSession.client_id),
+      ])
+      if (oidcSessions.length + affectedClients.size
+        > MAX_UNRESOLVED_IDENTITY_OUTBOX_EVENTS_PER_GENERATION) {
+        throw new IdentityOutboxCapacityError(
+          'IDENTITY_OUTBOX_GENERATION_FANOUT_EXCEEDED',
+          'Logout revocation fan-out exceeds the identity outbox generation capacity',
+        )
+      }
       const generationAdvanced = await db.run(
         `UPDATE users SET auth_generation = ? WHERE id = ? AND auth_generation = ?`,
         generation,
@@ -268,7 +265,7 @@ export const confirmLogoutTransaction = async (
         session.subject,
       )
       for (const oidcSession of oidcSessions) {
-        await insertOutbox(db, {
+        await enqueueIdentityOutboxEvent(db, {
           eventType: 'oidc.revoke_session',
           subject: session.subject,
           clientId: oidcSession.client_id,
@@ -277,11 +274,8 @@ export const confirmLogoutTransaction = async (
           timestamp: nowDate.toISOString(),
         })
       }
-      for (const clientId of new Set([
-        transaction.client_id,
-        ...oidcSessions.map((oidcSession) => oidcSession.client_id),
-      ])) {
-        await insertOutbox(db, {
+      for (const clientId of affectedClients) {
+        await enqueueIdentityOutboxEvent(db, {
           eventType: 'oidc.revoke_consent',
           subject: session.subject,
           clientId,

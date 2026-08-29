@@ -1,6 +1,12 @@
 import express from 'express'
 import cors from 'cors'
-import { getDb, getIdentityDb, initDb } from './db.js'
+import {
+  getDb,
+  getIdentityDb,
+  getIdentityPublicDb,
+  getIdentityUserInfoDb,
+  initDb,
+} from './db.js'
 import { getAuthToken, getUserByToken } from './middleware/auth.js'
 import { createCsrfProtection } from './middleware/csrf.js'
 import { errorHandler } from './middleware/errorHandler.js'
@@ -25,6 +31,7 @@ import { createHydraAdminClient } from './identity/hydraAdminClient.js'
 import { createIdentityRouter } from './identity/router.js'
 import { createHydraPublicProxy } from './identity/hydraPublicProxy.js'
 import { processIdentityOutboxBatch } from './services/identityOutbox.js'
+import { cleanupIdentityRetention } from './services/identityRetention.js'
 
 import authRouter from './routes/auth.js'
 import userRouter from './routes/user.js'
@@ -80,6 +87,9 @@ app.set('trust proxy', Number.isInteger(configuredProxyHops) && configuredProxyH
 if (identityConfig.enabled) {
   app.use(createIdentityRouter({
     getDb: getIdentityDb,
+    getPublicDb: getIdentityPublicDb,
+    getUserInfoDb: getIdentityUserInfoDb,
+    getCriticalDb: getIdentityDb,
     admin: identityAdmin,
     config: identityConfig,
   }))
@@ -680,10 +690,13 @@ const cleanupOperationalRecords = async () => {
       `DELETE FROM identity_outbox WHERE status = 'completed' AND completed_at < ?`,
       auditCutoff,
     )
+    const identitySessions = await cleanupIdentityRetention(db, { now: () => new Date(now) })
     const removed = (sessions.changes || 0) + (verifications.changes || 0)
       + (clientErrors.changes || 0) + (auditLogs.changes || 0)
       + (accountCenterSessions.changes || 0) + (interactions.changes || 0)
       + (logoutTransactions.changes || 0) + (outbox.changes || 0)
+      + identitySessions.expiredActive
+      + identitySessions.staleAuthorizationPending + identitySessions.oldRevoked
     if (removed > 0) console.log(`[retention] cleaned sessions=${sessions.changes || 0} verifications=${verifications.changes || 0} clientErrors=${clientErrors.changes || 0} auditLogs=${auditLogs.changes || 0}`)
   } catch (error) {
     console.error('[retention] operational cleanup failed:', error)

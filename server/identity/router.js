@@ -27,10 +27,20 @@ import {
   verifyLogoutReauthCsrf,
 } from '../services/logoutBroker.js'
 import { processIdentityOutboxGeneration } from '../services/identityOutbox.js'
-import { acquireIdentityOperation } from '../services/identityOperation.js'
+import {
+  IdentityOperationCapacityError,
+  acquireIdentityOperation,
+} from '../services/identityOperation.js'
 
 const ACCOUNT_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 const MAX_PASSWORD_LENGTH = 128
+const DEFAULT_IDENTITY_LIMITS = Object.freeze({
+  accountRate: Object.freeze({ windowMs: 60_000, perSourceMax: 60, globalMax: 300 }),
+  userInfoRate: Object.freeze({ windowMs: 60_000, perSourceMax: 300, globalMax: 600 }),
+  publicQueueMaxPending: 32,
+  criticalQueueMaxPending: 64,
+  userInfoMaxConcurrent: 16,
+})
 const getIdentityCsp = (production) => {
   const jieyaOrigin = production
     ? JIEYA_BROWSER_ORIGINS.production
@@ -188,8 +198,63 @@ const authenticateAccount = async (db, body) => {
   return (await bcrypt.compare(password, account.password_hash)) ? account : null
 }
 
-export const createIdentityRouter = ({ getDb, admin, config, now = () => new Date() }) => {
+const mergeLimits = (limits = {}) => ({
+  ...DEFAULT_IDENTITY_LIMITS,
+  ...limits,
+  accountRate: { ...DEFAULT_IDENTITY_LIMITS.accountRate, ...limits.accountRate },
+  userInfoRate: { ...DEFAULT_IDENTITY_LIMITS.userInfoRate, ...limits.userInfoRate },
+})
+
+const createDualRateLimit = ({ windowMs, perSourceMax, globalMax }, message) => {
+  const perSource = createRateLimiter({ windowMs, max: perSourceMax, message })
+  const global = createRateLimiter({
+    windowMs,
+    max: globalMax,
+    message,
+    keyGenerator: () => 'identity-global',
+  })
+  return (req, res, next) => perSource(req, res, (error) => {
+    if (error) return next(error)
+    return global(req, res, next)
+  })
+}
+
+const createConcurrencyLimit = (max, message) => {
+  let active = 0
+  return (req, res, next) => {
+    if (active >= max) return res.status(503).json({ error: 'temporarily_unavailable', message })
+    active += 1
+    let released = false
+    const release = () => {
+      if (released) return
+      released = true
+      active -= 1
+    }
+    res.once('finish', release)
+    res.once('close', release)
+    return next()
+  }
+}
+
+const requirePrivateCredential = (headerName, secret) => (req, res, next) => {
+  if (!privateCredentialMatches(req, headerName, secret)) {
+    return res.status(401).json({ error: 'unauthorized' })
+  }
+  return next()
+}
+
+export const createIdentityRouter = ({
+  getDb,
+  getPublicDb = getDb,
+  getUserInfoDb = getDb,
+  getCriticalDb = getDb,
+  admin,
+  config,
+  now = () => new Date(),
+  limits: limitOverrides,
+}) => {
   const router = Router()
+  const limits = mergeLimits(limitOverrides)
   const jsonParser = express.json({ limit: '32kb', type: 'application/json' })
   const formParser = express.urlencoded({ extended: false, limit: '16kb' })
   const loginLimiter = createRateLimiter({
@@ -197,11 +262,33 @@ export const createIdentityRouter = ({ getDb, admin, config, now = () => new Dat
     max: 20,
     message: '登录请求过于频繁，请稍后再试',
   })
+  const accountGetLimiter = createDualRateLimit(
+    limits.accountRate,
+    '账号中心请求过于频繁，请稍后再试',
+  )
+  const userInfoLimiter = createDualRateLimit(
+    limits.userInfoRate,
+    'UserInfo 请求过于频繁，请稍后再试',
+  )
+  const userInfoConcurrency = createConcurrencyLimit(
+    limits.userInfoMaxConcurrent,
+    'UserInfo 当前负载已满',
+  )
 
-  router.use(['/account', '/oauth2/userinfo', '/internal/oidc'], async (req, res, next) => {
+  router.use(['/account', '/oauth2/userinfo', '/internal/oidc'], createIdentityHeaders(config))
+  router.use('/account', (req, res, next) => (
+    req.method === 'GET' ? accountGetLimiter(req, res, next) : next()
+  ))
+  router.use('/account', async (req, res, next) => {
     try {
-      const db = await getDb()
-      const release = await acquireIdentityOperation(db)
+      const db = await getPublicDb()
+      const release = await acquireIdentityOperation(db, {
+        maxPending: limits.publicQueueMaxPending,
+      })
+      if (req.aborted || res.destroyed) {
+        release()
+        return
+      }
       req.identityDb = db
       let released = false
       const releaseOnce = () => {
@@ -213,65 +300,88 @@ export const createIdentityRouter = ({ getDb, admin, config, now = () => new Dat
       res.once('close', releaseOnce)
       next()
     } catch (error) {
+      if (error instanceof IdentityOperationCapacityError) {
+        return sendHtmlError(res, 503, '账号中心当前负载已满，请稍后重试。')
+      }
       next(error)
     }
   })
-  router.use(['/account', '/oauth2/userinfo', '/internal/oidc'], createIdentityHeaders(config))
 
-  router.post('/internal/oidc/token-hook', jsonParser, async (req, res) => {
-    if (!privateCredentialMatches(req, config.tokenHookHeader, config.tokenHookSecret)) {
-      return res.status(401).json({ error: 'unauthorized' })
-    }
+  const runCritical = async (operation) => {
+    const db = await getCriticalDb()
+    const release = await acquireIdentityOperation(db, {
+      maxPending: limits.criticalQueueMaxPending,
+    })
     try {
-      const db = req.identityDb
-      await validateHydraTokenHook(db, req.body, { client: config.client, now })
-      return res.status(204).end()
-    } catch (error) {
-      reportIdentityFailure('token hook', error)
-      if (error instanceof TokenPolicyError) {
-        const request = req.body?.request
-        console.warn('[identity] token hook rejected shape', {
-          grantTypes: Array.isArray(request?.grant_types) ? request.grant_types.length : -1,
-          requestedScopes: Array.isArray(request?.requested_scopes) ? request.requested_scopes.length : -1,
-          grantedScopes: Array.isArray(request?.granted_scopes) ? request.granted_scopes.length : -1,
-          payloadGrantTypes: Array.isArray(request?.payload?.grant_type)
-            ? request.payload.grant_type.length
-            : -1,
-          hasSessionExtra: Boolean(req.body?.session?.extra),
-          hasSubject: typeof req.body?.session?.id_token?.subject === 'string',
+      return await operation(db)
+    } finally {
+      release()
+    }
+  }
+
+  router.post(
+    '/internal/oidc/token-hook',
+    requirePrivateCredential(config.tokenHookHeader, config.tokenHookSecret),
+    jsonParser,
+    async (req, res) => {
+      try {
+        await runCritical((db) => validateHydraTokenHook(
+          db,
+          req.body,
+          { client: config.client, now },
+        ))
+        return res.status(204).end()
+      } catch (error) {
+        reportIdentityFailure('token hook', error)
+        if (error instanceof TokenPolicyError) {
+          const request = req.body?.request
+          console.warn('[identity] token hook rejected shape', {
+            grantTypes: Array.isArray(request?.grant_types) ? request.grant_types.length : -1,
+            requestedScopes: Array.isArray(request?.requested_scopes) ? request.requested_scopes.length : -1,
+            grantedScopes: Array.isArray(request?.granted_scopes) ? request.granted_scopes.length : -1,
+            payloadGrantTypes: Array.isArray(request?.payload?.grant_type)
+              ? request.payload.grant_type.length
+              : -1,
+            hasSessionExtra: Boolean(req.body?.session?.extra),
+            hasSubject: typeof req.body?.session?.id_token?.subject === 'string',
+          })
+        }
+        if (error instanceof TokenPolicyError) return res.status(403).json({ error: 'access_denied' })
+        return res.status(503).json({ error: 'temporarily_unavailable' })
+      }
+    },
+  )
+
+  router.post(
+    '/internal/oidc/logout-transactions',
+    requirePrivateCredential(config.logoutBrokerHeader, config.logoutBrokerSecret),
+    jsonParser,
+    async (req, res) => {
+      try {
+        const result = await runCritical((db) => createLogoutTransaction(db, {
+          subject: req.body?.subject,
+          sid: req.body?.sid,
+          clientId: req.body?.client_id,
+          state: req.body?.state,
+        }, { client: config.client, issuer: config.issuer, now }))
+        return res.status(201).json({ url: result.url, expires_at: result.expiresAt })
+      } catch (error) {
+        const status = error instanceof IdentityOperationCapacityError ? 503 : (error?.status || 400)
+        return res.status(status).json({
+          error: status === 503 ? 'temporarily_unavailable' : 'invalid_logout_transaction',
         })
       }
-      if (error instanceof TokenPolicyError) return res.status(403).json({ error: 'access_denied' })
-      return res.status(503).json({ error: 'temporarily_unavailable' })
-    }
-  })
+    },
+  )
 
-  router.post('/internal/oidc/logout-transactions', jsonParser, async (req, res) => {
-    if (!privateCredentialMatches(req, config.logoutBrokerHeader, config.logoutBrokerSecret)) {
-      return res.status(401).json({ error: 'unauthorized' })
-    }
-    try {
-      const db = req.identityDb
-      const result = await createLogoutTransaction(db, {
-        subject: req.body?.subject,
-        sid: req.body?.sid,
-        clientId: req.body?.client_id,
-        state: req.body?.state,
-      }, { client: config.client, issuer: config.issuer, now })
-      return res.status(201).json({ url: result.url, expires_at: result.expiresAt })
-    } catch (error) {
-      return res.status(error?.status || 400).json({ error: 'invalid_logout_transaction' })
-    }
-  })
-
-  router.get('/oauth2/userinfo', async (req, res) => {
+  router.get('/oauth2/userinfo', userInfoLimiter, userInfoConcurrency, async (req, res) => {
     const token = readBearer(req)
     if (!token) {
       res.setHeader('WWW-Authenticate', 'Bearer realm="userinfo"')
       return res.status(401).json({ error: 'invalid_token' })
     }
     try {
-      const db = req.identityDb
+      const db = await getUserInfoDb()
       return res.json(await resolveUserInfo(db, admin, token, { client: config.client }))
     } catch (error) {
       const status = error instanceof UserInfoError ? error.status : 503
@@ -309,7 +419,7 @@ export const createIdentityRouter = ({ getDb, admin, config, now = () => new Dat
       }))
     } catch (error) {
       reportIdentityFailure('login preparation', error)
-      return sendHtmlError(res, 400, '登录请求无效、已过期或暂时不可用。')
+      return sendHtmlError(res, error?.status === 503 ? 503 : 400, '登录请求无效、已过期或暂时不可用。')
     }
   })
 
@@ -334,7 +444,7 @@ export const createIdentityRouter = ({ getDb, admin, config, now = () => new Dat
       return res.redirect(303, accepted.redirectTo)
     } catch (error) {
       reportIdentityFailure('login acceptance', error)
-      return sendHtmlError(res, 400, '登录请求已失效，请重新发起。')
+      return sendHtmlError(res, error?.status === 503 ? 503 : 400, '登录请求已失效，请重新发起。')
     }
   })
 
@@ -366,7 +476,7 @@ export const createIdentityRouter = ({ getDb, admin, config, now = () => new Dat
         </form>`))
     } catch (error) {
       reportIdentityFailure('consent preparation', error)
-      return sendHtmlError(res, 401, '账号会话或授权请求已失效，请重新登录。')
+      return sendHtmlError(res, error?.status === 503 ? 503 : 401, '账号会话或授权请求已失效，请重新登录。')
     }
   })
 
@@ -390,7 +500,7 @@ export const createIdentityRouter = ({ getDb, admin, config, now = () => new Dat
       return res.redirect(303, accepted.redirectTo)
     } catch (error) {
       reportIdentityFailure('consent decision', error)
-      return sendHtmlError(res, 400, '授权请求无效或已消费。')
+      return sendHtmlError(res, error?.status === 503 ? 503 : 400, '授权请求无效或已消费。')
     }
   })
 
@@ -426,8 +536,12 @@ export const createIdentityRouter = ({ getDb, admin, config, now = () => new Dat
           <input type="hidden" name="csrf_token" value="${escapeHtml(csrfToken)}">
           <button type="submit">确认全局退出</button>
         </form>`))
-    } catch {
-      return sendHtmlError(res, 400, '退出事务无效、已过期或与当前账号不匹配。')
+    } catch (error) {
+      return sendHtmlError(
+        res,
+        error?.status === 503 ? 503 : 400,
+        '退出事务无效、已过期或与当前账号不匹配。',
+      )
     }
   })
 
@@ -449,8 +563,8 @@ export const createIdentityRouter = ({ getDb, admin, config, now = () => new Dat
       const redirect = new URL('/account/logout', config.issuer)
       redirect.searchParams.set('transaction', req.body.transaction)
       return res.redirect(303, redirect.toString())
-    } catch {
-      return sendHtmlError(res, 400, '重新验证失败，请重新发起全局退出。')
+    } catch (error) {
+      return sendHtmlError(res, error?.status === 503 ? 503 : 400, '重新验证失败，请重新发起全局退出。')
     }
   })
 
@@ -481,8 +595,12 @@ export const createIdentityRouter = ({ getDb, admin, config, now = () => new Dat
         reportIdentityFailure('logout outbox immediate drain', error)
       }
       return res.redirect(303, confirmed.redirectTo)
-    } catch {
-      return sendHtmlError(res, 400, '退出事务已消费、过期或验证失败。')
+    } catch (error) {
+      return sendHtmlError(
+        res,
+        error?.status === 503 ? 503 : 400,
+        '退出事务已消费、过期或验证失败。',
+      )
     }
   })
 

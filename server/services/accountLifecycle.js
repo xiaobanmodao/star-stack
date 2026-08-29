@@ -1,6 +1,11 @@
-import { randomUUID } from 'node:crypto'
 import { ACCOUNT_STATUSES } from '../utils/accountIdentityMigration.js'
 import { runIdentityOperation } from './identityOperation.js'
+import {
+  IdentityOutboxCapacityError,
+  MAX_UNRESOLVED_IDENTITY_OUTBOX_EVENTS_PER_GENERATION,
+  enqueueIdentityOutboxEvent,
+} from './identityOutboxStore.js'
+import { cleanupIdentityRetention } from './identityRetention.js'
 
 const statusSet = new Set(ACCOUNT_STATUSES)
 
@@ -19,36 +24,23 @@ const assertTimestamp = (value) => {
   return value
 }
 
-const enqueueIdentityEvent = async (
-  db,
-  { eventType, subject, clientId = null, sid = null, generation, timestamp },
-) => {
-  const dedupeKey = `${eventType}:${subject}:${clientId || '*'}:${sid || '*'}:${generation}`
-  await db.run(
-    `INSERT INTO identity_outbox
-       (id, event_type, subject, client_id, sid, payload_json, status, attempts,
-        next_attempt_at, dedupe_key, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?, ?, ?)
-     ON CONFLICT(dedupe_key) DO NOTHING`,
-    randomUUID(),
-    eventType,
-    subject,
-    clientId,
-    sid,
-    JSON.stringify({ generation }),
-    timestamp,
-    dedupeKey,
-    timestamp,
-    timestamp,
-  )
-}
-
 const revokeIdentitySessions = async (db, { accountId, subject, generation, eventType, timestamp }) => {
+  await cleanupIdentityRetention(db, { now: () => new Date(timestamp) })
   const loginSessions = await db.all(
     `SELECT client_id, sid FROM oidc_login_sessions
-     WHERE account_subject = ? AND status <> 'revoked'`,
+     WHERE account_subject = ? AND status <> 'revoked'
+     LIMIT ?`,
     subject,
+    MAX_UNRESOLVED_IDENTITY_OUTBOX_EVENTS_PER_GENERATION + 1,
   )
+  const affectedClients = new Set(loginSessions.map((session) => session.client_id))
+  if (1 + loginSessions.length + affectedClients.size
+    > MAX_UNRESOLVED_IDENTITY_OUTBOX_EVENTS_PER_GENERATION) {
+    throw new IdentityOutboxCapacityError(
+      'IDENTITY_OUTBOX_GENERATION_FANOUT_EXCEEDED',
+      'Account lifecycle revocation fan-out exceeds the identity outbox generation capacity',
+    )
+  }
   await db.run(
     `UPDATE oidc_login_sessions
      SET status = 'revocation_pending', updated_at = ?
@@ -59,14 +51,14 @@ const revokeIdentitySessions = async (db, { accountId, subject, generation, even
   await db.run(`DELETE FROM account_center_sessions WHERE account_subject = ?`, subject)
   await db.run(`DELETE FROM sessions WHERE user_id = ?`, accountId)
 
-  await enqueueIdentityEvent(db, {
+  await enqueueIdentityOutboxEvent(db, {
     eventType,
     subject,
     generation,
     timestamp,
   })
   for (const session of loginSessions) {
-    await enqueueIdentityEvent(db, {
+    await enqueueIdentityOutboxEvent(db, {
       eventType: 'oidc.revoke_session',
       subject,
       clientId: session.client_id,
@@ -75,8 +67,8 @@ const revokeIdentitySessions = async (db, { accountId, subject, generation, even
       timestamp,
     })
   }
-  for (const clientId of new Set(loginSessions.map((session) => session.client_id))) {
-    await enqueueIdentityEvent(db, {
+  for (const clientId of affectedClients) {
+    await enqueueIdentityOutboxEvent(db, {
       eventType: 'oidc.revoke_consent',
       subject,
       clientId,

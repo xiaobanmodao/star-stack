@@ -7,7 +7,10 @@ import { validateJieyaAuthorizationRequest } from './authorizationPolicy.js'
 import { getAccountCenterSession } from '../services/accountCenterSession.js'
 
 const INTERACTION_TTL_MS = 10 * 60 * 1000
+const AUTHORIZATION_PENDING_TTL_MS = 15 * 60 * 1000
 const HYDRA_LOGIN_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
+const MAX_OIDC_INTERACTIONS = 512
+export const MAX_ACTIVE_LOGIN_SESSIONS_PER_ACCOUNT_CLIENT = 16
 const flowQueues = new WeakMap()
 
 export class OidcFlowError extends Error {
@@ -48,52 +51,75 @@ const registerInteraction = async (
   const challengeHash = hashOpaqueToken(challenge, 2048)
   if (!challengeHash) throw new OidcFlowError('INVALID_CHALLENGE', 'OIDC challenge 无法安全持久化')
   const expiresAt = new Date(nowDate.getTime() + INTERACTION_TTL_MS).toISOString()
-  await db.run(
-    `INSERT INTO oidc_interactions
-       (challenge_hash, interaction_type, account_session_hash, account_subject,
-        client_id, status, created_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(challenge_hash) DO NOTHING`,
-    challengeHash,
-    type,
-    session?.tokenHash || null,
-    session?.subject || null,
-    clientId,
-    session ? 'bound' : 'pending',
-    nowDate.toISOString(),
-    expiresAt,
-  )
-  const interaction = await db.get(
-    `SELECT * FROM oidc_interactions WHERE challenge_hash = ?`,
-    challengeHash,
-  )
-  if (!interaction) throw new OidcFlowError('INTERACTION_NOT_PERSISTED', 'OIDC challenge 未持久化')
-  if (interaction.interaction_type !== type) {
-    throw new OidcFlowError('INTERACTION_TYPE_CONFLICT', 'OIDC challenge 类型绑定冲突')
-  }
-  if (interaction.client_id !== clientId) {
-    throw new OidcFlowError('INTERACTION_CLIENT_CONFLICT', 'OIDC challenge 客户端绑定冲突')
-  }
-  if (Date.parse(interaction.expires_at) <= nowDate.getTime()) {
-    throw new OidcFlowError('INTERACTION_EXPIRED', 'OIDC challenge 已过期')
-  }
-  if (!['pending', 'bound'].includes(interaction.status)) {
-    throw new OidcFlowError('INTERACTION_CONSUMED', 'OIDC challenge 已处理，不能重复使用', { status: 409 })
-  }
-  if (session) {
-    if (interaction.account_subject && interaction.account_subject !== session.subject) {
-      throw new OidcFlowError('ACCOUNT_MISMATCH', 'OIDC challenge 已绑定其他账号', { status: 403 })
+  return runSerialized(db, async () => {
+    await db.exec('BEGIN IMMEDIATE')
+    try {
+      await db.run(`DELETE FROM oidc_interactions WHERE expires_at <= ?`, nowDate.toISOString())
+      let interaction = await db.get(
+        `SELECT * FROM oidc_interactions WHERE challenge_hash = ?`,
+        challengeHash,
+      )
+      if (!interaction) {
+        const capacity = await db.get(`SELECT COUNT(*) AS count FROM oidc_interactions`)
+        if (capacity.count >= MAX_OIDC_INTERACTIONS) {
+          throw new OidcFlowError(
+            'INTERACTION_CAPACITY_EXCEEDED',
+            'OIDC 交互容量已满，请稍后重试',
+            { status: 503 },
+          )
+        }
+        await db.run(
+          `INSERT INTO oidc_interactions
+             (challenge_hash, interaction_type, account_session_hash, account_subject,
+              client_id, status, created_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          challengeHash,
+          type,
+          session?.tokenHash || null,
+          session?.subject || null,
+          clientId,
+          session ? 'bound' : 'pending',
+          nowDate.toISOString(),
+          expiresAt,
+        )
+        interaction = await db.get(
+          `SELECT * FROM oidc_interactions WHERE challenge_hash = ?`,
+          challengeHash,
+        )
+      }
+      if (!interaction) throw new OidcFlowError('INTERACTION_NOT_PERSISTED', 'OIDC challenge 未持久化')
+      if (interaction.interaction_type !== type) {
+        throw new OidcFlowError('INTERACTION_TYPE_CONFLICT', 'OIDC challenge 类型绑定冲突')
+      }
+      if (interaction.client_id !== clientId) {
+        throw new OidcFlowError('INTERACTION_CLIENT_CONFLICT', 'OIDC challenge 客户端绑定冲突')
+      }
+      if (Date.parse(interaction.expires_at) <= nowDate.getTime()) {
+        throw new OidcFlowError('INTERACTION_EXPIRED', 'OIDC challenge 已过期')
+      }
+      if (!['pending', 'bound'].includes(interaction.status)) {
+        throw new OidcFlowError('INTERACTION_CONSUMED', 'OIDC challenge 已处理，不能重复使用', { status: 409 })
+      }
+      if (session) {
+        if (interaction.account_subject && interaction.account_subject !== session.subject) {
+          throw new OidcFlowError('ACCOUNT_MISMATCH', 'OIDC challenge 已绑定其他账号', { status: 403 })
+        }
+        await db.run(
+          `UPDATE oidc_interactions
+           SET account_session_hash = ?, account_subject = ?, status = 'bound'
+           WHERE challenge_hash = ? AND status IN ('pending', 'bound')`,
+          session.tokenHash,
+          session.subject,
+          challengeHash,
+        )
+      }
+      await db.exec('COMMIT')
+      return challengeHash
+    } catch (error) {
+      await db.exec('ROLLBACK').catch(() => undefined)
+      throw error
     }
-    await db.run(
-      `UPDATE oidc_interactions
-       SET account_session_hash = ?, account_subject = ?, status = 'bound'
-       WHERE challenge_hash = ? AND status IN ('pending', 'bound')`,
-      session.tokenHash,
-      session.subject,
-      challengeHash,
-    )
-  }
-  return challengeHash
+  })
 }
 
 const claimInteraction = async (db, challengeHash, session) => runSerialized(db, async () => {
@@ -126,6 +152,92 @@ const finishInteraction = async (db, challengeHash, status, nowDate) => {
     challengeHash,
   )
 }
+
+const restoreInteraction = (db, challengeHash) => db.run(
+  `UPDATE oidc_interactions SET status = 'bound'
+   WHERE challenge_hash = ? AND status = 'processing'`,
+  challengeHash,
+)
+
+const reserveLoginSession = async (db, prepared, clientId, nowDate) => runSerialized(db, async () => {
+  await db.exec('BEGIN IMMEDIATE')
+  try {
+    const staleBefore = new Date(nowDate.getTime() - AUTHORIZATION_PENDING_TTL_MS).toISOString()
+    const expiresAt = new Date(
+      nowDate.getTime() + HYDRA_LOGIN_SESSION_TTL_SECONDS * 1000,
+    ).toISOString()
+    await db.run(
+      `DELETE FROM oidc_login_sessions
+       WHERE status = 'active' AND expires_at <= ?`,
+      nowDate.toISOString(),
+    )
+    await db.run(
+      `DELETE FROM oidc_login_sessions
+       WHERE status = 'authorization_pending' AND updated_at <= ?`,
+      staleBefore,
+    )
+    const sid = prepared.request.login_session_id
+    const existing = await db.get(
+      `SELECT id, account_subject, consent_request_id, status FROM oidc_login_sessions
+       WHERE client_id = ? AND sid = ?`,
+      clientId,
+      sid,
+    )
+    if (existing && existing.account_subject !== prepared.session.subject) {
+      throw new OidcFlowError('SID_SUBJECT_CONFLICT', 'Hydra sid 已绑定其他账号', { status: 409 })
+    }
+    if (existing?.status === 'revoked' || existing?.status === 'revocation_pending') {
+      throw new OidcFlowError('SID_REVOKED', 'Hydra sid 已撤销，不能重新授权', { status: 409 })
+    }
+    if (existing) {
+      if (existing.status === 'authorization_pending'
+        && existing.consent_request_id !== prepared.request.consent_request_id) {
+        throw new OidcFlowError('SID_AUTHORIZATION_IN_PROGRESS', 'Hydra sid 正在处理其他授权', {
+          status: 409,
+        })
+      }
+      await db.run(
+        `UPDATE oidc_login_sessions SET updated_at = ?, expires_at = ? WHERE id = ?`,
+        nowDate.toISOString(),
+        expiresAt,
+        existing.id,
+      )
+      await db.exec('COMMIT')
+      return { admitted: true, inserted: false }
+    }
+
+    const active = await db.get(
+      `SELECT COUNT(*) AS count FROM oidc_login_sessions
+       WHERE account_subject = ? AND client_id = ?
+         AND status IN ('authorization_pending', 'active', 'revocation_pending')`,
+      prepared.session.subject,
+      clientId,
+    )
+    if (active.count >= MAX_ACTIVE_LOGIN_SESSIONS_PER_ACCOUNT_CLIENT) {
+      await db.exec('COMMIT')
+      return { admitted: false, inserted: false }
+    }
+    await db.run(
+      `INSERT INTO oidc_login_sessions
+         (account_subject, client_id, sid, auth_generation, consent_request_id,
+          status, created_at, updated_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, 'authorization_pending', ?, ?, ?)`,
+      prepared.session.subject,
+      clientId,
+      sid,
+      prepared.session.generation,
+      prepared.request.consent_request_id,
+      nowDate.toISOString(),
+      nowDate.toISOString(),
+      expiresAt,
+    )
+    await db.exec('COMMIT')
+    return { admitted: true, inserted: true }
+  } catch (error) {
+    await db.exec('ROLLBACK').catch(() => undefined)
+    throw error
+  }
+})
 
 const loadSession = async (db, token, nowDate) => (
   token ? getAccountCenterSession(db, token, { now: () => nowDate }) : null
@@ -257,30 +369,23 @@ export const acceptConsent = async (db, admin, options) => {
   }
   const nowDate = asDate(options.now?.() || new Date())
   await claimInteraction(db, prepared.challengeHash, prepared.session)
-
-  const existing = await db.get(
-    `SELECT id, account_subject, status FROM oidc_login_sessions
-     WHERE client_id = ? AND sid = ?`,
-    options.client.id,
-    prepared.request.login_session_id,
-  )
-  if (existing && existing.account_subject !== prepared.session.subject) {
-    throw new OidcFlowError('SID_SUBJECT_CONFLICT', 'Hydra sid 已绑定其他账号', { status: 409 })
-  }
-  if (!existing) {
-    await db.run(
-      `INSERT INTO oidc_login_sessions
-         (account_subject, client_id, sid, auth_generation, consent_request_id,
-          status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'authorization_pending', ?, ?)`,
-      prepared.session.subject,
-      options.client.id,
-      prepared.request.login_session_id,
-      prepared.session.generation,
-      prepared.request.consent_request_id,
-      nowDate.toISOString(),
-      nowDate.toISOString(),
-    )
+  const reservation = await reserveLoginSession(db, prepared, options.client.id, nowDate)
+  if (!reservation.admitted) {
+    try {
+      await admin.revokeLoginSession(prepared.request.login_session_id)
+      const rejected = await admin.rejectConsentRequest(prepared.challenge, {
+        error: 'temporarily_unavailable',
+        error_description: 'The account has too many active application sessions.',
+      })
+      await finishInteraction(db, prepared.challengeHash, 'rejected', nowDate)
+      return { redirectTo: rejected.redirect_to, capacityRejected: true }
+    } catch (cause) {
+      await restoreInteraction(db, prepared.challengeHash).catch(() => undefined)
+      throw new OidcFlowError('SID_CAPACITY_REJECTION_FAILED', 'Hydra 会话容量拒绝失败', {
+        status: 502,
+        cause,
+      })
+    }
   }
 
   let result
@@ -302,19 +407,45 @@ export const acceptConsent = async (db, admin, options) => {
       },
     })
   } catch (cause) {
+    if (reservation.inserted) {
+      await db.run(
+        `DELETE FROM oidc_login_sessions
+         WHERE client_id = ? AND sid = ? AND account_subject = ?
+           AND status = 'authorization_pending'`,
+        options.client.id,
+        prepared.request.login_session_id,
+        prepared.session.subject,
+      ).catch(() => undefined)
+    }
+    await restoreInteraction(db, prepared.challengeHash).catch(() => undefined)
     throw new OidcFlowError('HYDRA_CONSENT_FAILED', 'Hydra consent accept 失败', { status: 502, cause })
   }
-  await db.run(
+  const activated = await db.run(
     `UPDATE oidc_login_sessions
-     SET auth_generation = ?, consent_request_id = ?, status = 'active', updated_at = ?
-     WHERE client_id = ? AND sid = ? AND account_subject = ?`,
+     SET auth_generation = ?, consent_request_id = ?, status = 'active',
+         updated_at = ?, expires_at = ?
+     WHERE client_id = ? AND sid = ? AND account_subject = ?
+       AND status IN ('authorization_pending', 'active')`,
     prepared.session.generation,
     prepared.request.consent_request_id,
     nowDate.toISOString(),
+    new Date(nowDate.getTime() + HYDRA_LOGIN_SESSION_TTL_SECONDS * 1000).toISOString(),
     options.client.id,
     prepared.request.login_session_id,
     prepared.session.subject,
   )
+  if (activated.changes !== 1) {
+    const revocation = await db.get(
+      `SELECT status FROM oidc_login_sessions
+       WHERE client_id = ? AND sid = ? AND account_subject = ?`,
+      options.client.id,
+      prepared.request.login_session_id,
+      prepared.session.subject,
+    )
+    if (!['revocation_pending', 'revoked'].includes(revocation?.status)) {
+      throw new OidcFlowError('SID_RESERVATION_LOST', 'Hydra sid 跟踪状态丢失', { status: 503 })
+    }
+  }
   await finishInteraction(db, prepared.challengeHash, 'accepted', nowDate)
   return { redirectTo: result.redirect_to }
 }

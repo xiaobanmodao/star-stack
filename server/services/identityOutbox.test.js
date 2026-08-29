@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { openIdentityFixture, TEST_SUBJECTS } from '../identity/testIdentityFixture.js'
 import {
+  MAX_IDENTITY_OUTBOX_BATCH_SIZE,
+  MAX_SYNC_IDENTITY_OUTBOX_DRAIN,
+  processIdentityOutboxBatch,
   processIdentityOutboxGeneration,
   processIdentityOutboxOnce,
 } from './identityOutbox.js'
@@ -41,11 +44,13 @@ describe('identity outbox worker', () => {
     resources.push(resource)
     await resource.db.run(
       `INSERT INTO oidc_login_sessions
-         (account_subject, client_id, sid, auth_generation, status, created_at, updated_at)
-       VALUES (?, 'jieya-server-local', 'sid-1', 0, 'revocation_pending', ?, ?)`,
+         (account_subject, client_id, sid, auth_generation, status,
+          created_at, updated_at, expires_at)
+       VALUES (?, 'jieya-server-local', 'sid-1', 0, 'revocation_pending', ?, ?, ?)`,
       TEST_SUBJECTS.alice,
       baseTime.toISOString(),
       baseTime.toISOString(),
+      '2026-09-29T00:00:00.000Z',
     )
     await addEvent(resource.db)
     const admin = { revokeLoginSession: vi.fn(async () => undefined) }
@@ -168,5 +173,56 @@ describe('identity outbox worker', () => {
     expect(admin.revokeLoginSession).not.toHaveBeenCalledWith('sid-old')
     expect(await resource.db.get(`SELECT status FROM identity_outbox WHERE id = 'older-session'`))
       .toEqual({ status: 'pending' })
+  })
+
+  it('bounds the synchronous generation drain and leaves the remainder for the worker', async () => {
+    const resource = await openIdentityFixture()
+    resources.push(resource)
+    const total = MAX_SYNC_IDENTITY_OUTBOX_DRAIN + 4
+    for (let index = 0; index < total; index += 1) {
+      await addEvent(resource.db, {
+        id: `sync-${index}`,
+        sid: `sync-sid-${index}`,
+        generation: 7,
+      })
+    }
+    const admin = { revokeLoginSession: vi.fn(async () => undefined) }
+
+    const results = await processIdentityOutboxGeneration(resource.db, admin, {
+      subject: TEST_SUBJECTS.alice,
+      generation: 7,
+      now: () => baseTime,
+    })
+
+    expect(results).toHaveLength(MAX_SYNC_IDENTITY_OUTBOX_DRAIN)
+    expect(admin.revokeLoginSession).toHaveBeenCalledTimes(MAX_SYNC_IDENTITY_OUTBOX_DRAIN)
+    expect(await resource.db.get(
+      `SELECT COUNT(*) AS count FROM identity_outbox WHERE status = 'pending'`,
+    )).toEqual({ count: total - MAX_SYNC_IDENTITY_OUTBOX_DRAIN })
+  })
+
+  it('clamps an oversized worker batch request to the audited maximum', async () => {
+    const resource = await openIdentityFixture()
+    resources.push(resource)
+    const total = MAX_IDENTITY_OUTBOX_BATCH_SIZE + 5
+    for (let index = 0; index < total; index += 1) {
+      await addEvent(resource.db, {
+        id: `worker-${index}`,
+        sid: `worker-sid-${index}`,
+        generation: 9,
+      })
+    }
+    const admin = { revokeLoginSession: vi.fn(async () => undefined) }
+
+    const results = await processIdentityOutboxBatch(resource.db, admin, {
+      limit: 100_000,
+      now: () => baseTime,
+    })
+
+    expect(results).toHaveLength(MAX_IDENTITY_OUTBOX_BATCH_SIZE)
+    expect(admin.revokeLoginSession).toHaveBeenCalledTimes(MAX_IDENTITY_OUTBOX_BATCH_SIZE)
+    expect(await resource.db.get(
+      `SELECT COUNT(*) AS count FROM identity_outbox WHERE status = 'pending'`,
+    )).toEqual({ count: total - MAX_IDENTITY_OUTBOX_BATCH_SIZE })
   })
 })
