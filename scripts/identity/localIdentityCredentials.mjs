@@ -89,6 +89,9 @@ const assertSecureFileStat = (stat, description) => {
   if (modeBits(stat) !== 0o600) {
     throw new Error(`${description} permissions must be exactly 0600`)
   }
+  if (stat.nlink !== 1) {
+    throw new Error(`${description} link count must be exactly one; hard links are forbidden`)
+  }
 }
 
 const assertLexicalRealPath = async (target, description) => {

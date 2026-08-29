@@ -5,6 +5,7 @@ import {
   access,
   chmod,
   copyFile,
+  link,
   lstat,
   mkdir,
   mkdtemp,
@@ -34,6 +35,9 @@ import {
   IdentityProcessSupervisor,
   waitForManagedHttp,
 } from './localIdentityProcessSupervisor.mjs'
+import {
+  prepareSecureSqliteUnit,
+} from '../../server/utils/secureSqliteGuard.js'
 
 const directories = []
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url))
@@ -136,6 +140,19 @@ describe('local identity machine state and credentials', () => {
     await opened.close()
   })
 
+  it('rejects a current-user mode-0600 credentials inode with another hard link', async () => {
+    const root = await makeDirectory('starstack-identity-credential-hardlink-')
+    await chmod(root, 0o700)
+    const credentials = path.join(root, 'credentials.json')
+    const escaped = path.join(root, 'credentials-exported.json')
+    await writeFile(credentials, '{"value":"secret"}\n', { mode: 0o600 })
+    const opened = await __openSecureLocalIdentityFileForTest(credentials)
+    await link(credentials, escaped)
+    await expect(opened.readJsonAndVerify())
+      .rejects.toThrow(/hard link|link count|nlink/i)
+    await opened.close()
+  })
+
   it('refuses to commit a replaced credential staging inode', async () => {
     const root = await makeDirectory('starstack-identity-stage-race-')
     await chmod(root, 0o700)
@@ -167,6 +184,14 @@ describe('local identity runtime lock', () => {
 
     await expect(release()).rejects.toThrow(/ownership|inode|changed/i)
     await expect(access(lockPath)).resolves.toBeUndefined()
+  })
+
+  it('refuses to release a lock inode exported through a hard link', async () => {
+    const root = await makeDirectory('starstack-identity-lock-hardlink-')
+    const release = await __acquireLocalIdentityRuntimeLockForTest(root)
+    await link(path.join(root, 'runtime.lock'), path.join(root, 'runtime.exported'))
+    await expect(release()).rejects.toThrow(/hard link|link count|nlink/i)
+    await expect(access(path.join(root, 'runtime.lock'))).resolves.toBeUndefined()
   })
 
   it('allows only one contender to reclaim a stale lock across two checkouts', async () => {
@@ -240,6 +265,87 @@ describe('local identity runtime lock', () => {
     await Promise.all(workers.map((child) => waitForExit(child)))
     await expect(access(path.join(root, 'runtime.lock'))).rejects.toMatchObject({ code: 'ENOENT' })
   }, 15000)
+})
+
+describe('local identity SQLite path safety', () => {
+  it('rejects symlinked and hard-linked canonical database files', async () => {
+    const symlinkRoot = await makeDirectory('starstack-identity-sqlite-symlink-')
+    await chmod(symlinkRoot, 0o700)
+    const symlinkTarget = path.join(symlinkRoot, 'target.sqlite')
+    const symlinkDatabase = path.join(symlinkRoot, 'fixture.sqlite')
+    await writeFile(symlinkTarget, '', { mode: 0o600 })
+    await symlink(symlinkTarget, symlinkDatabase)
+    await expect(prepareSecureSqliteUnit({ databasePath: symlinkDatabase }))
+      .rejects.toThrow(/symbolic link|real path|regular file/i)
+
+    const hardLinkRoot = await makeDirectory('starstack-identity-sqlite-hardlink-')
+    await chmod(hardLinkRoot, 0o700)
+    const hardLinkDatabase = path.join(hardLinkRoot, 'fixture.sqlite')
+    await writeFile(hardLinkDatabase, '', { mode: 0o600 })
+    await link(hardLinkDatabase, path.join(hardLinkRoot, 'fixture.exported'))
+    await expect(prepareSecureSqliteUnit({ databasePath: hardLinkDatabase }))
+      .rejects.toThrow(/hard link|link count|nlink/i)
+  })
+
+  it('rejects unsafe existing rollback journal, WAL and SHM sidecars', async () => {
+    const symlinkRoot = await makeDirectory('starstack-identity-sqlite-wal-symlink-')
+    await chmod(symlinkRoot, 0o700)
+    const symlinkDatabase = path.join(symlinkRoot, 'fixture.sqlite')
+    const walTarget = path.join(symlinkRoot, 'outside-wal')
+    await writeFile(symlinkDatabase, '', { mode: 0o600 })
+    await writeFile(walTarget, '', { mode: 0o600 })
+    await symlink(walTarget, `${symlinkDatabase}-wal`)
+    await expect(prepareSecureSqliteUnit({ databasePath: symlinkDatabase }))
+      .rejects.toThrow(/symbolic link|real path|regular file/i)
+
+    const hardLinkRoot = await makeDirectory('starstack-identity-sqlite-shm-hardlink-')
+    await chmod(hardLinkRoot, 0o700)
+    const hardLinkDatabase = path.join(hardLinkRoot, 'fixture.sqlite')
+    const shm = `${hardLinkDatabase}-shm`
+    await writeFile(hardLinkDatabase, '', { mode: 0o600 })
+    await writeFile(shm, '', { mode: 0o600 })
+    await link(shm, path.join(hardLinkRoot, 'shm.exported'))
+    await expect(prepareSecureSqliteUnit({ databasePath: hardLinkDatabase }))
+      .rejects.toThrow(/hard link|link count|nlink/i)
+
+    const journalRoot = await makeDirectory('starstack-identity-sqlite-journal-symlink-')
+    await chmod(journalRoot, 0o700)
+    const journalDatabase = path.join(journalRoot, 'fixture.sqlite')
+    const journalTarget = path.join(journalRoot, 'outside-journal')
+    await writeFile(journalDatabase, '', { mode: 0o600 })
+    await writeFile(journalTarget, '', { mode: 0o600 })
+    await symlink(journalTarget, `${journalDatabase}-journal`)
+    await expect(prepareSecureSqliteUnit({ databasePath: journalDatabase }))
+      .rejects.toThrow(/symbolic link|real path|regular file/i)
+  })
+
+  it('pins the main inode across the parent-to-child open boundary', async () => {
+    const root = await makeDirectory('starstack-identity-sqlite-boundary-')
+    await chmod(root, 0o700)
+    const database = path.join(root, 'fixture.sqlite')
+    const displaced = path.join(root, 'fixture.displaced.sqlite')
+    const parent = await prepareSecureSqliteUnit({ databasePath: database })
+    const expectedGuard = parent.environmentValue
+    await rename(database, displaced)
+    await writeFile(database, '', { mode: 0o600 })
+    await expect(parent.verify()).rejects.toThrow(/changed|replaced|identity|inode/i)
+    await expect(prepareSecureSqliteUnit({
+      databasePath: database,
+      createMain: false,
+      expectedGuard,
+    })).rejects.toThrow(/changed|replaced|identity|inode/i)
+    await parent.close()
+  })
+
+  it('detects a hard link created after the SQLite guard opened the inode', async () => {
+    const root = await makeDirectory('starstack-identity-sqlite-late-hardlink-')
+    await chmod(root, 0o700)
+    const database = path.join(root, 'fixture.sqlite')
+    const guard = await prepareSecureSqliteUnit({ databasePath: database })
+    await link(database, path.join(root, 'fixture.exported'))
+    await expect(guard.verify()).rejects.toThrow(/hard link|link count|nlink/i)
+    await guard.close()
+  })
 })
 
 describe('local identity child lifecycle', () => {
@@ -345,6 +451,56 @@ process.exit(1)
     const result = await waitForExit(runner, 5000)
     expect(result.code).not.toBe(0)
     expect(stdout).not.toMatch(/"ready"\s*:\s*true/)
+    for (const file of ['runtime.lock', 'runtime.lock.operation']) {
+      await expect(access(path.join(stateRoot, file))).rejects.toMatchObject({ code: 'ENOENT' })
+    }
+    await Promise.all([4444, 4445, 5174, 4180].map(assertPortFree))
+  }, 10000)
+
+  it('rejects a symlink at the exact canonical fixture path before Hydra can spawn', async () => {
+    const root = await makeDirectory('starstack-identity-run-local-sqlite-symlink-')
+    const home = path.join(root, 'home')
+    await mkdir(home, { mode: 0o700 })
+    const stateRoot = stateRootForHome(home)
+    const credentialsPath = path.join(stateRoot, 'ss-auth-002-local-credentials.json')
+    const stagingPath = path.join(stateRoot, '.credentials-rotation.pending.json')
+    const databasePath = path.join(stateRoot, 'ss-auth-002-starstack.sqlite')
+    const targetPath = path.join(root, 'escaped.sqlite')
+    const hydraSpawnMarker = path.join(root, 'hydra-spawned')
+    const rotation = await __stageLocalIdentityCredentialsRotationForTest({
+      runtimeRoot: stateRoot,
+      credentialsPath,
+      stagingPath,
+    })
+    await rotation.commit()
+    await writeFile(targetPath, 'must-not-change', { mode: 0o600 })
+    await symlink(targetPath, databasePath)
+    const fakeHydra = path.join(root, 'fake-hydra.mjs')
+    await writeFile(fakeHydra, `#!/usr/bin/env node
+import { writeFileSync } from 'node:fs'
+writeFileSync(process.env.IDENTITY_SQLITE_HYDRA_MARKER, 'spawned')
+process.exit(0)
+`)
+    await chmod(fakeHydra, 0o700)
+    const runner = spawn(process.execPath, [path.join(scriptDirectory, 'run-local-runtime.mjs')], {
+      cwd: LOCAL_IDENTITY_PROJECT_ROOT,
+      env: {
+        ...process.env,
+        HOME: home,
+        HYDRA_TEST_BINARY: fakeHydra,
+        HYDRA_TEST_DSN: LOCAL_HYDRA_TEST_DSN,
+        IDENTITY_TEST_CREDENTIALS_FILE: credentialsPath,
+        IDENTITY_TEST_STARSTACK_DB: databasePath,
+        IDENTITY_SQLITE_HYDRA_MARKER: hydraSpawnMarker,
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    runner.stdout.resume()
+    runner.stderr.resume()
+    const result = await waitForExit(runner, 5000)
+    expect(result.code).not.toBe(0)
+    await expect(access(hydraSpawnMarker)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(targetPath, 'utf8')).resolves.toBe('must-not-change')
     for (const file of ['runtime.lock', 'runtime.lock.operation']) {
       await expect(access(path.join(stateRoot, file))).rejects.toMatchObject({ code: 'ENOENT' })
     }

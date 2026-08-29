@@ -19,6 +19,9 @@ import {
   waitForManagedHttp,
 } from './localIdentityProcessSupervisor.mjs'
 import { acquireLocalIdentityRuntimeLock } from './localIdentityRuntimeLock.mjs'
+import {
+  prepareSecureSqliteUnit,
+} from '../../server/utils/secureSqliteGuard.js'
 
 const assertPortFree = (port) => new Promise((resolve, reject) => {
   const server = net.createServer()
@@ -30,6 +33,7 @@ const main = async () => {
   const supervisor = new IdentityProcessSupervisor()
   supervisor.installSignalHandlers()
   let releaseRuntimeLock
+  let sqliteGuard
   try {
     // This guard intentionally precedes every filesystem write, child spawn,
     // migration and client registration.
@@ -49,6 +53,7 @@ const main = async () => {
     releaseRuntimeLock = await acquireLocalIdentityRuntimeLock()
     supervisor.throwIfShuttingDown()
     const credentials = await loadLocalIdentityCredentials(credentialsPath)
+    sqliteGuard = await prepareSecureSqliteUnit({ databasePath: starStackDatabase })
     const issuer = 'http://auth.localhost:5174'
     const adminOrigin = 'http://127.0.0.1:4445'
     const localNoProxy = [
@@ -105,6 +110,7 @@ const main = async () => {
       HOST: '127.0.0.1',
       PORT: '5174',
       DB_PATH: starStackDatabase,
+      IDENTITY_TEST_SQLITE_GUARD: sqliteGuard.environmentValue,
       ADMIN_ID: credentials.fixtureId,
       ADMIN_NAME: 'OIDC Fixture',
       ADMIN_PASSWORD: credentials.fixturePassword,
@@ -172,6 +178,7 @@ const main = async () => {
       child: starStack,
       supervisor,
     })
+    await sqliteGuard.verify({ allowNewSidecars: true })
     await run(process.execPath, ['scripts/identity/verify-hydra-runtime.mjs'], {
       ...process.env,
       NODE_ENV: 'development',
@@ -205,6 +212,7 @@ const main = async () => {
     if (!supervisor.shutdownRequested) throw error
   } finally {
     await supervisor.stop()
+    if (sqliteGuard) await sqliteGuard.close()
     if (releaseRuntimeLock) await releaseRuntimeLock()
     supervisor.removeSignalHandlers()
   }

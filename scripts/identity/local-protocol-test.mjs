@@ -32,6 +32,10 @@ import {
   waitForManagedHttp,
 } from './localIdentityProcessSupervisor.mjs'
 import { acquireLocalIdentityRuntimeLock } from './localIdentityRuntimeLock.mjs'
+import {
+  prepareSecureSqliteUnit,
+  SQLITE_OPEN_NOFOLLOW,
+} from '../../server/utils/secureSqliteGuard.js'
 
 const requireFromServer = createRequire(new URL('../../server/package.json', import.meta.url))
 const sqlite3 = requireFromServer('sqlite3')
@@ -74,6 +78,7 @@ let bffServer
 let succeeded = false
 let workDir
 let releaseRuntimeLock
+let sqliteGuard
 let fixtureId
 let fixturePassword
 let clientSecret
@@ -431,6 +436,7 @@ const createStarStackEnv = () => ({
   HOST: '127.0.0.1',
   PORT: '5174',
   DB_PATH: starStackDatabase,
+  IDENTITY_TEST_SQLITE_GUARD: sqliteGuard.environmentValue,
   ADMIN_ID: fixtureId,
   ADMIN_NAME: 'OIDC Fixture',
   ADMIN_PASSWORD: fixturePassword,
@@ -492,6 +498,8 @@ const logoutTokens = []
 try {
   releaseRuntimeLock = await acquireLocalIdentityRuntimeLock()
   supervisor.throwIfShuttingDown()
+  const previousSqliteUnit = await prepareSecureSqliteUnit({ databasePath: starStackDatabase })
+  await previousSqliteUnit.close()
   await mkdir(runtimeRoot, { recursive: true, mode: 0o700 })
   await chmod(runtimeRoot, 0o700)
   workDir = await mkdtemp(path.join(runtimeRoot, 'protocol-'))
@@ -517,6 +525,7 @@ try {
     // runtime failed closed until a protocol rerun completes the same unit.
     await Promise.all([
       rm(starStackDatabase, { force: true }),
+      rm(`${starStackDatabase}-journal`, { force: true }),
       rm(`${starStackDatabase}-wal`, { force: true }),
       rm(`${starStackDatabase}-shm`, { force: true }),
     ])
@@ -535,6 +544,7 @@ try {
     systemSecret,
     cookieSecret,
   } = rotation.credentials)
+  sqliteGuard = await prepareSecureSqliteUnit({ databasePath: starStackDatabase })
   const hydraEnv = createHydraEnv()
   const starStackEnv = createStarStackEnv()
 
@@ -575,6 +585,7 @@ try {
     timeoutMs: 30000,
     child: starStack,
   })
+  await sqliteGuard.verify({ allowNewSidecars: true })
 
   const discoveryResponse = await fetch(new URL('/.well-known/openid-configuration', issuer))
   if (discoveryResponse.status !== 200) throw new Error('OIDC Discovery is unavailable')
@@ -666,7 +677,7 @@ try {
   const dbBeforeLogout = await open({
     filename: starStackDatabase,
     driver: sqlite3.Database,
-    mode: sqlite3.OPEN_READONLY,
+    mode: sqlite3.OPEN_READONLY | SQLITE_OPEN_NOFOLLOW,
   })
   const beforeLogout = await dbBeforeLogout.get(
     `SELECT auth_generation FROM users WHERE account_subject = ?`,
@@ -769,7 +780,11 @@ try {
     throw new Error('Revoked Refresh token family recovered after Hydra restart')
   }
 
-  const db = await open({ filename: starStackDatabase, driver: sqlite3.Database, mode: sqlite3.OPEN_READONLY })
+  const db = await open({
+    filename: starStackDatabase,
+    driver: sqlite3.Database,
+    mode: sqlite3.OPEN_READONLY | SQLITE_OPEN_NOFOLLOW,
+  })
   try {
     const account = await db.get(
       `SELECT auth_generation FROM users WHERE account_subject = ?`,
@@ -796,6 +811,8 @@ try {
 
   console.log('7/7 使用同一 canonical 凭据原地启动 run-local 并验证稳定 Discovery/JWKS')
   await stopProcesses()
+  await sqliteGuard.close()
+  sqliteGuard = undefined
   await waitForPortsFree([4444, 4445, 5174])
   await releaseRuntimeLock()
   releaseRuntimeLock = undefined
@@ -901,6 +918,7 @@ try {
   // consumer recreate only the local StarStack fixture account database.
   await Promise.all([
     rm(starStackDatabase, { force: true }),
+    rm(`${starStackDatabase}-journal`, { force: true }),
     rm(`${starStackDatabase}-wal`, { force: true }),
     rm(`${starStackDatabase}-shm`, { force: true }),
   ])
@@ -931,6 +949,7 @@ try {
 } finally {
   await stopProcesses()
   await closeBffServer()
+  if (sqliteGuard) await sqliteGuard.close()
   if (releaseRuntimeLock) await releaseRuntimeLock()
   if (workDir && (succeeded || supervisor.shutdownRequested)) {
     await rm(workDir, { recursive: true, force: true })

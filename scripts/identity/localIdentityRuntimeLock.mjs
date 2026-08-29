@@ -39,6 +39,9 @@ const assertSecureLockStat = (stat, description) => {
   if (modeBits(stat) !== 0o600) {
     throw new Error(`${description} permissions must be exactly 0600`)
   }
+  if (stat.nlink !== 1) {
+    throw new Error(`${description} link count must be exactly one; hard links are forbidden`)
+  }
   if (stat.size > 4096) throw new Error(`${description} is unexpectedly large`)
 }
 

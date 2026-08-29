@@ -10,22 +10,49 @@ import {
   ensureAccountIdentitySchema,
 } from './utils/accountIdentityMigration.js'
 import { ensureOidcIdentitySchema } from './utils/oidcIdentityMigration.js'
+import {
+  prepareSecureSqliteUnit,
+  SQLITE_OPEN_NOFOLLOW,
+} from './utils/secureSqliteGuard.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DEFAULT_DATA_DIR = path.join(__dirname, 'data')
 const DB_PATH = path.resolve(process.env.DB_PATH || path.join(DEFAULT_DATA_DIR, 'starstack.sqlite'))
 const DATA_DIR = path.dirname(DB_PATH)
+const localIdentitySqliteGuardRequired = process.env.OIDC_ENABLED === 'true'
+  && process.env.OIDC_ISSUER === 'http://auth.localhost:5174'
+if (localIdentitySqliteGuardRequired && !process.env.IDENTITY_TEST_SQLITE_GUARD) {
+  throw new Error('Local OIDC runtime requires a pinned canonical SQLite file guard')
+}
+const localIdentitySqliteGuardPromise = process.env.IDENTITY_TEST_SQLITE_GUARD
+  ? prepareSecureSqliteUnit({
+      databasePath: DB_PATH,
+      createMain: false,
+      expectedGuard: process.env.IDENTITY_TEST_SQLITE_GUARD,
+    })
+  : Promise.resolve(null)
 
-const openDatabaseConnection = () => open({
-  filename: DB_PATH,
-  driver: sqlite3.Database,
-}).then(async (db) => {
-  // 多个 API 请求和评测完成回调可能同时写入 SQLite；显式忙等待可减少
-  // SQLITE_BUSY 瞬态错误，同时避免把写事务无限阻塞在应用层。
-  db.configure('busyTimeout', 5000)
-  await db.exec(`PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;`)
-  return db
-})
+const openDatabaseConnection = async () => {
+  const localIdentitySqliteGuard = await localIdentitySqliteGuardPromise
+  const db = await open({
+    filename: DB_PATH,
+    driver: sqlite3.Database,
+    ...(localIdentitySqliteGuard ? {
+      mode: sqlite3.OPEN_READWRITE | sqlite3.OPEN_FULLMUTEX | SQLITE_OPEN_NOFOLLOW,
+    } : {}),
+  })
+  try {
+    // 多个 API 请求和评测完成回调可能同时写入 SQLite；显式忙等待可减少
+    // SQLITE_BUSY 瞬态错误，同时避免把写事务无限阻塞在应用层。
+    db.configure('busyTimeout', 5000)
+    await db.exec(`PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;`)
+    await localIdentitySqliteGuard?.verify({ allowNewSidecars: true })
+    return db
+  } catch (error) {
+    await db.close().catch(() => {})
+    throw error
+  }
+}
 
 const dbPromise = openDatabaseConnection()
 let identityDbPromise = null
@@ -1042,6 +1069,8 @@ export const initDb = async () => {
     }
   }
 
+  await (await localIdentitySqliteGuardPromise)?.verify({ allowNewSidecars: true })
+
 }
 
 export const getDb = async () => {
@@ -1089,4 +1118,5 @@ export const closeDb = async () => {
   }
   const db = await dbPromise
   if (db.open) await db.close()
+  await (await localIdentitySqliteGuardPromise)?.close()
 }

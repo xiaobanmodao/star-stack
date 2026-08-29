@@ -6,7 +6,7 @@
 ~/.local/state/starstack/identity/hydra-test-57eae204b3826d2c/
 ```
 
-`57eae204b3826d2c` 是冻结 DSN 的 SHA-256 前 16 位，不是 Secret。状态目录必须是当前 UID 所有的真实目录且权限恰为 `0700`；凭据、状态标记和锁必须是非 symlink 普通文件且权限恰为 `0600`。加载时会同时核验 `lstat`、`realpath`、UID、类型、权限与打开后的 inode，路径替换或 symlink 会失败关闭。
+`57eae204b3826d2c` 是冻结 DSN 的 SHA-256 前 16 位，不是 Secret。状态目录必须是当前 UID 所有的真实目录且权限恰为 `0700`；凭据、状态标记、锁和 fixture SQLite 文件必须是非 symlink 普通文件、权限恰为 `0600` 且 `nlink === 1`。加载时会同时核验 `lstat`、`realpath`、UID、类型、权限、link count 与打开后的 inode，路径替换、symlink 或 hard link 会失败关闭。
 
 固定版本：
 
@@ -30,7 +30,7 @@ npm run identity:hydra:protocol
 机器状态目录中的关键文件为：
 
 - `ss-auth-002-local-credentials.json`：测试账号及独立 Hydra/Client/Hook/Broker Secret，权限 `0600`；
-- `ss-auth-002-starstack.sqlite`：纯本地、可重建的 StarStack fixture 数据库；
+- `ss-auth-002-starstack.sqlite` 及现存 `-journal`/`-wal`/`-shm`：纯本地、可重建的 StarStack fixture SQLite 单元；
 - `state-identity.json`：不含 Secret 的 DSN 身份标记；
 - `.credentials-rotation.pending.json`：只在未完成轮换时存在，存在即阻止普通运行器；
 - `runtime.lock`：覆盖 reset、migration、protocol 和 run-local 的独占运行锁；
@@ -46,7 +46,7 @@ HYDRA_TEST_DSN='postgres://hydra_test@127.0.0.1:55432/hydra_test?sslmode=disable
 npm run identity:hydra:run
 ```
 
-启动器会幂等执行 Hydra migration、创建或更新 `jieya-server-local`，然后启动 Hydra 与 StarStack；只有固定客户端、Public Discovery 和 JWKS 全部验证通过后才输出 `ready: true`。它不占用 Jieya 的 `4180`；Jieya BFF 应自行监听该端口。按 `Ctrl+C` 会同时停止 Hydra 与 StarStack，不停止共享 PostgreSQL。
+启动器会先安全创建或打开 canonical fixture 主库并固定 inode，把精确身份交给 StarStack；StarStack 使用 SQLite `NOFOLLOW` 标志打开，初始化后父子双方再复核主库及 rollback journal/WAL/SHM。随后才会幂等执行 Hydra migration、创建或更新 `jieya-server-local` 并启动 Hydra 与 StarStack；只有 SQLite 单元、固定客户端、Public Discovery 和 JWKS 全部验证通过后才输出 `ready: true`。它不占用 Jieya 的 `4180`；Jieya BFF 应自行监听该端口。按 `Ctrl+C` 会同时停止 Hydra 与 StarStack，不停止共享 PostgreSQL。
 
 界芽当前测试脚本仍需显式获得新的机器 canonical 路径：
 
@@ -64,7 +64,7 @@ npm run test:auth:e2e
 - 普通 stale `runtime.lock` 会在 operation guard 内按 PID、token 与 inode 复核后原子移入唯一 quarantine，再删除并获取新锁；多个 checkout 同时回收时最多一个成功。
 - `.credentials-rotation.pending.json` 存在时不要删除、改权限或单独替换凭据。先确认 `4444/4445/5174/4180` 无监听，再重新执行完整 `identity:hydra:protocol`；门禁会在同一机器锁下恢复或重新完成该轮换。
 - `runtime.lock.operation` 从不自动判定 stale，避免为修复 stale guard 再引入同一种 check→unlink 竞态。如果它在进程异常终止后残留，先同时确认四个端口无监听、锁文件记录的 PID 已不存在，并通过 PostgreSQL 查询确认 `hydra_test` 无其他连接；之后只把该 guard 原子 `mv` 到同目录唯一 quarantine 名称，不要直接 `rm`，再重跑完整协议门禁。
-- 状态目录、marker 或凭据发生 symlink、UID、类型、权限、realpath/inode 校验失败时，不要用 `chmod` 或复制单个旧文件绕过。确认进程和数据库连接均为空后，将整个 DSN 状态目录移动到仓库外的隔离 quarantine，运行完整协议门禁同时重建数据库与新凭据；旧目录中的测试 Secret 随即失效。
+- 状态目录、marker、凭据、锁或 fixture SQLite/sidecar 发生 symlink、hard link、UID、类型、权限、realpath/inode 校验失败时，不要用 `chmod`、删除链接或复制单个旧文件绕过。确认进程和数据库连接均为空后，将整个 DSN 状态目录移动到仓库外的隔离 quarantine，运行完整协议门禁同时重建数据库与新凭据；旧目录中的测试 Secret 随即失效。
 - 恢复后必须再次验证：协议门禁成功、真实 ID Token `kid` 连续、界芽 E2E 6/6、凭据 `0600`、状态目录 `0700`、pending/两层锁不存在，以及四个端口全部释放。
 
 ## Compose 备用方案
