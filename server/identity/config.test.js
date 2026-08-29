@@ -50,6 +50,19 @@ describe('identity runtime config', () => {
   })
 
   it.each([
+    ['http://127.0.0.1:4444', 'http://127.0.0.1:4445'],
+    ['http://hydra-public:4444', 'http://hydra-admin:4445'],
+  ])('accepts explicit loopback or single-label container Hydra origins', (publicUrl, adminUrl) => {
+    const config = loadIdentityConfig({
+      ...enabledEnv,
+      OIDC_HYDRA_PUBLIC_URL: publicUrl,
+      OIDC_HYDRA_ADMIN_URL: adminUrl,
+    })
+    expect(config.hydraPublicUrl).toBe(publicUrl)
+    expect(config.hydraAdminUrl).toBe(adminUrl)
+  })
+
+  it.each([
     [{ ...enabledEnv, OIDC_ISSUER: 'http://auth.localhost:5174/' }, /exact|精确|issuer/i],
     [{ ...enabledEnv, OIDC_ISSUER: 'http://localhost:5174' }, /exact|精确|issuer/i],
     [{ ...enabledEnv, OIDC_ISSUER: 'https://auth.xingzhan.cc' }, /exact|精确|issuer/i],
@@ -96,6 +109,8 @@ describe('identity runtime config', () => {
     [{ ...enabledEnv, OIDC_LOGOUT_BROKER_SECRET: enabledEnv.OIDC_TOKEN_HOOK_SECRET }, /separate|不同|分离/i],
     [{ ...enabledEnv, OIDC_ISSUER: 'http://auth.localhost:5174/path' }, /issuer/i],
     [{ ...enabledEnv, OIDC_HYDRA_ADMIN_URL: 'https://admin.example.com' }, /private|loopback|私网/i],
+    [{ ...enabledEnv, OIDC_HYDRA_PUBLIC_URL: 'http://10.attacker.example:4444' }, /private|loopback|私网/i],
+    [{ ...enabledEnv, OIDC_HYDRA_ADMIN_URL: 'http://127.attacker.example:4445' }, /private|loopback|私网/i],
   ])('fails closed for unsafe enabled configuration', (env, expected) => {
     expect(() => loadIdentityConfig(env)).toThrow(expected)
   })

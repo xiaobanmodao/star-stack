@@ -1,5 +1,6 @@
 import { createHmac, randomBytes } from 'node:crypto'
 
+export const ACCOUNT_IDENTIFIER_MAX_LENGTH = 64
 export const PASSWORD_ATTEMPT_LIMITS = Object.freeze({
   windowMs: 10 * 60 * 1000,
   perAccountMax: 20,
@@ -9,10 +10,21 @@ export const PASSWORD_ATTEMPT_LIMITS = Object.freeze({
   maxTrackedAccounts: 512,
 })
 
-const normalizeIdentifier = (value) => {
-  if (typeof value !== 'string') return '<invalid>'
-  const normalized = value.trim().normalize('NFKC').toLowerCase().slice(0, 128)
-  return normalized || '<invalid>'
+export const normalizeAccountIdentifier = (value) => {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim()
+  if (!normalized || normalized.length > ACCOUNT_IDENTIFIER_MAX_LENGTH) return null
+  return normalized
+}
+
+const encodeIdentifier = (value) => {
+  const normalized = normalizeAccountIdentifier(value)
+  // Keep invalid form input outside the namespace of valid account IDs. The
+  // registration contract permits punctuation, so a string sentinel could
+  // otherwise collide with a real account.
+  return normalized === null
+    ? Buffer.from([0])
+    : Buffer.concat([Buffer.from([1]), Buffer.from(normalized, 'utf8')])
 }
 
 const asTimestamp = (value) => {
@@ -38,7 +50,7 @@ const validateLimits = ({ windowMs, perAccountMax, globalMax, maxTrackedAccounts
 }
 
 export const hashAccountRateLimitKey = (identifier, hmacKey) => createHmac('sha256', hmacKey)
-  .update(normalizeIdentifier(identifier), 'utf8')
+  .update(encodeIdentifier(identifier))
   .digest('hex')
 
 const consumeWindow = (entry, now, windowMs) => {

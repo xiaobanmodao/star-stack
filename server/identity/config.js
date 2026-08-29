@@ -1,3 +1,5 @@
+import { isIP } from 'node:net'
+
 const SECRET_MIN_LENGTH = 32
 
 export const HYDRA_BROWSER_COOKIE_NAMES = Object.freeze({
@@ -34,14 +36,26 @@ const parseOriginOnly = (value, name) => {
   }
   return url.origin
 }
+const isPrivateIpv4 = (hostname) => {
+  const octets = hostname.split('.').map((part) => Number(part))
+  return octets[0] === 127
+    || octets[0] === 10
+    || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
+    || (octets[0] === 192 && octets[1] === 168)
+}
+
 const isPrivateHostname = (hostname) => {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '')
-  if (normalized === 'localhost' || normalized === '::1' || normalized.startsWith('127.')) return true
-  if (normalized.startsWith('10.') || normalized.startsWith('192.168.')) return true
-  const match = normalized.match(/^172\.(\d{1,3})\./)
-  if (match && Number(match[1]) >= 16 && Number(match[1]) <= 31) return true
-  // A single-label service name is resolvable only inside the deployment network.
-  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(normalized) && !normalized.includes('.')
+  const addressFamily = isIP(normalized)
+  if (addressFamily === 4) return isPrivateIpv4(normalized)
+  if (addressFamily === 6) return normalized === '::1'
+  if (normalized === 'localhost') return true
+  // Deployment-network DNS is intentionally limited to a single RFC-style
+  // service label. Dotted lookalike names such as 10.attacker.example are not
+  // IP literals and must never inherit private-address trust.
+  return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(normalized)
+    && /[a-z]/.test(normalized)
+    && !normalized.includes('.')
 }
 
 const parsePrivateOrigin = (value, name) => {

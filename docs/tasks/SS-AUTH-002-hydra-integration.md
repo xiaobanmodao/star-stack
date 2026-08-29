@@ -40,7 +40,7 @@
 
 ### Login、Consent 与协议边界
 
-- Hydra Admin 仅允许 loopback/private origin；错误不记录响应正文、challenge、Token 或 Secret。
+- Hydra Public/Admin origin 仅允许由 `node:net.isIP` 确认的 loopback/RFC1918 地址、`::1`、`localhost` 或显式单标签容器服务名；带点的公网 DNS 伪装（如 `10.attacker.example`）失败关闭。错误不记录响应正文、challenge、Token 或 Secret。
 - 每次 Login/Consent（包括 Hydra `skip=true`）都重新验证账号中心会话、active 状态、subject 与世代。
 - Hydra v26 challenge 最长按官方 2048 字符边界接受并只保存 SHA-256；Cookie/CSRF/退出令牌仍维持 512 字符边界。
 - Login subject 只来自不可变 `account_subject`；Hydra remembered Login Session 固定 30 天，用于按 `sid` Headless Logout 与 Back-Channel Logout。StarStack 仍对每次 skip 重新鉴权。
@@ -62,7 +62,7 @@
 ### DoS 与容量闭环
 
 - 公开账号 `GET` 固定为每源 60 次/分钟、进程总量 300 次/分钟；UserInfo 固定为每源 300 次/分钟、总量 600 次/分钟，并额外限制 16 个并发 introspection。无凭据的私网请求在解析 JSON 和进入关键队列前即被拒绝。
-- 密码登录和退出重认证共享固定的 10 分钟密码尝试预算：单账号 20 次、进程总量 200 次。账号键使用进程内随机密钥做 HMAC，内存最多保存 512 个摘要且不保存明文账号；所有有效表单的成功/失败尝试均计数，达到上限后在 bcrypt 前返回 `429`。预算只在 challenge、session-bound CSRF 与 exact Origin/Referer 全部通过后消费，无效表单无法耗尽密码预算。
+- 密码登录和退出重认证共享固定的 10 分钟密码尝试预算：单账号 20 次、进程总量 200 次。账号键与权威查询语义一致，仅执行 `trim` 和相同长度校验，保留大小写及 Unicode 码点，再使用进程内随机密钥做域分离 HMAC；因此可共存的 `alice`、`Alice` 与兼容字符账号拥有独立预算。内存最多保存 512 个摘要且不保存明文账号；所有有效表单的成功/失败尝试均计数，达到上限后在 bcrypt 前返回 `429`。预算只在 challenge、session-bound CSRF 与 exact Origin/Referer 全部通过后消费，无效表单无法耗尽密码预算。
 - 账号中心会话在 Login 接受后先以 provisional 状态保存，只有 Consent 成功后才转为 established；Hydra 接受失败、拒绝授权、Consent 失败或 Login `sid` 达到上限时，会删除本次 provisional 会话。迁移前已存在的会话会一次性回填为 established，重复迁移不改动新 provisional 会话。
 - 登录、Consent 和退出重认证的失败/拒绝/过期响应只撤销其服务端 provisional 会话，不发送同名 Cookie 删除；这样旧标签页的迟到响应不能删除另一标签页刚建立的账号 Cookie。仅用户明确确认且成功完成全局退出时发送账号 Cookie 删除。
 - `account_center_sessions` 每个 `account_subject` 最多 16 条、全局最多 4,096 条。每次创建在同一个 `BEGIN IMMEDIATE` 事务中清理过期行、为账号和全局各预留一个插入槽并按最旧访问时间淘汰，然后插入新会话；SQLite 跨连接并发仍只会有一个写事务越过容量边界。
@@ -121,7 +121,7 @@
 最终本地门禁：
 
 - `npm run lint`：通过；
-- `npm test -- --run`：43 个文件、209 项通过；
+- `npm test -- --run`：43 个文件、216 项通过；
 - `npm run build`：通过；
 - `npm run test:smoke`：隔离数据库通过；
 - `node server/migrate.js` 重复迁移与 `npm run db:verify`：50 张表、0 个外键问题；

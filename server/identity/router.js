@@ -34,7 +34,10 @@ import {
   IdentityOperationCapacityError,
   acquireIdentityOperation,
 } from '../services/identityOperation.js'
-import { createPasswordAttemptLimiter } from './passwordRateLimit.js'
+import {
+  createPasswordAttemptLimiter,
+  normalizeAccountIdentifier,
+} from './passwordRateLimit.js'
 
 const ACCOUNT_SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 const MAX_PASSWORD_LENGTH = 128
@@ -193,7 +196,7 @@ const reportIdentityFailure = (operation, error) => {
 }
 
 const normalizeCredentials = (body) => ({
-  id: typeof body?.id === 'string' ? body.id.trim() : '',
+  id: normalizeAccountIdentifier(body?.id) || '',
   password: typeof body?.password === 'string' ? body.password : '',
 })
 

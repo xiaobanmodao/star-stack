@@ -242,6 +242,60 @@ describe('identity HTTP boundary', () => {
     expect(comparePassword).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps SQLite-exact coexisting account IDs in separate password buckets', async () => {
+    const resource = await openIdentityFixture()
+    resources.push(resource)
+    await resource.db.run(
+      `INSERT INTO users
+         (id, name, password_hash, email, email_verified_at, is_admin, is_banned,
+          avatar, bio, avatar_frame, avatar_overlay, equipped_title, created_at,
+          account_subject, account_status, account_tombstoned_at, auth_generation)
+       VALUES
+         ('Alice', 'Case-distinct Alice', 'fixture-case-hash', 'case-alice@example.test',
+          '2026-01-01T00:00:00.000Z', 0, 0, NULL, '', 'none', 'none', NULL,
+          '2026-01-01T00:00:00.000Z', '33333333-3333-4333-8333-333333333333',
+          'active', NULL, 0)`,
+    )
+    const comparePassword = vi.fn(async () => false)
+    const challenge = 'case-distinct-account-password-limit'
+    const admin = { getLoginRequest: vi.fn(async () => hydraLoginRequest(challenge)) }
+    const { baseUrl, config } = await startRouter(resource, admin, {
+      routerOptions: {
+        comparePassword,
+        limits: {
+          passwordRate: {
+            windowMs: 60_000,
+            perAccountMax: 1,
+            globalMax: 10,
+            maxTrackedAccounts: 20,
+          },
+        },
+      },
+    })
+    const page = await fetch(`${baseUrl}/account/login?login_challenge=${challenge}`)
+    const csrfToken = hiddenValue(await page.text(), 'csrf_token')
+    const attempt = (id) => fetch(`${baseUrl}/account/login`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        origin: config.issuer,
+        referer: `${config.issuer}/account/login?login_challenge=${challenge}`,
+      },
+      body: new URLSearchParams({
+        login_challenge: challenge,
+        csrf_token: csrfToken,
+        id,
+        password: 'wrong-password',
+      }),
+    })
+
+    expect((await attempt('alice')).status).toBe(401)
+    expect((await attempt('alice')).status).toBe(429)
+    expect((await attempt('Alice')).status).toBe(401)
+    expect((await attempt('Alice')).status).toBe(429)
+    expect(comparePassword).toHaveBeenCalledTimes(2)
+  })
+
   it('rate-limits password POSTs globally across sources before another bcrypt call', async () => {
     const resource = await openIdentityFixture()
     resources.push(resource)
