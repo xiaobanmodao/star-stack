@@ -8,5 +8,6 @@ describe('route preloading', () => {
     expect(resolvePreloadRoute('/oj/list')).toBe('/oj/list')
     expect(resolvePreloadRoute('/chat/plaza')).toBe('/chat')
     expect(resolvePreloadRoute('/messages/astro01')).toBe('/messages')
+    expect(resolvePreloadRoute('/leaderboard')).toBe('/leaderboard')
   })
 })

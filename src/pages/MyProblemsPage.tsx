@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import { Badge, Button, EmptyState, ErrorState, LoadingState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
+import { getDifficultyClassName, getDifficultyLabel, getDifficultyMeta } from '../utils/difficulty'
 import type { OjProblemSummary, ProblemsResponse, ApiResponse } from '../types'
 import './CreatorAdminPages.css'
 
@@ -96,6 +97,13 @@ export default function MyProblemsPage() {
     return { label: '草稿', tone: 'warning' as const }
   }
 
+  const qualityMeta = (status?: string) => {
+    if (status === 'verified') return { label: '质量已确认', tone: 'success' as const }
+    if (status === 'self_tested') return { label: '已自测', tone: 'info' as const }
+    if (status === 'pending_review') return { label: '质量审核中', tone: 'warning' as const }
+    return { label: '待检查', tone: 'danger' as const }
+  }
+
   const totalPages = Math.ceil(problems.length / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
@@ -147,8 +155,8 @@ export default function MyProblemsPage() {
   }
 
   const totalProblemCount = problems.length
-  const easyCount = problems.filter((problem) => ['入门', '普及-'].includes(problem.difficulty)).length
-  const advancedCount = problems.filter((problem) => ['提高+', '省选', 'NOI', '国集'].includes(problem.difficulty)).length
+  const easyCount = problems.filter((problem) => getDifficultyMeta(problem.difficulty).key === 'simple').length
+  const advancedCount = problems.filter((problem) => ['difficult', 'extreme'].includes(getDifficultyMeta(problem.difficulty).key)).length
 
   return (
     <div className="oj-page my-problems-v2">
@@ -210,8 +218,11 @@ export default function MyProblemsPage() {
                 {problem.title}
               </div>
               <div className="oj-card-meta">
-                <Badge tone="info">{problem.difficulty}</Badge>
+                <Badge className={`difficulty-badge ${getDifficultyClassName(problem.difficulty)}`}>
+                  {getDifficultyLabel(problem.difficulty)}
+                </Badge>
                 <Badge tone={statusMeta(problem.status).tone}>{statusMeta(problem.status).label}</Badge>
+                <Badge tone={qualityMeta(problem.qualityStatus).tone}>{qualityMeta(problem.qualityStatus).label}</Badge>
                 <div className="oj-tags">
                   {problem.tags.map((tag) => (
                     <span key={tag} className="oj-tag">

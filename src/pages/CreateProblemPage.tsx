@@ -11,18 +11,28 @@ import {
   MAX_TESTCASE_TIME_LIMIT_MS,
   MIN_TESTCASE_TIME_LIMIT_MS,
 } from '../constants'
+import { getDifficultyMeta, getDifficultyOptions } from '../utils/difficulty'
 import type { ApiResponse } from '../types'
 import './CreatorAdminPages.css'
 
 type SampleDraft = { input: string; output: string; timeLimitMs: number }
 type TestFileDraft = { name: string; type: 'in' | 'out'; content: string; timeLimitMs: number }
+type ProblemQualityStatus = 'unchecked' | 'self_tested' | 'pending_review' | 'verified'
+type ProblemEditorialStatus = 'none' | 'draft' | 'published'
 
 export default function CreateProblemPage() {
   const navigate = useNavigate()
   const { currentUser, openAuth } = useAppContext()
   const [title, setTitle] = useState('')
-  const [difficulty, setDifficulty] = useState('入门')
+  const [difficulty, setDifficulty] = useState(DIFFICULTY_OPTIONS[0])
   const [tags, setTags] = useState<string[]>([])
+  const [topicTags, setTopicTags] = useState<string[]>([])
+  const [techniqueTags, setTechniqueTags] = useState<string[]>([])
+  const [estimatedMinutes, setEstimatedMinutes] = useState('')
+  const [recommendedFor, setRecommendedFor] = useState('')
+  const [qualityStatus, setQualityStatus] = useState<ProblemQualityStatus>('unchecked')
+  const [editorialStatus, setEditorialStatus] = useState<ProblemEditorialStatus>('none')
+  const [revisionSummary, setRevisionSummary] = useState('')
   const [statement, setStatement] = useState('')
   const [inputDesc, setInputDesc] = useState('')
   const [outputDesc, setOutputDesc] = useState('')
@@ -147,6 +157,13 @@ export default function CreateProblemPage() {
       title: title.trim(),
       difficulty,
       tags: tags,
+      topicTags,
+      techniqueTags,
+      estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : null,
+      recommendedFor: recommendedFor.trim(),
+      qualityStatus,
+      editorialStatus,
+      revisionSummary: revisionSummary.trim(),
       statement: statement.trim(),
       inputDesc: inputDesc.trim(),
       outputDesc: outputDesc.trim(),
@@ -227,8 +244,8 @@ export default function CreateProblemPage() {
                   <CustomSelect
                     className="auth-input-like"
                     value={difficulty}
-                    onChange={setDifficulty}
-                    options={DIFFICULTY_OPTIONS.map((opt) => ({ value: opt, label: opt }))}
+                    onChange={(value) => setDifficulty(getDifficultyMeta(value).key)}
+                    options={getDifficultyOptions()}
                   />
                 </div>
 
@@ -236,6 +253,82 @@ export default function CreateProblemPage() {
                   <label className="form-label">标签</label>
                   <TagSelector selectedTags={tags} onTagsChange={setTags} />
                 </div>
+              </div>
+
+              <div className="form-row problem-metadata-row">
+                <div className="form-section">
+                  <label className="form-label">知识点</label>
+                  <TagSelector selectedTags={topicTags} onTagsChange={setTopicTags} />
+                  <div className="form-hint">用于题目分类和推荐，最多 8 个。</div>
+                </div>
+                <div className="form-section">
+                  <label className="form-label">解题技巧</label>
+                  <TagSelector selectedTags={techniqueTags} onTagsChange={setTechniqueTags} />
+                  <div className="form-hint">例如前缀和、二分、贪心等，可与知识点同时设置。</div>
+                </div>
+              </div>
+
+              <div className="form-row problem-metadata-row">
+                <div className="form-section">
+                  <label className="form-label" htmlFor="problem-estimated-minutes">预计用时（分钟）</label>
+                  <input
+                    id="problem-estimated-minutes"
+                    type="number"
+                    className="auth-input"
+                    min={1}
+                    max={600}
+                    value={estimatedMinutes}
+                    onChange={(event) => setEstimatedMinutes(event.target.value)}
+                    placeholder="例如：30"
+                  />
+                </div>
+                <div className="form-section">
+                  <label className="form-label" htmlFor="problem-recommended-for">适合人群</label>
+                  <input
+                    id="problem-recommended-for"
+                    type="text"
+                    className="auth-input"
+                    maxLength={120}
+                    value={recommendedFor}
+                    onChange={(event) => setRecommendedFor(event.target.value)}
+                    placeholder="例如：基础巩固、新手入门"
+                  />
+                </div>
+              </div>
+
+              {currentUser.isAdmin && (
+                <div className="form-row problem-metadata-row">
+                  <div className="form-section">
+                    <label className="form-label" htmlFor="problem-quality-status">内容质量</label>
+                    <select id="problem-quality-status" className="auth-input" value={qualityStatus} onChange={(event) => setQualityStatus(event.target.value as ProblemQualityStatus)}>
+                      <option value="unchecked">未检查</option>
+                      <option value="self_tested">已自测</option>
+                      <option value="pending_review">审核中</option>
+                      <option value="verified">已确认</option>
+                    </select>
+                  </div>
+                  <div className="form-section">
+                    <label className="form-label" htmlFor="problem-editorial-status">题解状态</label>
+                    <select id="problem-editorial-status" className="auth-input" value={editorialStatus} onChange={(event) => setEditorialStatus(event.target.value as ProblemEditorialStatus)}>
+                      <option value="none">暂无题解</option>
+                      <option value="draft">题解草稿</option>
+                      <option value="published">题解已发布</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              <div className="form-section">
+                <label className="form-label" htmlFor="problem-revision-summary">本次修改说明</label>
+                <input
+                  id="problem-revision-summary"
+                  type="text"
+                  className="auth-input"
+                  maxLength={500}
+                  value={revisionSummary}
+                  onChange={(event) => setRevisionSummary(event.target.value)}
+                  placeholder="可选：说明本次补充了哪些知识点或修正了什么内容"
+                />
               </div>
             </Panel>
 

@@ -23,6 +23,7 @@ export type UserRecord = {
   equippedTitle?: EquippedTitleId | null
   displayTitle?: string
   displayTitleIcon?: string
+  rating?: number
 }
 
 export type AdminProblem = {
@@ -30,7 +31,19 @@ export type AdminProblem = {
   slug?: string
   title: string
   difficulty: string
+  difficultyKey?: import('./constants').DifficultyKey
+  difficultyLabel?: string
+  difficultyColorToken?: string
   tags: string[]
+  topicTags?: string[]
+  techniqueTags?: string[]
+  estimatedMinutes?: number | null
+  recommendedFor?: string
+  qualityStatus?: 'unchecked' | 'self_tested' | 'pending_review' | 'verified' | string
+  qualityLabel?: string
+  editorialStatus?: 'none' | 'draft' | 'published' | string
+  editorialLabel?: string
+  revisionSummary?: string
   status: 'draft' | 'pending_review' | 'published' | 'hidden' | string
   creatorId?: string | null
   creatorName?: string
@@ -43,7 +56,16 @@ export type OjProblemSummary = {
   slug?: string
   title: string
   difficulty: string
+  difficultyKey?: import('./constants').DifficultyKey
+  difficultyLabel?: string
+  difficultyColorToken?: string
   tags: string[]
+  topicTags?: string[]
+  techniqueTags?: string[]
+  estimatedMinutes?: number | null
+  recommendedFor?: string
+  qualityStatus?: 'unchecked' | 'self_tested' | 'pending_review' | 'verified' | string
+  editorialStatus?: 'none' | 'draft' | 'published' | string
   createdAt?: string
   status?: 'draft' | 'pending_review' | 'published' | 'hidden' | string
   acCount?: number
@@ -102,6 +124,7 @@ export type ProfileStats = {
     currentStreak?: number
     maxStreak?: number
     xp?: number
+    rating?: number
   }
   difficultyStats: Record<string, DifficultyStats>
 }
@@ -131,6 +154,9 @@ export type ProblemPlan = {
   problem_id: number
   title: string
   difficulty: string
+  difficultyKey?: import('./constants').DifficultyKey
+  difficultyLabel?: string
+  difficultyColorToken?: string
   addedAt: string
   completed?: boolean
 }
@@ -139,6 +165,10 @@ export type LeaderboardEntry = {
   userId: string
   userName: string
   avatar?: string
+  avatarFrame?: AvatarFrameId
+  avatarOverlay?: AvatarOverlayId
+  displayTitle?: string
+  displayTitleIcon?: string
   rating?: number
   solvedCount?: number
   solvedProblems?: number
@@ -219,11 +249,22 @@ export type ProblemsResponse = {
   page?: number
   pageSize?: number
   totalPages?: number
+  nextCursor?: string | null
   message?: string
 }
 
 export type ProblemResponse = {
   problem: OjProblemDetail
+  message?: string
+}
+
+export type RelatedProblem = OjProblemSummary & {
+  matchReason: string
+}
+
+export type RelatedProblemsResponse = {
+  problemId: number
+  problems: RelatedProblem[]
   message?: string
 }
 
@@ -348,6 +389,7 @@ export type ConversationsResponse = {
     pageSize: number
     total: number
     totalPages: number
+    nextCursor?: string | null
   }
 }
 
@@ -368,6 +410,7 @@ export type MessagesResponse = {
     pageSize: number
     total: number
     totalPages: number
+    nextCursor?: string | null
   }
 }
 
@@ -390,6 +433,10 @@ export type ChatMessage = {
   senderId: string
   senderName: string
   senderAvatar?: string | null
+  senderAvatarFrame?: AvatarFrameId
+  senderAvatarOverlay?: AvatarOverlayId
+  senderDisplayTitle?: string
+  senderDisplayTitleIcon?: string
   content: string
   createdAt: string
   reactions: ChatReaction[]
@@ -419,6 +466,10 @@ export type ChatRoomMember = {
   userId: string
   userName: string
   userAvatar?: string | null
+  avatarFrame?: AvatarFrameId
+  avatarOverlay?: AvatarOverlayId
+  displayTitle?: string
+  displayTitleIcon?: string
   role: 'owner' | 'member'
   online: boolean
 }
@@ -520,6 +571,11 @@ export type FollowUser = {
   online: boolean
   isFriend?: boolean
   followedAt?: string
+  avatarFrame?: AvatarFrameId
+  avatarOverlay?: AvatarOverlayId
+  equippedTitle?: EquippedTitleId | null
+  displayTitle?: string
+  displayTitleIcon?: string
 }
 
 export type FriendsResponse = {
@@ -537,7 +593,15 @@ export type NotificationType = 'follow' | 'comment' | 'reply' | 'mention' | 'inv
 export type NotificationItem = {
   id: number
   type: NotificationType
-  actor: { id: string; name: string; avatar?: string | null }
+  actor: {
+    id: string
+    name: string
+    avatar?: string | null
+    avatarFrame?: AvatarFrameId
+    avatarOverlay?: AvatarOverlayId
+    displayTitle?: string
+    displayTitleIcon?: string
+  }
   message: string
   targetType?: string | null
   targetId?: number | null
@@ -551,6 +615,7 @@ export type NotificationsResponse = {
   total: number
   page: number
   pageSize: number
+  nextCursor?: string | null
 }
 
 // ============ 游戏化（聊天成就 / 活跃度） ============
@@ -585,6 +650,10 @@ export type ActivityLeaderboardEntry = {
   userId: string
   userName: string
   userAvatar?: string | null
+  avatarFrame?: AvatarFrameId
+  avatarOverlay?: AvatarOverlayId
+  displayTitle?: string
+  displayTitleIcon?: string
   score: number
 }
 

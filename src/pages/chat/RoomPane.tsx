@@ -5,6 +5,7 @@ import { floatRoom } from '../../utils/floatRoom'
 import type { ChatRoomDetail, ChatRoomResponse, ChatRoomMember, ChatStreamEvent, FollowUser, FriendsResponse } from '../../types'
 import { fetchJson } from '../../utils'
 import { LoadingState } from '../../components/ui'
+import DecoratedAvatar from '../../components/profile/DecoratedAvatar'
 import './ChatHub.css'
 
 export default function RoomPane() {
@@ -21,23 +22,32 @@ export default function RoomPane() {
   const [inviteLink, setInviteLink] = useState('')
   const [inviteLinkCopied, setInviteLinkCopied] = useState(false)
   const roomRef = useRef<(ChatRoomDetail & { closed?: boolean }) | null>(null)
+  const roomLoadControllerRef = useRef<AbortController | null>(null)
   roomRef.current = room
 
   // 房主可见：好友列表（快捷邀请）
   useEffect(() => {
+    const controller = new AbortController()
     const timer = window.setTimeout(() => {
-      void fetchJson<FriendsResponse>('/api/me/friends').then(({ response, data }) => {
-        if (response.ok && data) setFriends(data.friends)
+      void fetchJson<FriendsResponse>('/api/me/friends', { signal: controller.signal }).then(({ response, data }) => {
+        if (!controller.signal.aborted && response.ok && data) setFriends(data.friends)
       }).catch(() => undefined)
     }, 0)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
   }, [])
 
   const loadRoom = useCallback(async () => {
+    roomLoadControllerRef.current?.abort()
+    const controller = new AbortController()
+    roomLoadControllerRef.current = controller
     setLoading(true)
     setError('')
     try {
-      const { response, data } = await fetchJson<ChatRoomResponse>(`/api/chat/rooms/${id}`)
+      const { response, data } = await fetchJson<ChatRoomResponse>(`/api/chat/rooms/${id}`, { signal: controller.signal })
+      if (controller.signal.aborted) return
       if (!response.ok) {
         setRoom(null)
         setError(data?.message || '无法进入房间')
@@ -45,14 +55,15 @@ export default function RoomPane() {
       }
       if (data?.room) setRoom(data.room)
     } catch {
-      setError('加载失败，请重试')
+      if (!controller.signal.aborted) setError('加载失败，请重试')
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
     }
   }, [id])
 
   useEffect(() => {
     void loadRoom()
+    return () => roomLoadControllerRef.current?.abort()
   }, [loadRoom])
 
   const handleStreamEvent = useCallback((event: ChatStreamEvent) => {
@@ -260,11 +271,14 @@ export default function RoomPane() {
                         })
                       }}
                     >
-                      {friend.avatar ? (
-                        <img src={friend.avatar} alt="" loading="lazy" />
-                      ) : (
-                        <span>{friend.name.charAt(0).toUpperCase()}</span>
-                      )}
+                      <DecoratedAvatar
+                        avatar={friend.avatar}
+                        fallback={friend.name.charAt(0).toUpperCase()}
+                        frame={friend.avatarFrame}
+                        overlay={friend.avatarOverlay}
+                        size="discussion-small"
+                        alt=""
+                      />
                     </button>
                   ))}
                 </div>
@@ -277,16 +291,18 @@ export default function RoomPane() {
               <li key={member.userId} className={`chat-member ${member.role === 'owner' ? 'owner' : ''}`}>
                 <span className={`chat-presence-dot ${member.online ? 'online' : ''}`} aria-label={member.online ? '在线' : '离线'} />
                 <button type="button" className="chat-member-profile" onClick={() => navigate(`/user/${member.userId}`)}>
-                  <span className="chat-member-avatar">
-                    {member.userAvatar ? (
-                      <img src={member.userAvatar} alt="" loading="lazy" />
-                    ) : (
-                      <span>{member.userName.charAt(0).toUpperCase()}</span>
-                    )}
-                  </span>
+                  <DecoratedAvatar
+                    avatar={member.userAvatar}
+                    fallback={member.userName.charAt(0).toUpperCase()}
+                    frame={member.avatarFrame}
+                    overlay={member.avatarOverlay}
+                    size="discussion-small"
+                    alt=""
+                  />
                   <span className="chat-member-name">
                     {member.userName}
                     <em>@{member.userId}</em>
+                    {member.displayTitle && <small>{member.displayTitleIcon || '✦'} {member.displayTitle}</small>}
                   </span>
                 </button>
                 {member.role === 'owner' && <span className="chat-member-role">房主</span>}

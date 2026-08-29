@@ -38,6 +38,8 @@ API 使用相对路径 `/api/...`，后端启用了 CORS，前后端分开启动
 
 生产环境使用 Node.js 22、PM2、Nginx 和 SQLite，完整的首次部署、日常更新、数据库迁移、备份恢复与 HTTPS 流程见 [DEPLOYMENT.md](./DEPLOYMENT.md)。
 
+下一阶段的内容体系、页面体验、性能、后端和安全开发规范见 [NEXT_PHASE_DEVELOPMENT_PLAN.md](./NEXT_PHASE_DEVELOPMENT_PLAN.md)。
+
 核心接口烟测：`npm run test:smoke`；本地监控、管理员审核和评测队列压力测试见 [DEPLOYMENT.md](./DEPLOYMENT.md)，压力脚本默认拒绝公网目标。
 
 ## 管理员初始化
@@ -74,7 +76,11 @@ API 使用相对路径 `/api/...`，后端启用了 CORS，前后端分开启动
 
 OJ
 - `GET /api/oj/problems`
-- `GET /api/oj/problems/:id`
+- `GET /api/oj/problems` 支持 `page`、`pageSize`、`search`、`difficulty`、`tag` 和 `solved` 筛选参数
+- `GET /api/oj/problems/:id`（题目详情）
+- `GET /api/oj/problems/:id/related`（按难度和标签返回相近公开题目）
+- `GET /api/my-problems`、`GET /api/problems/:id/edit`（题目编辑时返回知识点、技巧、预计用时和内容质量元数据）
+- `POST /api/problems`、`PUT /api/problems/:id`（兼容保存题目元数据；质量/题解状态仅管理员可修改）
 - `POST /api/oj/submissions`（真实判题）
 - `POST /api/oj/submissions/stream`（SSE 实时评测结果）
 - `POST /api/oj/submissions/:id/cancel`（取消尚未开始的排队提交）
@@ -85,6 +91,7 @@ OJ
 - `POST /api/oj/run-sample`
 - `POST /api/oj/run-custom`
 - `GET /api/health`（服务与评测队列健康状态）
+- `GET /api/leaderboard`（练习 Rating 总榜、周榜和月榜）
 - `GET /api/problems/:id/revisions`（题目版本历史）
 - `POST /api/problems/:id/revisions/:revisionId/restore`（恢复题目版本）
 - `POST /api/problems/:id/submit-review`（作者提交审核）
@@ -93,12 +100,23 @@ OJ
 
 提交评测会先持久化为 `Queued`，随后进入有并发上限的评测队列；服务重启会恢复未完成的评测，前端也会通过提交记录继续轮询状态。
 
+练习 Rating 以 1000 为展示基线，按照已通过题目的难度累积计算，当前只用于长期训练进度和排行榜观察；它不等同于正式比赛 Rating，后续赛事模块会独立结算竞赛分。
+
+题目内容元数据使用 `topicTags`、`techniqueTags`、`estimatedMinutes`、`recommendedFor`、`qualityStatus`、`editorialStatus` 和 `revisionSummary`。旧题目通过兼容迁移默认为空元数据、`unchecked` 和 `none`，不会改写历史题目或提交；普通作者修改题目后会重新进入草稿并回到“未检查”。
+
 ### API 错误与恢复约定
 
 - 认证接口统一使用 `{ message: "..." }` 返回业务错误；未登录或会话失效返回 HTTP `401`。
 - 前端 `fetchJson` 会自动附带 Bearer Token，并将网络失败、超时和取消规范化；收到 `401` 会清理本地会话并回到登录页，同时保留原访问路径。
 - SSE 评测流断开后，页面会切换到提交记录轮询；用户可以取消仍在 `Queued` 阶段的提交，评测服务不可用时会显示可重试的 `Judge Error`。
 - 评测沙箱不可用时不会降级为宿主机直接执行。编译和运行均需通过 Linux namespace、资源限制和 `timeout` 预检。
+
+### 分页、会话与发布安全约定
+
+- 题库支持兼容旧版的 `page`/`pageSize` 分页，也支持 `cursor` 游标分页；聊天私信和通知接口同样返回不透明的 `nextCursor`，客户端不得自行解析游标内容。
+- 登录成功后同时写入 HttpOnly 会话 Cookie；Bearer Token 继续兼容已有客户端。生产 Cookie 使用 `Secure`、`SameSite=Lax`，Cookie 写请求会校验 Origin/Referer。
+- 提交评测最多读取 200 个测试点，样例/自定义运行沿用同一评测资源限制，自定义输入最大 3MB；队列按用户限制并发和排队容量，并在健康接口报告等待与运行指标。
+- 数据库发布前使用 SQLite 一致性快照备份，`npm run db:verify` 和 `npm run db:verify-backup` 会检查完整性、外键、核心字段和关键索引。
 
 后台（用户管理）
 - `GET /api/admin/users`
@@ -137,6 +155,41 @@ OJ
 - 依赖审计中暂时没有上游修复版本的条目保留在发布记录中，不通过强制升级破坏当前 React Router、Monaco 或编辑器能力；后续依赖有修复版本时再单独升级验证。
 
 ## 近期变更
+
+### 2026-08-27 - 练习 Rating 基础能力
+
+- 统一练习 Rating 的展示基线和历史记录换算，保留数据库中原有难度权重，避免改写历史用户数据。
+- 恢复排行榜页面入口，支持总榜、周榜和月榜，用户菜单增加排行榜入口。
+- 个人主页增加练习 Rating 统计卡片和走势说明；正式比赛 Rating 暂不与练习分混用。
+
+### 2026-08-29 - 题目内容元数据与质量状态
+
+- 题目编辑支持知识点、解题技巧、预计用时、适合人群和本次修改说明。
+- 管理员可以在题目编辑页维护内容质量和题解状态，并在题目审核列表按质量状态筛选。
+- 旧数据库通过兼容字段迁移补齐默认值，历史版本恢复会同步保留元数据；普通作者修改后自动回到未检查状态。
+- 题库详情展示可用的知识点、技巧和预计用时，方便用户判断下一道训练题。
+
+### 2026-08-29 - 移除学习路径功能
+
+- 移除学习路径页面、题库学习路径筛选、题目详情路径上下文和对应公开 API。
+- 停止初始化新的学习路径数据；已有 SQLite 中的历史路径表保留为不再使用的兼容数据，不影响用户、题目和提交记录。
+
+### 2026-08-27 - 提交反馈闭环与相近题目
+
+- 评测结果页按 Accepted、答案错误、编译/运行超时和评测服务异常提供对应的继续操作入口。
+- 失败提交可以直接返回 IDE、查看题解、查看题目讨论和提交记录；评测服务异常可直接重试。
+- 通过提交可以继续浏览题库、查看题解、提交记录和成长记录，减少评测结果页的流程断点。
+- 新增 `GET /api/oj/problems/:id/related`，根据题目难度和标签返回最多 4 道相近公开题目；接口只读，不修改数据库结构和历史数据。
+- 评测结果页展示相近题目时固定卡片布局，已通过状态不会改变列表尺寸。
+
+### 2026-08-27 - 体验、性能与安全收口
+
+- 评测/沙箱队列增加按用户公平轮转、并发与排队上限、取消统计和等待/运行耗时指标，避免单个用户占满资源。
+- SQLite 增加 busy timeout、聊天/通知/题库查询索引和游标分页兼容；健康检查改为稳定使用服务端数据库路径。
+- 增加 HttpOnly Cookie 会话和 Cookie 请求来源校验，同时保留 Bearer Token 兼容；严格校验聊天、点赞、收藏、邀请链接、计划和评测输入。
+- 限制异常题目测试点数量和自定义输入大小，修复邀请链接并发超额消耗、点赞/收藏竞态和跨房间已读校验。
+- 顶部通知、聊天室成员、好友与聊天身份展示统一补充头像框、叠加层和称号；图片失败时仍回退为固定尺寸头像。
+- 完成发布门禁：lint、68 项单测、生产构建、依赖审计、数据库/备份恢复校验、API smoke、200 并发健康压力测试，以及浅色/深色三种视口对比度审计。
 
 ### 2026-08-25 - 站内装饰与资料中心发布收口
 

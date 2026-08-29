@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
+import { useModalFocus } from '../hooks/useModalFocus'
 
 type SelectOption = {
   label: string
@@ -29,6 +31,7 @@ export default function CustomSelect({
 }: CustomSelectProps) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [open, setOpen] = useState(false)
+  const menuRef = useModalFocus(open, () => setOpen(false))
 
   const selectedOption = useMemo(
     () => options.find((option) => option.value === value) ?? null,
@@ -80,14 +83,12 @@ export default function CustomSelect({
           {selectedOption?.label ?? placeholder}
         </span>
         <span className="custom-select-chevron" aria-hidden="true">
-          <svg viewBox="0 0 20 20" width="16" height="16">
-            <path d="M5.5 7.5 10 12l4.5-4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <ChevronDown size={16} strokeWidth={1.8} />
         </span>
       </button>
 
       {open && (
-        <div className={`custom-select-menu ${menuClassName}`.trim()} role="listbox">
+        <div ref={menuRef} className={`custom-select-menu ${menuClassName}`.trim()} role="listbox" tabIndex={-1}>
           {options.map((option) => {
             const selected = option.value === value
             return (

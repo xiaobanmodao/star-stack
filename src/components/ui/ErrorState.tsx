@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { CircleAlert } from 'lucide-react'
 import Button from './Button'
 
 type ErrorStateProps = {
@@ -18,7 +19,7 @@ export default function ErrorState({
 }: ErrorStateProps) {
   return (
     <div className="ss-error-state" role="alert">
-      <div className="ss-error-state-icon" aria-hidden="true">!</div>
+      <div className="ss-error-state-icon" aria-hidden="true"><CircleAlert size={17} strokeWidth={2} /></div>
       <div className="ss-error-state-copy">
         <strong>{title}</strong>
         <span>{description}</span>

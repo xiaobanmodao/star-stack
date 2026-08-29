@@ -7,12 +7,18 @@ import { randomBytes } from 'crypto'
 import fs from 'fs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = path.join(__dirname, 'data')
-const DB_PATH = path.join(DATA_DIR, 'starstack.sqlite')
+const DEFAULT_DATA_DIR = path.join(__dirname, 'data')
+const DB_PATH = path.resolve(process.env.DB_PATH || path.join(DEFAULT_DATA_DIR, 'starstack.sqlite'))
+const DATA_DIR = path.dirname(DB_PATH)
 
 const dbPromise = open({
   filename: DB_PATH,
   driver: sqlite3.Database,
+}).then((db) => {
+  // 多个 API 请求和评测完成回调可能同时写入 SQLite；显式忙等待可减少
+  // SQLITE_BUSY 瞬态错误，同时避免把写事务无限阻塞在应用层。
+  db.configure('busyTimeout', 5000)
+  return db
 })
 
 const BUILTIN_PROBLEMS = [
@@ -168,6 +174,13 @@ const LEGACY_COLUMN_PATCHES = [
   { table: 'problems', column: 'output_desc', definition: "TEXT NOT NULL DEFAULT ''" },
   { table: 'problems', column: 'data_range', definition: "TEXT NOT NULL DEFAULT ''" },
   { table: 'problems', column: 'samples', definition: "TEXT NOT NULL DEFAULT '[]'" },
+  { table: 'problems', column: 'topic_tags', definition: "TEXT NOT NULL DEFAULT ''" },
+  { table: 'problems', column: 'technique_tags', definition: "TEXT NOT NULL DEFAULT ''" },
+  { table: 'problems', column: 'estimated_minutes', definition: 'INTEGER' },
+  { table: 'problems', column: 'recommended_for', definition: "TEXT NOT NULL DEFAULT ''" },
+  { table: 'problems', column: 'quality_status', definition: "TEXT NOT NULL DEFAULT 'unchecked'" },
+  { table: 'problems', column: 'editorial_status', definition: "TEXT NOT NULL DEFAULT 'none'" },
+  { table: 'problems', column: 'revision_summary', definition: "TEXT NOT NULL DEFAULT ''" },
   { table: 'problems', column: 'creator_id', definition: 'TEXT' },
   { table: 'problems', column: 'status', definition: "TEXT NOT NULL DEFAULT 'published'" },
   { table: 'submissions', column: 'message', definition: 'TEXT' },
@@ -264,6 +277,8 @@ export const initDb = async () => {
   await db.exec(`
     PRAGMA foreign_keys = ON;
     PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA busy_timeout = 5000;
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -303,6 +318,13 @@ export const initDb = async () => {
       output_desc TEXT NOT NULL DEFAULT '',
       data_range TEXT NOT NULL DEFAULT '',
       samples TEXT NOT NULL DEFAULT '[]',
+      topic_tags TEXT NOT NULL DEFAULT '',
+      technique_tags TEXT NOT NULL DEFAULT '',
+      estimated_minutes INTEGER,
+      recommended_for TEXT NOT NULL DEFAULT '',
+      quality_status TEXT NOT NULL DEFAULT 'unchecked',
+      editorial_status TEXT NOT NULL DEFAULT 'none',
+      revision_summary TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS submissions (
@@ -375,6 +397,8 @@ export const initDb = async () => {
     CREATE INDEX IF NOT EXISTS idx_submissions_user_created ON submissions (user_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_testcases_problem_sample ON testcases (problem_id, is_sample, id);
     CREATE INDEX IF NOT EXISTS idx_problems_status_difficulty ON problems (status, difficulty, id);
+    CREATE INDEX IF NOT EXISTS idx_problems_status_id ON problems (status, id);
+    CREATE INDEX IF NOT EXISTS idx_problems_quality_status ON problems (quality_status, status, id);
   `)
 
   const columns = await db.all(`PRAGMA table_info(users)`)
@@ -669,6 +693,7 @@ export const initDb = async () => {
     CREATE INDEX IF NOT EXISTS idx_conversations_last_message ON conversations(last_message_at);
     CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id, id);
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_sender_read ON messages(conversation_id, sender_id, is_read);
     CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
     CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
@@ -777,6 +802,7 @@ export const initDb = async () => {
       FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read, created_at);
+    CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id, id);
 
     -- 黑名单（屏蔽后对方不可私信/评论/查看档案）
     CREATE TABLE IF NOT EXISTS blocks (
@@ -993,6 +1019,7 @@ export const initDb = async () => {
       )
     }
   }
+
 }
 
 export const getDb = async () => {

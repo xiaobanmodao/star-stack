@@ -6,6 +6,7 @@ import { spawn, spawnSync } from 'child_process'
 import { fileURLToPath } from 'url'
 import {
   DEFAULT_TESTCASE_TIME_LIMIT_MS,
+  MAX_TESTCASE_COUNT,
   normalizeTestcaseTimeLimit,
 } from './utils/testcaseLimits.js'
 
@@ -144,8 +145,15 @@ const SANDBOX_SH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'sand
 
 const hasCommand = (command) => {
   if (!IS_LINUX) return false
-  const result = spawnSync('command', ['-v', command], { stdio: 'ignore', shell: true })
-  return result.status === 0
+  const searchPath = String(process.env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin')
+  return searchPath.split(path.delimiter).some((directory) => {
+    try {
+      fs.accessSync(path.join(directory, command), fs.constants.X_OK)
+      return true
+    } catch {
+      return false
+    }
+  })
 }
 
 // 不仅检查脚本文件，还要在启动时验证完整沙箱能力。
@@ -574,6 +582,14 @@ const compileSource = async (language, code, workspace) => {
 }
 
 export const judgeSubmission = async ({ language, code, testcases, onTestCase }) => {
+  if (!Array.isArray(testcases) || testcases.length === 0 || testcases.length > MAX_TESTCASE_COUNT) {
+    return {
+      status: 'Judge Error',
+      message: `测试点数量必须在 1～${MAX_TESTCASE_COUNT} 个之间`,
+      timeMs: 0,
+      results: [],
+    }
+  }
   const workspace = await prepareWorkspace(language, code)
   const result = {
     status: 'Judge Error',
@@ -853,6 +869,13 @@ export const runSample = async ({ language, code, input, timeLimitMs = TIME_LIMI
 }
 
 export const runSamples = async ({ language, code, inputs }) => {
+  if (!Array.isArray(inputs) || inputs.length === 0 || inputs.length > MAX_TESTCASE_COUNT) {
+    return {
+      status: 'Judge Error',
+      message: `样例数量必须在 1～${MAX_TESTCASE_COUNT} 个之间`,
+      results: [],
+    }
+  }
   const workspace = await prepareWorkspace(language, code)
   const fallback = {
     status: 'Judge Error',

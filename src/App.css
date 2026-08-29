@@ -4625,6 +4625,53 @@ body,
   margin-top: 24px;
 }
 
+/* 题目难度语义色：统一覆盖历史难度样式，兼容旧数据映射后的新 class。 */
+.difficulty-tag.difficulty-simple,
+.difficulty-badge.difficulty-simple,
+.oj-badge.difficulty-simple {
+  color: var(--ss-difficulty-simple) !important;
+  background: var(--ss-difficulty-simple-bg) !important;
+  border-color: var(--ss-difficulty-simple-border) !important;
+}
+
+.difficulty-tag.difficulty-medium,
+.difficulty-badge.difficulty-medium,
+.oj-badge.difficulty-medium {
+  color: var(--ss-difficulty-medium) !important;
+  background: var(--ss-difficulty-medium-bg) !important;
+  border-color: var(--ss-difficulty-medium-border) !important;
+}
+
+.difficulty-tag.difficulty-challenging,
+.difficulty-badge.difficulty-challenging,
+.oj-badge.difficulty-challenging {
+  color: var(--ss-difficulty-challenging) !important;
+  background: var(--ss-difficulty-challenging-bg) !important;
+  border-color: var(--ss-difficulty-challenging-border) !important;
+}
+
+.difficulty-tag.difficulty-difficult,
+.difficulty-badge.difficulty-difficult,
+.oj-badge.difficulty-difficult {
+  color: var(--ss-difficulty-difficult) !important;
+  background: var(--ss-difficulty-difficult-bg) !important;
+  border-color: var(--ss-difficulty-difficult-border) !important;
+}
+
+.difficulty-tag.difficulty-extreme,
+.difficulty-badge.difficulty-extreme,
+.oj-badge.difficulty-extreme {
+  color: var(--ss-difficulty-extreme) !important;
+  background: var(--ss-difficulty-extreme-bg) !important;
+  border-color: var(--ss-difficulty-extreme-border) !important;
+}
+
+.difficulty-label.difficulty-simple { color: var(--ss-difficulty-simple) !important; }
+.difficulty-label.difficulty-medium { color: var(--ss-difficulty-medium) !important; }
+.difficulty-label.difficulty-challenging { color: var(--ss-difficulty-challenging) !important; }
+.difficulty-label.difficulty-difficult { color: var(--ss-difficulty-difficult) !important; }
+.difficulty-label.difficulty-extreme { color: var(--ss-difficulty-extreme) !important; }
+
 @media (max-width: 480px) {
   .app-fatal-error-panel {
     padding: 24px 18px;

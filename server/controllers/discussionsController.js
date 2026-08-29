@@ -13,6 +13,11 @@ const VALID_MODULES = new Set(['general', 'oj', 'jieya', 'starcode'])
 const postRateLimits = new BoundedCache(5000, 10000)
 const commentRateLimits = new BoundedCache(5000, 5000)
 
+const parsePositiveInteger = (value) => {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+}
+
 const getUserDecorationFields = (row, prefix = 'user', achievementTypes = new Set()) => {
   const decoration = getDecorationIdentity(
     {
@@ -34,7 +39,7 @@ const getUserDecorationFields = (row, prefix = 'user', achievementTypes = new Se
 export const listDiscussions = async (req, res) => {
   try {
     const db = await getDb()
-    const page = Math.max(1, parseInt(req.query.page) || 1)
+    const page = Math.min(10000, Math.max(1, parseInt(req.query.page) || 1))
     const pageSize = Math.min(50, Math.max(1, parseInt(req.query.pageSize) || 20))
     const sort = req.query.sort === 'hot' ? 'hot' : 'latest'
     const problemId = req.query.problemId ? parseInt(req.query.problemId) : null
@@ -514,12 +519,13 @@ export const toggleLike = async (req, res) => {
   const auth = await requireUser(req, res)
   if (!auth) return
   const { db, user } = auth
+  let transactionStarted = false
   try {
     const { targetType, targetId } = req.body || {}
     if (!targetType || !targetId) return res.status(400).json({ message: '参数不完整' })
     if (targetType !== 'post' && targetType !== 'comment') return res.status(400).json({ message: '无效的目标类型' })
 
-    const id = parseInt(targetId)
+    const id = parsePositiveInteger(targetId)
     if (!id) return res.status(400).json({ message: '无效的目标ID' })
 
     if (targetType === 'post') {
@@ -530,6 +536,8 @@ export const toggleLike = async (req, res) => {
       if (!comment) return res.status(404).json({ message: '评论不存在' })
     }
 
+    await db.exec('BEGIN IMMEDIATE')
+    transactionStarted = true
     const existing = await db.get(
       `SELECT id FROM discussion_likes WHERE user_id = ? AND target_type = ? AND target_id = ?`,
       user.id, targetType, id
@@ -550,8 +558,11 @@ export const toggleLike = async (req, res) => {
     }
 
     const updated = await db.get(`SELECT like_count FROM ${table} WHERE id = ?`, id)
+    await db.exec('COMMIT')
+    transactionStarted = false
     return res.json({ liked, likeCount: updated?.like_count || 0 })
   } catch (error) {
+    if (transactionStarted) await db.exec('ROLLBACK').catch(() => undefined)
     console.error('Failed to toggle like:', error)
     return res.status(500).json({ message: '操作失败' })
   }

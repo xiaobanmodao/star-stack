@@ -306,7 +306,7 @@
 }
 
 .profile-stats-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -655,7 +655,7 @@
   margin-top: 12px;
 }
 
-/* ---------- 浅色主题：星图节点改浅底深字 ---------- */
+/* ---------- 浅色主题：活动节点改浅底深字 ---------- */
 :root[data-theme='light'] .profile-star-node {
   background: var(--ss-star-node-bg);
   border-color: var(--ss-accent-border);

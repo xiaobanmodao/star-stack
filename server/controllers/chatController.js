@@ -7,12 +7,20 @@ import { localDay, parseLocalDate } from '../utils/dateHelpers.js'
 import { BoundedCache } from '../utils/boundedCache.js'
 import { randomBytes } from 'node:crypto'
 import { sseConnectionLimiter } from '../utils/connectionLimit.js'
+import { serializeDifficulty } from '../utils/difficulty.js'
+import { getDecorationIdentity, getUnlockedAchievementTypeMap } from '../utils/decorations.js'
+import { getLevelInfo } from '../stats.js'
 
 const CHAT_VALID_MODULES = new Set(['general', 'oj', 'jieya', 'starcode'])
 const chatRateLimits = new BoundedCache(5000, 1000)
 const typingRateLimits = new BoundedCache(5000, 1000)
 const reportRateLimits = new BoundedCache(5000, 10000)
 export const PRESENCE_ONLINE_MS = 60 * 1000
+
+const parsePositiveInteger = (value) => {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
+}
 
 export const chatStreams = new Map()
 export const broadcastToScope = (scopeKey, payload) => {
@@ -36,17 +44,46 @@ const touchPresence = async (db, userId) => {
 
 const formatChatMessage = (m) => ({
   id: m.id, senderId: m.sender_id, senderName: m.sender_name, senderAvatar: m.sender_avatar,
+  senderAvatarFrame: m.sender_avatar_frame || 'none',
+  senderAvatarOverlay: m.sender_avatar_overlay || 'none',
+  senderDisplayTitle: m.sender_display_title,
+  senderDisplayTitleIcon: m.sender_display_title_icon,
   content: m.content, createdAt: m.created_at,
   reactions: m.reactions || [], threadParentId: m.thread_parent_id ?? null,
   threadReplyCount: m.thread_reply_count ?? 0,
 })
 
+const attachMessageDecorations = async (db, messages) => {
+  if (messages.length === 0) return messages
+  const achievementMap = await getUnlockedAchievementTypeMap(db, messages.map((message) => message.sender_id))
+  return messages.map((message) => {
+    const identity = getDecorationIdentity(
+      {
+        avatar_frame: message.sender_avatar_frame,
+        avatar_overlay: message.sender_avatar_overlay,
+        equipped_title: message.sender_equipped_title,
+      },
+      getLevelInfo(message.sender_xp || 0),
+      achievementMap.get(message.sender_id),
+    )
+    return {
+      ...message,
+      sender_avatar_frame: identity.avatarFrame,
+      sender_avatar_overlay: identity.avatarOverlay,
+      sender_display_title: identity.displayTitle,
+      sender_display_title_icon: identity.displayTitleIcon,
+    }
+  })
+}
+
 const loadChatMessageRows = async (db, whereSql, params, limit, beforeId) => {
   const beforeClause = beforeId ? 'AND cm.id < ?' : ''
   const rows = await db.all(
     `SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar,
+            u.avatar_frame as sender_avatar_frame, u.avatar_overlay as sender_avatar_overlay,
+            u.equipped_title as sender_equipped_title, us.xp as sender_xp,
             (SELECT COUNT(*) FROM chat_messages r WHERE r.thread_parent_id = cm.id) as thread_reply_count
-     FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id
+     FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id LEFT JOIN user_stats us ON us.user_id = cm.sender_id
      WHERE ${whereSql} AND cm.thread_parent_id IS NULL ${beforeClause}
      ORDER BY cm.id DESC LIMIT ?`,
     ...params, ...(beforeId ? [beforeId] : []), limit
@@ -150,17 +187,33 @@ const getRoomDetail = async (db, roomId) => {
   if (!room) return null
   const members = await db.all(
     `SELECT m.user_id, m.role, m.joined_at, u.name as user_name, u.avatar as user_avatar,
+            u.avatar_frame as user_avatar_frame, u.avatar_overlay as user_avatar_overlay,
+            u.equipped_title as user_equipped_title, us.xp as user_xp,
             (SELECT last_seen_at FROM user_presence p WHERE p.user_id = m.user_id) as last_seen_at
      FROM chat_room_members m LEFT JOIN users u ON m.user_id = u.id
+     LEFT JOIN user_stats us ON us.user_id = m.user_id
      WHERE m.room_id = ? ORDER BY (m.role = 'owner') DESC, m.joined_at ASC`, roomId
   )
+  const achievementMap = await getUnlockedAchievementTypeMap(db, members.map((member) => member.user_id))
   return {
     id: room.id, name: room.name, description: room.description, type: room.type,
     ownerId: room.owner_id, ownerName: room.owner_name, memberCount: room.member_count, createdAt: room.created_at,
-    members: members.map((m) => ({
-      userId: m.user_id, userName: m.user_name, userAvatar: m.user_avatar, role: m.role,
-      online: Boolean(m.last_seen_at) && Date.now() - new Date(m.last_seen_at).getTime() <= PRESENCE_ONLINE_MS,
-    })),
+    members: members.map((m) => {
+      const identity = getDecorationIdentity(
+        {
+          avatar_frame: m.user_avatar_frame,
+          avatar_overlay: m.user_avatar_overlay,
+          equipped_title: m.user_equipped_title,
+        },
+        getLevelInfo(m.user_xp || 0),
+        achievementMap.get(m.user_id),
+      )
+      return {
+        userId: m.user_id, userName: m.user_name, userAvatar: m.user_avatar, role: m.role,
+        ...identity,
+        online: Boolean(m.last_seen_at) && Date.now() - new Date(m.last_seen_at).getTime() <= PRESENCE_ONLINE_MS,
+      }
+    }),
   }
 }
 
@@ -463,7 +516,7 @@ export const listRoomMessages = async (req, res) => {
     const beforeId = req.query.before ? parseInt(req.query.before) : null
     const rows = await loadChatMessageRows(db, 'cm.room_id = ?', [roomId], limit + 1, beforeId)
     const hasMore = rows.length > limit
-    const messages = await attachReactions(db, rows.slice(0, limit), user.id)
+    const messages = await attachMessageDecorations(db, await attachReactions(db, rows.slice(0, limit), user.id))
     return res.json({ messages: messages.map(formatChatMessage), hasMore })
   } catch (error) {
     console.error('Failed to load room messages:', error)
@@ -495,12 +548,16 @@ export const sendRoomMessage = async (req, res) => {
     )
     await touchPresence(db, user.id)
     const rows = await db.all(
-      `SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id WHERE cm.id = ?`,
+      `SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar,
+              u.avatar_frame as sender_avatar_frame, u.avatar_overlay as sender_avatar_overlay,
+              u.equipped_title as sender_equipped_title, us.xp as sender_xp
+       FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id
+       LEFT JOIN user_stats us ON us.user_id = cm.sender_id WHERE cm.id = ?`,
       result.lastID
     )
     await bumpChatStat(db, user.id, { field: 'message_count', points: 1 })
     await addXp(db, user.id, 2)
-    const message = formatChatMessage(rows[0])
+    const message = formatChatMessage((await attachMessageDecorations(db, rows))[0])
     await notifyMentions(db, text, user.id, 'mention', 'room', roomId, (id) => `在聊天室《${room.name}》中提到了你（@${id}）`)
     broadcastToScope(`room:${roomId}`, { type: 'message', message })
     return res.json({ message })
@@ -599,11 +656,15 @@ export const getThreadReplies = async (req, res) => {
     if (!(await assertChatScopeAccess(db, user, parent))) return res.status(403).json({ message: '需要加入后才能查看' })
     const rows = await db.all(
       `SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar,
+              u.avatar_frame as sender_avatar_frame, u.avatar_overlay as sender_avatar_overlay,
+              u.equipped_title as sender_equipped_title, us.xp as sender_xp,
               (SELECT COUNT(*) FROM chat_messages r WHERE r.thread_parent_id = cm.id) as thread_reply_count
-       FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id WHERE cm.thread_parent_id = ? ORDER BY cm.id ASC LIMIT 200`,
+       FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id
+       LEFT JOIN user_stats us ON us.user_id = cm.sender_id
+       WHERE cm.thread_parent_id = ? ORDER BY cm.id ASC LIMIT 200`,
       messageId
     )
-    const replies = await attachReactions(db, rows, user.id)
+    const replies = await attachMessageDecorations(db, await attachReactions(db, rows, user.id))
     return res.json({ replies: replies.map(formatChatMessage) })
   } catch (error) {
     console.error('Failed to load thread replies:', error)
@@ -634,8 +695,15 @@ export const addThreadReply = async (req, res) => {
     await addXp(db, user.id, 2)
     await touchPresence(db, user.id)
     await notifyMentions(db, text, user.id, 'mention', parent.channel_key ? 'channel' : 'room', parent.channel_key || parent.room_id, (id) => `在一条消息的回复中提到了你（@${id}）`)
-    const rows = await db.all(`SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar, 0 as thread_reply_count FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id WHERE cm.id = ?`, result.lastID)
-    const reply = formatChatMessage(rows[0])
+    const rows = await db.all(
+      `SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar,
+              u.avatar_frame as sender_avatar_frame, u.avatar_overlay as sender_avatar_overlay,
+              u.equipped_title as sender_equipped_title, us.xp as sender_xp,
+              0 as thread_reply_count
+       FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id
+       LEFT JOIN user_stats us ON us.user_id = cm.sender_id WHERE cm.id = ?`, result.lastID,
+    )
+    const reply = formatChatMessage((await attachMessageDecorations(db, rows))[0])
     broadcastToScope(parent.channel_key ? `channel:${parent.channel_key}` : `room:${parent.room_id}`, { type: 'thread_reply', message: reply })
     return res.json({ reply })
   } catch (error) {
@@ -696,19 +764,50 @@ export const joinViaInviteLink = async (req, res) => {
   const auth = await requireUser(req, res)
   if (!auth) return
   const { db, user } = auth
+  let transactionStarted = false
   try {
     if (!/^[a-f0-9]{32}$/.test(req.params.token || '')) {
       return res.status(404).json({ message: '邀请链接无效或已被使用' })
     }
+    await db.exec('BEGIN IMMEDIATE')
+    transactionStarted = true
     const link = await db.get(`SELECT * FROM room_invite_links WHERE token = ?`, req.params.token)
-    if (!link) return res.status(404).json({ message: '邀请链接无效或已被使用' })
-    if (link.expires_at && new Date(link.expires_at).getTime() < Date.now()) return res.status(410).json({ message: '邀请链接已过期' })
-    if (link.use_count >= link.max_uses) return res.status(410).json({ message: '邀请链接已达使用上限' })
-    await db.run(`INSERT OR IGNORE INTO chat_room_members (room_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)`, link.room_id, user.id, new Date().toISOString())
-    await db.run(`UPDATE room_invite_links SET use_count = use_count + 1 WHERE id = ?`, link.id)
+    if (!link) {
+      await db.exec('ROLLBACK')
+      transactionStarted = false
+      return res.status(404).json({ message: '邀请链接无效或已被使用' })
+    }
+    if (link.expires_at && new Date(link.expires_at).getTime() < Date.now()) {
+      await db.exec('ROLLBACK')
+      transactionStarted = false
+      return res.status(410).json({ message: '邀请链接已过期' })
+    }
+    if (link.use_count >= link.max_uses) {
+      await db.exec('ROLLBACK')
+      transactionStarted = false
+      return res.status(410).json({ message: '邀请链接已达使用上限' })
+    }
+    const memberResult = await db.run(
+      `INSERT OR IGNORE INTO chat_room_members (room_id, user_id, role, joined_at) VALUES (?, ?, 'member', ?)`,
+      link.room_id, user.id, new Date().toISOString(),
+    )
+    if (memberResult.changes > 0) {
+      const usageResult = await db.run(
+        `UPDATE room_invite_links SET use_count = use_count + 1 WHERE id = ? AND use_count < max_uses`,
+        link.id,
+      )
+      if (usageResult.changes !== 1) {
+        await db.exec('ROLLBACK')
+        transactionStarted = false
+        return res.status(410).json({ message: '邀请链接已达使用上限' })
+      }
+    }
+    await db.exec('COMMIT')
+    transactionStarted = false
     const room = await db.get(`SELECT name FROM chat_rooms WHERE id = ?`, link.room_id)
     return res.json({ message: `已加入《${room?.name}》`, roomId: link.room_id })
   } catch (error) {
+    if (transactionStarted) await db.exec('ROLLBACK').catch(() => undefined)
     console.error('Failed to join via invite link:', error)
     return res.status(500).json({ message: '加入失败' })
   }
@@ -720,10 +819,12 @@ export const toggleBookmark = async (req, res) => {
   const auth = await requireUser(req, res)
   if (!auth) return
   const { db, user } = auth
+  let transactionStarted = false
   try {
     const { targetType, targetId } = req.body || {}
-    const type = targetType === 'problem' ? 'problem' : 'post'
-    const id = parseInt(targetId)
+    if (targetType !== 'problem' && targetType !== 'post') return res.status(400).json({ message: '无效的目标类型' })
+    const type = targetType
+    const id = parsePositiveInteger(targetId)
     if (!id) return res.status(400).json({ message: '无效的目标' })
     if (type === 'post') {
       const post = await db.get(`SELECT id FROM discussion_posts WHERE id = ?`, id)
@@ -732,14 +833,21 @@ export const toggleBookmark = async (req, res) => {
       const problem = await db.get(`SELECT id FROM problems WHERE id = ?`, id)
       if (!problem) return res.status(404).json({ message: '题目不存在' })
     }
+    await db.exec('BEGIN IMMEDIATE')
+    transactionStarted = true
     const existing = await db.get(`SELECT id FROM bookmarks WHERE user_id = ? AND target_type = ? AND target_id = ?`, user.id, type, id)
     if (existing) {
       await db.run(`DELETE FROM bookmarks WHERE id = ?`, existing.id)
+      await db.exec('COMMIT')
+      transactionStarted = false
       return res.json({ bookmarked: false })
     }
     await db.run(`INSERT INTO bookmarks (user_id, target_type, target_id, created_at) VALUES (?, ?, ?, ?)`, user.id, type, id, new Date().toISOString())
+    await db.exec('COMMIT')
+    transactionStarted = false
     return res.json({ bookmarked: true })
   } catch (error) {
+    if (transactionStarted) await db.exec('ROLLBACK').catch(() => undefined)
     console.error('Failed to toggle bookmark:', error)
     return res.status(500).json({ message: '操作失败' })
   }
@@ -750,6 +858,9 @@ export const listBookmarks = async (req, res) => {
   if (!auth) return
   const { db, user } = auth
   try {
+    if (req.query.targetType !== undefined && req.query.targetType !== 'problem' && req.query.targetType !== 'post') {
+      return res.status(400).json({ message: '无效的目标类型' })
+    }
     const targetType = req.query.targetType === 'problem' ? 'problem' : 'post'
     const ids = await db.all(`SELECT target_id FROM bookmarks WHERE user_id = ? AND target_type = ? ORDER BY created_at DESC`, user.id, targetType)
     if (targetType === 'post') {
@@ -771,7 +882,7 @@ export const listBookmarks = async (req, res) => {
       user.id,
     )
     return res.json({ problems: problems.map((problem) => ({
-      id: problem.id, title: problem.title, difficulty: problem.difficulty,
+      id: problem.id, title: problem.title, ...serializeDifficulty(problem.difficulty),
       slug: problem.slug, createdAt: problem.created_at,
     })) })
   } catch (error) {
@@ -785,8 +896,11 @@ export const getBookmarkStatus = async (req, res) => {
   if (!auth) return
   const { db, user } = auth
   try {
+    if (req.query.targetType !== 'problem' && req.query.targetType !== 'post') {
+      return res.status(400).json({ message: '无效的目标类型' })
+    }
     const targetType = req.query.targetType === 'problem' ? 'problem' : 'post'
-    const targetId = parseInt(req.query.targetId)
+    const targetId = parsePositiveInteger(req.query.targetId)
     if (!targetId) return res.status(400).json({ message: '无效的目标' })
     const row = await db.get(`SELECT 1 FROM bookmarks WHERE user_id = ? AND target_type = ? AND target_id = ?`, user.id, targetType, targetId)
     return res.json({ bookmarked: Boolean(row) })
@@ -812,7 +926,18 @@ export const markChatRead = async (req, res) => {
       const maxRow = await db.get(`SELECT MAX(id) as max_id FROM discussion_posts WHERE module_key = ?`, scopeId)
       maxId = maxRow?.max_id || 0
     } else {
-      const maxRow = await db.get(`SELECT MAX(id) as max_id FROM chat_messages WHERE room_id = ?`, parseInt(scopeId))
+      const roomId = parsePositiveInteger(scopeId)
+      if (!roomId) return res.status(400).json({ message: '无效的房间ID' })
+      const room = await db.get(`SELECT id, type FROM chat_rooms WHERE id = ?`, roomId)
+      if (!room) return res.status(404).json({ message: '房间不存在' })
+      if (room.type === 'invite') {
+        const member = await db.get(
+          `SELECT 1 FROM chat_room_members WHERE room_id = ? AND user_id = ?`,
+          roomId, user.id,
+        )
+        if (!member) return res.status(403).json({ message: '需要加入后才能操作' })
+      }
+      const maxRow = await db.get(`SELECT MAX(id) as max_id FROM chat_messages WHERE room_id = ?`, roomId)
       maxId = maxRow?.max_id || 0
     }
     await db.run(
@@ -910,8 +1035,10 @@ export const doCheckin = async (req, res) => {
   try {
     const today = localDay()
     const existing = await db.get(`SELECT 1 FROM daily_checkins WHERE user_id = ? AND checkin_date = ?`, user.id, today)
-    const alreadyChecked = !!existing
-    await db.run(`INSERT OR IGNORE INTO daily_checkins (user_id, checkin_date, created_at) VALUES (?, ?, ?)`, user.id, today, new Date().toISOString())
+    const insertResult = existing
+      ? { changes: 0 }
+      : await db.run(`INSERT OR IGNORE INTO daily_checkins (user_id, checkin_date, created_at) VALUES (?, ?, ?)`, user.id, today, new Date().toISOString())
+    const alreadyChecked = insertResult.changes !== 1
     if (!alreadyChecked) await addXp(db, user.id, 10)
     const status = await getCheckinStatus(db, user.id)
     return res.json({ success: true, alreadyChecked, ...status })
@@ -974,8 +1101,12 @@ export const getActivityLeaderboard = async (req, res) => {
     const days = Math.min(30, Math.max(1, parseInt(req.query.days) || 7))
     const since = localDay(new Date(Date.now() - (days - 1) * 86400000))
     const rows = await db.all(
-      `SELECT l.user_id, u.name as user_name, u.avatar as user_avatar, SUM(l.score) as score
+      `SELECT l.user_id, u.name as user_name, u.avatar as user_avatar,
+              u.avatar_frame as user_avatar_frame, u.avatar_overlay as user_avatar_overlay,
+              u.equipped_title as user_equipped_title, us.xp as user_xp,
+              SUM(l.score) as score
        FROM chat_activity_log l LEFT JOIN users u ON u.id = l.user_id
+       LEFT JOIN user_stats us ON us.user_id = l.user_id
        WHERE l.day >= ? AND l.score > 0 GROUP BY l.user_id ORDER BY score DESC LIMIT 20`, since
     )
     const myRow = await db.get(`SELECT user_id, SUM(score) as score FROM chat_activity_log WHERE day >= ? AND user_id = ? GROUP BY user_id`, since, user.id)
@@ -985,9 +1116,26 @@ export const getActivityLeaderboard = async (req, res) => {
       const rankRow = await db.get(`SELECT COUNT(*) + 1 as rank FROM (SELECT user_id FROM chat_activity_log WHERE day >= ? AND score > 0 GROUP BY user_id HAVING SUM(score) > ?)`, since, myScore)
       myRank = rankRow?.rank || null
     }
+    const achievementMap = await getUnlockedAchievementTypeMap(db, rows.map((row) => row.user_id))
     return res.json({
       days,
-      leaderboard: rows.map((r, index) => ({ rank: index + 1, userId: r.user_id, userName: r.user_name, userAvatar: r.user_avatar, score: r.score })),
+      leaderboard: rows.map((r, index) => {
+        const identity = getDecorationIdentity(
+          {
+            avatar_frame: r.user_avatar_frame,
+            avatar_overlay: r.user_avatar_overlay,
+            equipped_title: r.user_equipped_title,
+          },
+          getLevelInfo(r.user_xp || 0),
+          achievementMap.get(r.user_id),
+        )
+        return {
+          rank: index + 1, userId: r.user_id, userName: r.user_name, userAvatar: r.user_avatar,
+          avatarFrame: identity.avatarFrame, avatarOverlay: identity.avatarOverlay,
+          displayTitle: identity.displayTitle, displayTitleIcon: identity.displayTitleIcon,
+          score: r.score,
+        }
+      }),
       me: { userId: user.id, score: myScore, rank: myRank },
     })
   } catch (error) {

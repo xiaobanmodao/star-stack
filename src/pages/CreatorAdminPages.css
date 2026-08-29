@@ -542,7 +542,7 @@
 }
 
 .admin-console-v2 .admin-problem-table .admin-row {
-  grid-template-columns: minmax(250px, 1.7fr) minmax(90px, .65fr) minmax(90px, .7fr) minmax(70px, .5fr) minmax(130px, .9fr) minmax(300px, 1.7fr);
+  grid-template-columns: minmax(250px, 1.7fr) minmax(90px, .65fr) minmax(90px, .7fr) minmax(90px, .7fr) minmax(70px, .5fr) minmax(130px, .9fr) minmax(300px, 1.7fr);
 }
 
 .admin-console-v2 .admin-review-panel {
@@ -1330,6 +1330,8 @@ button.danger:hover {
   border-top: 1px solid var(--ss-color-border);
   color: var(--ss-color-text);
   font-size: 13px;
+  content-visibility: auto;
+  contain-intrinsic-size: 50px;
 }
 
 .admin-console-v2 .admin-table-v2 .admin-row:first-child {
@@ -1441,5 +1443,5 @@ button.danger:hover {
 
 /* Keep these operation styles after the legacy admin repair block so they win the grid cascade. */
 .admin-console-v2 .admin-problem-table .admin-row {
-  grid-template-columns: minmax(250px, 1.7fr) minmax(90px, .65fr) minmax(90px, .7fr) minmax(70px, .5fr) minmax(130px, .9fr) minmax(300px, 1.7fr);
+  grid-template-columns: minmax(250px, 1.7fr) minmax(90px, .65fr) minmax(90px, .7fr) minmax(90px, .7fr) minmax(70px, .5fr) minmax(130px, .9fr) minmax(300px, 1.7fr);
 }

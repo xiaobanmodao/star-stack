@@ -4,6 +4,7 @@ import { useAppContext } from '../context/AppContext'
 import { useToast } from '../components/ui/ToastContext'
 import { Badge, Button, EmptyState, ErrorState, LoadingState, PageHeader, Panel } from '../components/ui'
 import { fetchJson } from '../utils'
+import { getDifficultyClassName, getDifficultyLabel } from '../utils/difficulty'
 import type { AdminAuditLog, AdminClientError, AdminMetricsResponse, AdminProblem, AdminReport, AdminStatsResponse, UserRecord, ApiResponse } from '../types'
 import './CreatorAdminPages.css'
 
@@ -559,6 +560,15 @@ type AdminProblemReview = {
     title: string
     difficulty: string
     tags: string[]
+    topicTags?: string[]
+    techniqueTags?: string[]
+    estimatedMinutes?: number | null
+    recommendedFor?: string
+    qualityStatus?: string
+    qualityLabel?: string
+    editorialStatus?: string
+    editorialLabel?: string
+    revisionSummary?: string
     statement: string
     inputDesc: string
     outputDesc: string
@@ -573,6 +583,7 @@ type AdminProblemReview = {
 
 function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
   const [status, setStatus] = useState<'all' | 'draft' | 'pending_review' | 'published' | 'hidden'>('all')
+  const [qualityStatus, setQualityStatus] = useState<'all' | 'unchecked' | 'self_tested' | 'pending_review' | 'verified'>('all')
   const [query, setQuery] = useState('')
   const [problems, setProblems] = useState<AdminProblem[]>([])
   const [loading, setLoading] = useState(true)
@@ -587,6 +598,7 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
     try {
       const params = new URLSearchParams()
       if (status !== 'all') params.set('status', status)
+      if (qualityStatus !== 'all') params.set('qualityStatus', qualityStatus)
       if (query.trim()) params.set('q', query.trim())
       const { response, data } = await fetchJson<{ problems: AdminProblem[]; message?: string }>(
         `/api/admin/problems?${params.toString()}`
@@ -601,7 +613,7 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
     } finally {
       setLoading(false)
     }
-  }, [query, status])
+  }, [qualityStatus, query, status])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), query.trim() ? 250 : 0)
@@ -695,6 +707,13 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
           <option value="published">已发布</option>
           <option value="hidden">已隐藏</option>
         </select>
+        <select className="auth-input" value={qualityStatus} onChange={(event) => setQualityStatus(event.target.value as typeof qualityStatus)} aria-label="内容质量状态">
+          <option value="all">全部质量</option>
+          <option value="unchecked">未检查</option>
+          <option value="self_tested">已自测</option>
+          <option value="pending_review">审核中</option>
+          <option value="verified">已确认</option>
+        </select>
         <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>刷新</Button>
       </div>
       {error && <ErrorState description={error} onRetry={() => void load()} />}
@@ -709,10 +728,20 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
           </div>
           <div className="admin-review-meta">
             <span>创建者：{review.problem.creatorName || '-'}</span>
-            <span>难度：{review.problem.difficulty}</span>
+            <span className={`difficulty-label ${getDifficultyClassName(review.problem.difficulty)}`}>难度：{getDifficultyLabel(review.problem.difficulty)}</span>
+            <span>质量：{review.problem.qualityLabel || '未检查'}</span>
+            <span>题解：{review.problem.editorialLabel || '暂无题解'}</span>
             <span>测试点：{review.testcases.length}</span>
             <span>版本：{review.revisions.length}</span>
           </div>
+          {(review.problem.topicTags?.length || review.problem.techniqueTags?.length || review.problem.estimatedMinutes || review.problem.recommendedFor) ? (
+            <div className="admin-review-meta">
+              {review.problem.topicTags?.length ? <span>知识点：{review.problem.topicTags.join('、')}</span> : null}
+              {review.problem.techniqueTags?.length ? <span>技巧：{review.problem.techniqueTags.join('、')}</span> : null}
+              {review.problem.estimatedMinutes ? <span>预计用时：{review.problem.estimatedMinutes} 分钟</span> : null}
+              {review.problem.recommendedFor ? <span>适合：{review.problem.recommendedFor}</span> : null}
+            </div>
+          ) : null}
           <div className="admin-review-content">
             <div><strong>题目描述</strong><p>{review.problem.statement || '暂无描述'}</p></div>
             <div><strong>输入 / 输出</strong><p>{review.problem.inputDesc || '-'}<br />{review.problem.outputDesc || '-'}</p></div>
@@ -744,6 +773,7 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
             <div>题目</div>
             <div>难度</div>
             <div>状态</div>
+            <div>质量</div>
             <div>测试点</div>
             <div>创建者</div>
             <div>操作</div>
@@ -754,8 +784,9 @@ function AdminProblemsSection({ onEdit }: { onEdit: (id: number) => void }) {
                 <strong>{problem.title}</strong>
                 <span className="admin-problem-slug">P{problem.id} · {problem.slug || '-'}</span>
               </div>
-              <div>{problem.difficulty}</div>
+              <div className={`difficulty-label ${getDifficultyClassName(problem.difficulty)}`}>{getDifficultyLabel(problem.difficulty)}</div>
               <div><Badge tone={problem.status === 'published' ? 'success' : problem.status === 'hidden' ? 'danger' : problem.status === 'pending_review' ? 'info' : 'warning'}>{statusLabel(problem.status)}</Badge></div>
+              <div><Badge tone={problem.qualityStatus === 'verified' ? 'success' : problem.qualityStatus === 'self_tested' ? 'info' : problem.qualityStatus === 'pending_review' ? 'warning' : 'danger'}>{problem.qualityLabel || '未检查'}</Badge></div>
               <div>{problem.testcaseCount || 0}</div>
               <div>{problem.creatorName || problem.creatorId || '-'}</div>
               <div className="admin-row-actions">

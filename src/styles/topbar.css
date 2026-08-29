@@ -290,3 +290,78 @@ button.lang-switch-item:hover {
 .topbar-actions .ui-icon-button:hover:not(:disabled) > span > svg {
   stroke: var(--ss-color-accent);
 }
+
+/* IconButton 的徽标与图标使用独立几何，避免通知数字继承图标容器尺寸。 */
+.topbar-actions .ui-icon-button > .ui-icon-button-badge {
+  display: grid;
+  width: auto;
+  height: 17px;
+  min-width: 17px;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.topbar-actions .ui-icon-button > span:first-child {
+  width: 20px;
+  height: 20px;
+}
+
+@media (max-width: 560px) {
+  .topbar-actions {
+    gap: 6px;
+  }
+
+  .topbar-actions .topbar-message-btn,
+  .topbar-actions .ui-icon-button {
+    width: 34px !important;
+    min-width: 34px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    max-height: 34px !important;
+    border-radius: 11px !important;
+  }
+
+  .topbar-actions .user-avatar-btn,
+  .user-menu {
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    min-height: 34px;
+  }
+
+  .topbar-actions .user-avatar-btn {
+    width: 34px;
+    height: 34px;
+  }
+}
+
+@media (max-width: 380px) {
+  .topbar {
+    padding-inline: 10px !important;
+  }
+
+  .topbar-title {
+    font-size: 18px;
+  }
+
+  .topbar-actions .topbar-message-btn,
+  .topbar-actions .ui-icon-button {
+    width: 32px !important;
+    min-width: 32px !important;
+    height: 32px !important;
+    min-height: 32px !important;
+  }
+
+  .topbar-actions .user-avatar-btn,
+  .user-menu {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    min-height: 32px;
+  }
+
+  .topbar-actions .user-avatar-btn {
+    width: 32px;
+    height: 32px;
+  }
+}

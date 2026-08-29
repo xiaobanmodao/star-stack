@@ -23,7 +23,7 @@
   position: relative;
   z-index: 90;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(150px, 210px) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, 190px) minmax(170px, 220px) auto auto auto;
   gap: 10px;
   align-items: center;
   padding: 10px !important;

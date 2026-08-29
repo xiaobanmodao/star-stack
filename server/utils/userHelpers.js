@@ -1,6 +1,7 @@
 import { getLevelInfo } from '../stats.js'
 import { getDecorationIdentity, getUnlockedAchievementTypes } from './decorations.js'
 import { sanitizeHtml } from './htmlFilter.js'
+import { getPracticeRating } from './rating.js'
 
 export const sanitizeProblemText = (value) => sanitizeHtml(String(value ?? '').trim())
 
@@ -33,6 +34,7 @@ export const serializeUser = async (db, user) => {
     avatar: user.avatar,
     isAdmin: Boolean(user.is_admin),
     isBanned: Boolean(user.is_banned),
+    rating: getPracticeRating(user.rating),
     onboarded: Boolean(user.onboarded_at),
     ...levelInfo,
     ...decoration,

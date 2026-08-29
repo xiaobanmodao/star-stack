@@ -37,6 +37,7 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
   const deleteDialogRef = useModalFocus(deleteTarget !== null, () => setDeleteTarget(null))
   const messagesContainerRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messageLoadAbortRef = useRef<AbortController | null>(null)
   const pollAbortRef = useRef<AbortController | null>(null)
   const pageSize = 30
 
@@ -48,12 +49,16 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
 
   const loadMessages = useCallback(async (pageNum: number) => {
     if (!otherUserId) return
+    messageLoadAbortRef.current?.abort()
+    const controller = new AbortController()
+    messageLoadAbortRef.current = controller
     setLoading(true)
     try {
       const { response, data } = await fetchJson<MessagesResponse>(
-        `/api/messages/conversations/${otherUserId}?page=${pageNum}&pageSize=${pageSize}`
+        `/api/messages/conversations/${otherUserId}?page=${pageNum}&pageSize=${pageSize}`,
+        { signal: controller.signal },
       )
-      if (response.ok && data) {
+      if (!controller.signal.aborted && response.ok && data) {
         if (pageNum === 1) {
           setMessages(data.messages || [])
         } else {
@@ -65,21 +70,24 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
         fetchUnreadCount()
       }
     } catch (error) {
-      console.error('Failed to load messages:', error)
+      if (!controller.signal.aborted) console.error('Failed to load messages:', error)
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
     }
   }, [otherUserId, fetchUnreadCount])
 
   useEffect(() => {
-    loadMessages(1)
+    void loadMessages(1)
+    return () => messageLoadAbortRef.current?.abort()
   }, [loadMessages])
 
   // 加载与对方的关注关系（好友状态 + 屏蔽状态）
   useEffect(() => {
     if (!otherUserId) return
+    const controller = new AbortController()
     const timer = window.setTimeout(() => {
-      void fetchJson<UserProfileResponse>(`/api/users/${otherUserId}/profile`).then(({ response, data }) => {
+      void fetchJson<UserProfileResponse>(`/api/users/${otherUserId}/profile`, { signal: controller.signal }).then(({ response, data }) => {
+        if (controller.signal.aborted) return
         if (response.ok && data) {
           setRelations(data.relations)
           setBlockHint(data.blocked ? '你已屏蔽对方，无法发送消息' : null)
@@ -87,10 +95,13 @@ export default function ChatPage({ basePath = '/messages' }: { basePath?: string
           setBlockHint(data?.message || '对方已屏蔽你，无法发送消息')
         }
       }).catch(() => {
-        setBlockHint('对方关系暂时无法加载，请稍后重试')
+        if (!controller.signal.aborted) setBlockHint('对方关系暂时无法加载，请稍后重试')
       })
     }, 0)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
   }, [otherUserId])
 
   const handleToggleFollow = async () => {

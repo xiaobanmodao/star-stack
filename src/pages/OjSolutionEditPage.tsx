@@ -21,24 +21,27 @@ export default function OjSolutionEditPage() {
 
   useEffect(() => {
     if (!id) return
-    let cancelled = false
+    const controller = new AbortController()
     ;(async () => {
-      const [problemRes, solutionRes] = await Promise.all([
-        fetchJson<ProblemResponse>(`/api/oj/problems/${id}`),
-        fetchJson<SolutionsResponse>(`/api/oj/problems/${id}/solutions`),
-      ])
-      if (cancelled) return
-      if (problemRes.response.ok && problemRes.data?.problem) {
-        setProblemTitle(problemRes.data.problem.title)
+      try {
+        const [problemRes, solutionRes] = await Promise.all([
+          fetchJson<ProblemResponse>(`/api/oj/problems/${id}`, { signal: controller.signal }),
+          fetchJson<SolutionsResponse>(`/api/oj/problems/${id}/solutions`, { signal: controller.signal }),
+        ])
+        if (controller.signal.aborted) return
+        if (problemRes.response.ok && problemRes.data?.problem) {
+          setProblemTitle(problemRes.data.problem.title)
+        }
+        if (solutionRes.response.ok && solutionRes.data) {
+          setCanWrite(solutionRes.data.canWrite)
+        }
+      } catch {
+        if (!controller.signal.aborted) setError('题解编辑器暂时无法加载，请重试')
+      } finally {
+        if (!controller.signal.aborted) setLoading(false)
       }
-      if (solutionRes.response.ok && solutionRes.data) {
-        setCanWrite(solutionRes.data.canWrite)
-      }
-      setLoading(false)
     })()
-    return () => {
-      cancelled = true
-    }
+    return () => controller.abort()
   }, [id])
 
   const handleSubmit = async () => {

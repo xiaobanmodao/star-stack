@@ -4,9 +4,9 @@ import { useAppContext } from '../context/AppContext'
 import { useToast } from '../components/ui/ToastContext'
 import CustomSelect from '../components/CustomSelect'
 import TagSelector from '../components/TagSelector'
-import { Badge, Button, DataList, DataListHead, DataListRow, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, DataList, DataListHead, DataListRow, EmptyState, ErrorState, LoadingState, PageHeader, Panel } from '../components/ui'
 import { ApiRequestError, fetchJson, openInNewTab } from '../utils'
-import { DIFFICULTY_OPTIONS } from '../constants'
+import { getDifficultyClassName, getDifficultyLabel, getDifficultyOptions, getDifficultyMeta } from '../utils/difficulty'
 import type { OjProblemSummary, ProblemsResponse } from '../types'
 import './OjProblemListPage.css'
 
@@ -32,7 +32,10 @@ export default function OjProblemListPage() {
   const { currentUser, addToPlan, problemPlan, removeFromPlan } = useAppContext()
   const { showToast } = useToast()
   const [search, setSearch] = useState(() => searchParams.get('search') || '')
-  const [difficulty, setDifficulty] = useState(() => searchParams.get('difficulty') || '')
+  const [difficulty, setDifficulty] = useState(() => {
+    const value = searchParams.get('difficulty')
+    return value ? getDifficultyMeta(value).key : ''
+  })
   const [solvedFilter, setSolvedFilter] = useState(() => searchParams.get('solved') || '')
   const [tag, setTag] = useState<string[]>(() => {
     const tagParam = searchParams.get('tag')
@@ -110,13 +113,13 @@ export default function OjProblemListPage() {
 
   // 每日一题 + AC 连击
   useEffect(() => {
-    let cancelled = false
-    void fetchJson<DailyQuest>('/api/problems/daily').then(({ response, data }) => {
-      if (!cancelled && response.ok && data) setDaily(data)
+    const controller = new AbortController()
+    void fetchJson<DailyQuest>('/api/problems/daily', { signal: controller.signal }).then(({ response, data }) => {
+      if (!controller.signal.aborted && response.ok && data) setDaily(data)
     }).catch(() => undefined).finally(() => {
-      if (!cancelled) setDailyLoading(false)
+      if (!controller.signal.aborted) setDailyLoading(false)
     })
-    return () => { cancelled = true }
+    return () => controller.abort()
   }, [])
 
   const togglePlan = async (event: MouseEvent, problem: OjProblemSummary) => {
@@ -224,11 +227,13 @@ export default function OjProblemListPage() {
         <div className="daily-quest-main">
           <span className="daily-quest-kicker">Daily Quest · 今日推荐</span>
           {dailyLoading ? (
-            <div className="daily-quest-loading" role="status">正在生成今日推荐…</div>
+            <LoadingState className="daily-quest-loading" variant="compact" label="正在生成今日推荐…" />
           ) : daily?.problem ? (
             <>
               <div className="daily-quest-title-row">
-                <span className={`oj-badge ${daily.problem.difficulty}`}>{daily.problem.difficulty}</span>
+                <span className={`oj-badge ${getDifficultyClassName(daily.problem.difficulty)}`}>
+                  {getDifficultyLabel(daily.problem.difficulty)}
+                </span>
                 <strong className="daily-quest-title">{daily.problem.title}</strong>
                 {daily.problem.solved && <Badge tone="success">已完成</Badge>}
               </div>
@@ -289,7 +294,7 @@ export default function OjProblemListPage() {
           onChange={setDifficulty}
           options={[
             { value: '', label: '全部难度' },
-            ...DIFFICULTY_OPTIONS.map((item) => ({ value: item, label: item })),
+            ...getDifficultyOptions(),
           ]}
           placeholder="全部难度"
         />
@@ -361,7 +366,9 @@ export default function OjProblemListPage() {
               <span>{problem.title}</span>
               {problem.solved && <Badge tone="success">已通过</Badge>}
             </div>
-            <span className={`oj-badge ${problem.difficulty}`}>{problem.difficulty}</span>
+            <span className={`oj-badge ${getDifficultyClassName(problem.difficulty)}`}>
+              {getDifficultyLabel(problem.difficulty)}
+            </span>
             <div className="oj-tags">
               {problem.tags.length > 0 ? problem.tags.slice(0, 4).map((tagItem) => (
                 <span key={tagItem} className="oj-tag">

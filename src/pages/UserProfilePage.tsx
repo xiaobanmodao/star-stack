@@ -33,17 +33,18 @@ export default function UserProfilePage() {
   const [bioSaving, setBioSaving] = useState(false)
   const [showReport, setShowReport] = useState(false)
 
-  const loadProfile = useCallback(async () => {
+  const loadProfile = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     setError('')
     try {
       const [{ response, data }, statsRes, postsRes, achievementsRes, chatAchievementsRes] = await Promise.all([
-        fetchJson<UserProfileResponse>(`/api/users/${userId}/profile`),
-        fetchJson<ProfileStatsResponse>(`/api/user/profile/${userId}`).catch(() => null),
-        fetchJson<DiscussionListResponse>(`/api/discussions?userId=${encodeURIComponent(userId)}&pageSize=5`).catch(() => null),
-        fetchJson<UserAchievementsResponse>(`/api/user/achievements/${userId}`).catch(() => null),
-        fetchJson<ChatAchievementsResponse>(`/api/chat/achievements/${userId}`).catch(() => null),
+        fetchJson<UserProfileResponse>(`/api/users/${userId}/profile`, { signal }),
+        fetchJson<ProfileStatsResponse>(`/api/user/profile/${userId}`, { signal }).catch(() => null),
+        fetchJson<DiscussionListResponse>(`/api/discussions?userId=${encodeURIComponent(userId)}&pageSize=5`, { signal }).catch(() => null),
+        fetchJson<UserAchievementsResponse>(`/api/user/achievements/${userId}`, { signal }).catch(() => null),
+        fetchJson<ChatAchievementsResponse>(`/api/chat/achievements/${userId}`, { signal }).catch(() => null),
       ])
+      if (signal?.aborted) return
       if (!response.ok || !data) {
         setError(data?.message || '用户不存在')
         return
@@ -59,14 +60,16 @@ export default function UserProfilePage() {
         setChatAchievements(chatAchievementsRes.data.achievements || [])
       }
     } catch {
-      setError('加载失败，请重试')
+      if (!signal?.aborted) setError('加载失败，请重试')
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
   }, [userId])
 
   useEffect(() => {
-    void loadProfile()
+    const controller = new AbortController()
+    void loadProfile(controller.signal)
+    return () => controller.abort()
   }, [loadProfile])
 
   const handleToggleFollow = async () => {

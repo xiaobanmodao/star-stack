@@ -27,30 +27,45 @@ export default function DiscussionEditPage() {
 
   useEffect(() => {
     if (!id) return
+    const controller = new AbortController()
     const load = async () => {
-      const { response, data } = await fetchJson<DiscussionDetailResponse>(`/api/discussions/${id}`)
-      if (response.ok && data?.post) {
-        setTitle(data.post.title)
-        setContent(data.post.content || '')
-        if (data.post.problemId) {
-          setProblemId(data.post.problemId)
-          setSelectedProblemTitle(data.post.problemTitle || '')
+      try {
+        const { response, data } = await fetchJson<DiscussionDetailResponse>(`/api/discussions/${id}`, { signal: controller.signal })
+        if (controller.signal.aborted) return
+        if (response.ok && data?.post) {
+          setTitle(data.post.title)
+          setContent(data.post.content || '')
+          if (data.post.problemId) {
+            setProblemId(data.post.problemId)
+            setSelectedProblemTitle(data.post.problemTitle || '')
+          }
         }
+      } catch {
+        // 页面离开或请求取消时不更新编辑器状态。
       }
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
     }
-    load()
+    void load()
+    return () => controller.abort()
   }, [id])
 
-  const searchProblems = useCallback(async (q: string) => {
+  const searchProblems = useCallback(async (q: string, signal?: AbortSignal) => {
     if (!q.trim()) { setProblemResults([]); return }
-    const { response, data } = await fetchJson<ProblemsResponse>(`/api/oj/problems?search=${encodeURIComponent(q)}&pageSize=5`)
-    if (response.ok && data) setProblemResults(data.problems || [])
+    try {
+      const { response, data } = await fetchJson<ProblemsResponse>(`/api/oj/problems?search=${encodeURIComponent(q)}&pageSize=5`, { signal })
+      if (!signal?.aborted && response.ok && data) setProblemResults(data.problems || [])
+    } catch {
+      // 过期搜索请求被取消时保持当前结果。
+    }
   }, [])
 
   useEffect(() => {
-    const timer = setTimeout(() => searchProblems(problemSearch), 300)
-    return () => clearTimeout(timer)
+    const controller = new AbortController()
+    const timer = setTimeout(() => void searchProblems(problemSearch, controller.signal), 300)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
   }, [problemSearch, searchProblems])
 
   const handleSubmit = async () => {

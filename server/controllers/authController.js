@@ -1,7 +1,13 @@
 import bcrypt from 'bcryptjs'
 import { createHash, randomBytes } from 'crypto'
 import { getDb } from '../db.js'
-import { getAuthToken, getUserByToken, requireUser } from '../middleware/auth.js'
+import {
+  clearSessionCookie,
+  getAuthToken,
+  getUserByToken,
+  requireUser,
+  setSessionCookie,
+} from '../middleware/auth.js'
 import { serializeUser } from '../utils/userHelpers.js'
 import { recalculateUserRating } from '../stats.js'
 import { checkLoginLock, getLoginFailureCount, recordLoginFailure, clearLoginFailures } from '../utils/loginGuard.js'
@@ -249,6 +255,7 @@ export const register = async (req, res) => {
     `INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)`,
     token, id, new Date().toISOString()
   )
+  setSessionCookie(res, token)
   return res.json({
     token,
     user: { id, name, email, isAdmin: false, isBanned: false, avatar: null },
@@ -352,6 +359,7 @@ export const login = async (req, res) => {
     `INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)`,
     token, user.id, new Date().toISOString()
   )
+  setSessionCookie(res, token)
   const serialized = await serializeUser(db, user)
   return res.json({ token, user: serialized })
 }
@@ -377,10 +385,12 @@ export const getMe = async (req, res) => {
 export const logout = async (req, res) => {
   const token = getAuthToken(req)
   if (!token) {
+    clearSessionCookie(res)
     return res.status(204).end()
   }
   const db = await getDb()
   await db.run(`DELETE FROM sessions WHERE token = ?`, token)
+  clearSessionCookie(res)
   return res.status(204).end()
 }
 

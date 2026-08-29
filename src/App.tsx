@@ -54,6 +54,7 @@ const RoomsGallery = lazy(() => import('./pages/chat/RoomsGallery'))
 const JoinRoomPane = lazy(() => import('./pages/chat/JoinRoomPane'))
 const ActivityPane = lazy(() => import('./pages/chat/ActivityPane'))
 const UserProfilePage = lazy(() => import('./pages/UserProfilePage'))
+const LeaderboardPage = lazy(() => import('./pages/LeaderboardPage'))
 const DiscussionDetailPage = lazy(() => import('./pages/DiscussionDetailPage'))
 const DiscussionEditPage = lazy(() => import('./pages/DiscussionEditPage'))
 
@@ -191,6 +192,7 @@ function App() {
         return
       }
       if (data?.user) {
+        authExpiredFromRef.current = ''
         setCurrentUser(data.user)
       }
     } catch {
@@ -212,7 +214,7 @@ function App() {
       const currentPath = `${location.pathname}${location.search}${location.hash}` || '/'
       const requestedFrom = detail?.from || currentPath
       const from = requestedFrom === '/auth' ? '/' : requestedFrom
-      if (authExpiredFromRef.current === from && location.pathname === '/auth') return
+      if (authExpiredFromRef.current) return
       authExpiredFromRef.current = from
       setCurrentUser(null)
       setProblemPlan([])
@@ -361,6 +363,7 @@ function App() {
           return
         }
         localStorage.setItem(TOKEN_KEY, data.token)
+        authExpiredFromRef.current = ''
         setCurrentUser(data.user)
         setAuthSuccess(authMode === 'register' ? '注册成功' : '登录成功')
         showToast(authMode === 'register' ? '账号创建成功' : '欢迎回来', 'success')
@@ -413,6 +416,7 @@ function App() {
       await fetchJson('/api/logout', { method: 'POST' }).catch(() => undefined)
     }
     localStorage.removeItem(TOKEN_KEY)
+    authExpiredFromRef.current = ''
     setCurrentUser(null)
     setProblemPlan([])
     navigate('/')
@@ -587,16 +591,15 @@ function App() {
               <div className="topbar-badge">STARSTACK</div>
             </div>
             <div className="topbar-actions">
-              <button
+              <IconButton
                 className="topbar-message-btn"
+                icon={<MessageCircle size={20} strokeWidth={1.8} />}
+                label="聊天广场"
+                tooltip="聊天广场"
                 onClick={() => navigate('/chat/plaza')}
                 onMouseEnter={() => preloadRoute('/chat')}
                 onFocus={() => preloadRoute('/chat')}
-                title="聊天广场"
-                aria-label="聊天广场"
-              >
-                <MessageCircle size={20} strokeWidth={1.8} aria-hidden="true" />
-              </button>
+              />
               <IconButton
                 className="topbar-message-btn"
                 icon={<Search size={20} strokeWidth={1.8} />}
@@ -608,17 +611,16 @@ function App() {
               {currentUser ? (
                 <>
                   <NotificationBell />
-                  <button
+                  <IconButton
                     className="topbar-message-btn"
+                    icon={<Mail size={20} strokeWidth={1.8} />}
+                    label={unreadMessageCount > 0 ? `私信，${unreadMessageCount} 条未读消息` : '私信'}
+                    tooltip={unreadMessageCount > 0 ? `${unreadMessageCount} 条未读消息` : '私信'}
+                    badge={unreadMessageCount > 0 ? (unreadMessageCount > 99 ? '99+' : unreadMessageCount) : undefined}
                     onClick={() => navigate('/messages')}
                     onMouseEnter={() => preloadRoute('/messages')}
                     onFocus={() => preloadRoute('/messages')}
-                    title={unreadMessageCount > 0 ? `${unreadMessageCount} 条未读消息` : '私信'}
-                    aria-label={unreadMessageCount > 0 ? `私信，${unreadMessageCount} 条未读消息` : '私信'}
-                  >
-                    <Mail size={20} strokeWidth={1.8} aria-hidden="true" />
-                    {unreadMessageCount > 0 && <span className="topbar-message-dot" />}
-                  </button>
+                  />
                   <UserMenu currentUser={currentUser} initial={initial} openLogoutConfirm={openLogoutConfirm} />
                 </>
               ) : (
@@ -639,8 +641,7 @@ function App() {
                   <Route path="/account" element={<AccountPage />} />
                   <Route path="/account/edit" element={<ProfileEditPage />} />
                   <Route path="/user/:userId" element={<UserProfilePage />} />
-                  {/* 排行榜功能已屏蔽 */}
-                  <Route path="/leaderboard" element={<Navigate to="/" replace />} />
+                  <Route path="/leaderboard" element={<LeaderboardPage />} />
                   {/* 旧讨论页已合并进聊天中心，旧地址重定向 */}
                   <Route path="/discussions" element={<Navigate to="/chat/plaza" replace />} />
                   <Route path="/discussions/create" element={<Navigate to="/chat/plaza?create=1" replace />} />

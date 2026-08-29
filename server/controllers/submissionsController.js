@@ -4,7 +4,7 @@ import { requireUser } from '../middleware/auth.js'
 import { BoundedCache } from '../utils/boundedCache.js'
 import { createExecutionQueue } from '../utils/executionQueue.js'
 import { judgeSubmission, runSample, runSamples } from '../judge.js'
-import { DEFAULT_TESTCASE_TIME_LIMIT_MS } from '../utils/testcaseLimits.js'
+import { DEFAULT_TESTCASE_TIME_LIMIT_MS, MAX_TESTCASE_COUNT } from '../utils/testcaseLimits.js'
 import {
   updateUserStats,
   checkAndUnlockAchievements,
@@ -30,6 +30,7 @@ const parseSamples = (raw) => {
 
 const ALLOWED_LANGUAGES = ['C++', 'Python', 'Java']
 const MAX_CODE_LENGTH = 100000
+const MAX_CUSTOM_INPUT_LENGTH = 3 * 1024 * 1024
 
 const judgeRateLimits = new BoundedCache(2000, 10000)
 const runRateLimits = new BoundedCache(5000, 1000)
@@ -40,8 +41,8 @@ const detectedCpuCount = typeof os.availableParallelism === 'function'
   ? os.availableParallelism()
   : os.cpus().length
 const judgeConcurrency = Math.min(2, Math.max(1, Number(process.env.JUDGE_CONCURRENCY) || detectedCpuCount))
-const judgeQueue = createExecutionQueue({ maxActive: judgeConcurrency, maxQueued: 50, maxQueuedPerKey: 2 })
-const sandboxQueue = createExecutionQueue({ maxActive: Math.min(2, judgeConcurrency), maxQueued: 30, maxQueuedPerKey: 2 })
+const judgeQueue = createExecutionQueue({ maxActive: judgeConcurrency, maxActivePerKey: 1, maxQueued: 50, maxQueuedPerKey: 2 })
+const sandboxQueue = createExecutionQueue({ maxActive: Math.min(2, judgeConcurrency), maxActivePerKey: 1, maxQueued: 30, maxQueuedPerKey: 2 })
 const persistedJudgeTasks = new Map()
 
 const registerPersistedJudgeTask = (submissionId, task) => {
@@ -97,6 +98,8 @@ export const getJudgeStatus = async (req, res) => {
     queuedRuns: sandboxQueue.queued,
     maxActiveRuns: sandboxQueue.maxActive,
     maxQueuedRuns: sandboxQueue.maxQueued,
+    judgeMetrics: judgeQueue.getMetrics(),
+    sandboxMetrics: sandboxQueue.getMetrics(),
   })
 }
 
@@ -109,6 +112,8 @@ export const getJudgeQueueSnapshot = () => ({
   queuedRuns: sandboxQueue.queued,
   maxActiveRuns: sandboxQueue.maxActive,
   maxQueuedRuns: sandboxQueue.maxQueued,
+  judgeMetrics: judgeQueue.getMetrics(),
+  sandboxMetrics: sandboxQueue.getMetrics(),
 })
 
 export const listMySubmissions = async (req, res) => {
@@ -306,8 +311,8 @@ const _saveSubmission = async (db, { submissionId, problemId, userId, language, 
 }
 
 const _loadSubmissionTestcases = async (db, problemId) => db.all(
-  `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? ORDER BY id ASC`,
-  problemId,
+  `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? ORDER BY id ASC LIMIT ?`,
+  problemId, MAX_TESTCASE_COUNT + 1,
 )
 
 const _findActiveDuplicate = async (db, { userId, problemId, language, code }) => db.get(
@@ -470,7 +475,7 @@ export const submitSolution = async (req, res) => {
   const { db, user } = auth
 
   const { problemId, language, code } = req.body || {}
-  if (!problemId || !language || !code) return res.status(400).json({ message: '请填写完整信息' })
+  if (!problemId || !language || typeof code !== 'string' || !code) return res.status(400).json({ message: '请填写完整信息' })
   if (!ALLOWED_LANGUAGES.includes(language)) return res.status(400).json({ message: '不支持的编程语言' })
   if (code.length > MAX_CODE_LENGTH) return res.status(400).json({ message: '代码长度超过限制（最大 100KB）' })
 
@@ -479,9 +484,10 @@ export const submitSolution = async (req, res) => {
   if (problem.status !== 'published') return res.status(403).json({ message: '题目尚未发布' })
 
   const testcases = await db.all(
-    `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? ORDER BY id ASC`, Number(problemId)
+    `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? ORDER BY id ASC LIMIT ?`, Number(problemId), MAX_TESTCASE_COUNT + 1
   )
   if (testcases.length === 0) return res.status(400).json({ message: '该题暂无测试用例' })
+  if (testcases.length > MAX_TESTCASE_COUNT) return res.status(409).json({ message: `该题测试点超过 ${MAX_TESTCASE_COUNT} 个上限，请联系管理员` })
 
   const duplicate = await _findActiveDuplicate(db, {
     userId: user.id,
@@ -551,7 +557,7 @@ export const streamSubmission = async (req, res) => {
   const { db, user } = auth
 
   const { problemId, language, code } = req.body || {}
-  if (!problemId || !language || !code) return res.status(400).json({ message: '请填写完整信息' })
+  if (!problemId || !language || typeof code !== 'string' || !code) return res.status(400).json({ message: '请填写完整信息' })
   if (!ALLOWED_LANGUAGES.includes(language)) return res.status(400).json({ message: '不支持的编程语言' })
   if (code.length > MAX_CODE_LENGTH) return res.status(400).json({ message: '代码长度超过限制（最大 100KB）' })
 
@@ -560,9 +566,10 @@ export const streamSubmission = async (req, res) => {
   if (problem.status !== 'published') return res.status(403).json({ message: '题目尚未发布' })
 
   const testcases = await db.all(
-    `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? ORDER BY id ASC`, Number(problemId)
+    `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? ORDER BY id ASC LIMIT ?`, Number(problemId), MAX_TESTCASE_COUNT + 1
   )
   if (testcases.length === 0) return res.status(400).json({ message: '该题暂无测试用例' })
+  if (testcases.length > MAX_TESTCASE_COUNT) return res.status(409).json({ message: `该题测试点超过 ${MAX_TESTCASE_COUNT} 个上限，请联系管理员` })
 
   const duplicate = await _findActiveDuplicate(db, {
     userId: user.id,
@@ -689,7 +696,7 @@ export const runSampleHandler = async (req, res) => {
   if (!auth) return
   const { db, user } = auth
   const { problemId, language, code, sampleIndex = 0 } = req.body || {}
-  if (!problemId || !language || !code) return res.status(400).json({ message: '请填写完整信息' })
+  if (!problemId || !language || typeof code !== 'string' || !code) return res.status(400).json({ message: '请填写完整信息' })
   if (!ALLOWED_LANGUAGES.includes(language)) return res.status(400).json({ message: '不支持的编程语言' })
   if (code.length > MAX_CODE_LENGTH) return res.status(400).json({ message: '代码长度超过限制（最大 100KB）' })
 
@@ -697,10 +704,11 @@ export const runSampleHandler = async (req, res) => {
   if (!problem) return res.status(404).json({ message: '题目不存在' })
 
   const sampleRows = await db.all(
-    `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? AND is_sample = 1 ORDER BY id ASC`, Number(problemId)
+    `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? AND is_sample = 1 ORDER BY id ASC LIMIT ?`, Number(problemId), MAX_TESTCASE_COUNT + 1
   )
   const samples = sampleRows.length ? sampleRows : parseSamples(problem.samples)
   if (!samples || samples.length === 0) return res.status(400).json({ message: '暂无样例' })
+  if (samples.length > MAX_TESTCASE_COUNT) return res.status(409).json({ message: `该题样例超过 ${MAX_TESTCASE_COUNT} 个上限，请联系管理员` })
 
   const index = Math.min(Math.max(Number(sampleIndex) || 0, 0), samples.length - 1)
   const sample = samples[index]
@@ -734,10 +742,10 @@ export const runCustomHandler = async (req, res) => {
   if (!auth) return
   const { user } = auth
   const { language, code, input, expected } = req.body || {}
-  if (!language || !code || input === undefined) return res.status(400).json({ message: '请填写完整信息' })
+  if (!language || typeof code !== 'string' || !code || input === undefined) return res.status(400).json({ message: '请填写完整信息' })
   if (!ALLOWED_LANGUAGES.includes(language)) return res.status(400).json({ message: '不支持的编程语言' })
   if (code.length > MAX_CODE_LENGTH) return res.status(400).json({ message: '代码长度超过限制（最大 100KB）' })
-  if (String(input).length > 10000000) return res.status(400).json({ message: '输入数据长度超过限制（最大 10MB）' })
+  if (String(input).length > MAX_CUSTOM_INPUT_LENGTH) return res.status(400).json({ message: '输入数据长度超过限制（最大 3MB）' })
 
   if (!beginSandboxRun(user.id, res)) return
   const runTask = sandboxQueue.enqueue(() => runSample({
@@ -770,7 +778,7 @@ export const runSamplesHandler = async (req, res) => {
   if (!auth) return
   const { db, user } = auth
   const { problemId, language, code } = req.body || {}
-  if (!problemId || !language || !code) return res.status(400).json({ message: '请填写完整信息' })
+  if (!problemId || !language || typeof code !== 'string' || !code) return res.status(400).json({ message: '请填写完整信息' })
   if (!ALLOWED_LANGUAGES.includes(language)) return res.status(400).json({ message: '不支持的编程语言' })
   if (code.length > MAX_CODE_LENGTH) return res.status(400).json({ message: '代码长度超过限制（最大 100KB）' })
 
@@ -778,10 +786,11 @@ export const runSamplesHandler = async (req, res) => {
   if (!problem) return res.status(404).json({ message: '题目不存在' })
 
   const sampleRows = await db.all(
-    `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? AND is_sample = 1 ORDER BY id ASC`, Number(problemId)
+    `SELECT input, output, time_limit_ms as timeLimitMs FROM testcases WHERE problem_id = ? AND is_sample = 1 ORDER BY id ASC LIMIT ?`, Number(problemId), MAX_TESTCASE_COUNT + 1
   )
   const samples = sampleRows.length ? sampleRows : parseSamples(problem.samples)
   if (!samples || samples.length === 0) return res.status(400).json({ message: '暂无样例' })
+  if (samples.length > MAX_TESTCASE_COUNT) return res.status(409).json({ message: `该题样例超过 ${MAX_TESTCASE_COUNT} 个上限，请联系管理员` })
 
   if (!beginSandboxRun(user.id, res)) return
   const runTask = sandboxQueue.enqueue(() => runSamples({

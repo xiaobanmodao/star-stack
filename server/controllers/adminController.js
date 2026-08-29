@@ -8,6 +8,13 @@ import { createNotification } from '../utils/notifications.js'
 import { parseRevisionSnapshot, recordProblemStatusChange } from '../utils/problemRevisions.js'
 import { collectSystemMetrics } from '../utils/monitoring.js'
 import { getJudgeQueueSnapshot } from './submissionsController.js'
+import { serializeDifficulty } from '../utils/difficulty.js'
+import {
+  PROBLEM_EDITORIAL_LABELS,
+  PROBLEM_QUALITY_LABELS,
+  PROBLEM_QUALITY_STATUSES,
+  serializeProblemMetadata,
+} from '../utils/problemMetadata.js'
 
 const parsePositiveInteger = (value) => {
   const parsed = Number.parseInt(String(value ?? ''), 10)
@@ -237,6 +244,7 @@ export const listAdminProblems = async (req, res) => {
   try {
     const query = normalizeSearch(req.query.q)
     const requestedStatus = normalizeSearch(req.query.status, 20)
+    const requestedQuality = normalizeSearch(req.query.qualityStatus, 20)
     const allowedStatuses = new Set(['draft', 'pending_review', 'published', 'hidden'])
     const where = []
     const params = []
@@ -244,18 +252,24 @@ export const listAdminProblems = async (req, res) => {
       where.push('p.status = ?')
       params.push(requestedStatus)
     }
+    if (PROBLEM_QUALITY_STATUSES.includes(requestedQuality)) {
+      where.push('p.quality_status = ?')
+      params.push(requestedQuality)
+    }
     if (query) {
       const problemId = parsePositiveInteger(query)
       if (problemId) {
         where.push('(p.id = ? OR p.title LIKE ? OR p.slug LIKE ?)')
         params.push(problemId, `%${query}%`, `%${query}%`)
       } else {
-        where.push('(p.title LIKE ? OR p.slug LIKE ? OR p.tags LIKE ?)')
-        params.push(`%${query}%`, `%${query}%`, `%${query}%`)
+        where.push('(p.title LIKE ? OR p.slug LIKE ? OR p.tags LIKE ? OR p.topic_tags LIKE ? OR p.technique_tags LIKE ?)')
+        params.push(`%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`)
       }
     }
     const rows = await db.all(
-      `SELECT p.id, p.slug, p.title, p.difficulty, p.tags, p.status, p.creator_id, p.created_at,
+      `SELECT p.id, p.slug, p.title, p.difficulty, p.tags, p.topic_tags, p.technique_tags, p.estimated_minutes,
+              p.recommended_for, p.quality_status, p.editorial_status, p.revision_summary,
+              p.status, p.creator_id, p.created_at,
               u.name AS creator_name,
               (SELECT COUNT(*) FROM testcases t WHERE t.problem_id = p.id) AS testcase_count
        FROM problems p
@@ -270,8 +284,11 @@ export const listAdminProblems = async (req, res) => {
         id: row.id,
         slug: row.slug,
         title: row.title,
-        difficulty: row.difficulty,
+        ...serializeDifficulty(row.difficulty),
         tags: row.tags ? row.tags.split(',').map((tag) => tag.trim()).filter(Boolean) : [],
+        ...serializeProblemMetadata(row),
+        qualityLabel: PROBLEM_QUALITY_LABELS[serializeProblemMetadata(row).qualityStatus],
+        editorialLabel: PROBLEM_EDITORIAL_LABELS[serializeProblemMetadata(row).editorialStatus],
         status: row.status || 'published',
         creatorId: row.creator_id,
         creatorName: row.creator_name || row.creator_id || '未知用户',
@@ -410,8 +427,10 @@ export const getAdminProblemReview = async (req, res) => {
   if (!problemId) return res.status(400).json({ message: '无效的题目 ID' })
   try {
     const problem = await auth.db.get(
-      `SELECT p.id, p.slug, p.title, p.difficulty, p.tags, p.statement, p.input_desc, p.output_desc,
-              p.data_range, p.status, p.creator_id, p.created_at, u.name AS creator_name
+      `SELECT p.id, p.slug, p.title, p.difficulty, p.tags, p.topic_tags, p.technique_tags, p.estimated_minutes,
+              p.recommended_for, p.quality_status, p.editorial_status, p.revision_summary,
+              p.statement, p.input_desc, p.output_desc, p.data_range, p.status, p.creator_id, p.created_at,
+              u.name AS creator_name
        FROM problems p LEFT JOIN users u ON u.id = p.creator_id WHERE p.id = ?`,
       problemId,
     )
@@ -429,8 +448,11 @@ export const getAdminProblemReview = async (req, res) => {
     return res.json({
       review: {
         problem: {
-          id: problem.id, slug: problem.slug, title: problem.title, difficulty: problem.difficulty,
+          id: problem.id, slug: problem.slug, title: problem.title, ...serializeDifficulty(problem.difficulty),
           tags: String(problem.tags || '').split(',').map((tag) => tag.trim()).filter(Boolean),
+          ...serializeProblemMetadata(problem),
+          qualityLabel: PROBLEM_QUALITY_LABELS[serializeProblemMetadata(problem).qualityStatus],
+          editorialLabel: PROBLEM_EDITORIAL_LABELS[serializeProblemMetadata(problem).editorialStatus],
           statement: problem.statement, inputDesc: problem.input_desc, outputDesc: problem.output_desc,
           dataRange: problem.data_range, status: problem.status, creatorId: problem.creator_id,
           creatorName: problem.creator_name || problem.creator_id, createdAt: problem.created_at,

@@ -6,6 +6,7 @@ import { getDecorationIdentity, getUnlockedAchievementTypeMap, getUnlockedAchiev
 import { getLevelInfo } from '../stats.js'
 import { getUserLevelInfo } from '../utils/userHelpers.js'
 import { sseConnectionLimiter } from '../utils/connectionLimit.js'
+import { decodePositiveIntegerCursor, encodeCursor } from '../utils/cursor.js'
 
 const messageRateLimits = new BoundedCache(5000, 3000)
 
@@ -63,7 +64,7 @@ export const listConversations = async (req, res) => {
   if (!auth) return
   const { db, user } = auth
   try {
-    const page = Math.max(1, Number(req.query.page) || 1)
+    const page = Math.min(10000, Math.max(1, Number(req.query.page) || 1))
     const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 30))
     const offset = (page - 1) * pageSize
     const [totalResult, unreadResult] = await Promise.all([
@@ -156,8 +157,11 @@ export const getConversation = async (req, res) => {
   try {
     const { userId: otherUserId } = req.params
     const page = Math.max(1, Number(req.query.page) || 1)
-    const pageSize = Math.min(50, Number(req.query.pageSize) || 30)
-    const offset = (page - 1) * pageSize
+    const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 30))
+    const cursorRequested = req.query?.cursor !== undefined
+    const cursor = cursorRequested ? decodePositiveIntegerCursor(req.query.cursor) : null
+    if (cursorRequested && !cursor) return res.status(400).json({ message: '无效的分页游标' })
+    const messageLimit = cursorRequested ? pageSize + 1 : pageSize
 
     const otherUser = await db.get(
       `SELECT u.id, u.name, u.avatar, u.avatar_frame, u.avatar_overlay, u.equipped_title,
@@ -179,10 +183,19 @@ export const getConversation = async (req, res) => {
        JOIN users u ON m.sender_id = u.id
        LEFT JOIN user_stats us ON us.user_id = m.sender_id
        LEFT JOIN message_deletions md ON m.id = md.message_id AND md.user_id = ?
-       WHERE m.conversation_id = ? AND md.id IS NULL
-       ORDER BY m.created_at DESC LIMIT ? OFFSET ?`,
-      user.id, conversation.id, pageSize, offset
+       WHERE m.conversation_id = ? AND md.id IS NULL${cursorRequested ? ' AND m.id < ?' : ''}
+       ORDER BY m.created_at DESC, m.id DESC LIMIT ?${cursorRequested ? '' : ' OFFSET ?'}`,
+      ...(cursorRequested
+        ? [user.id, conversation.id, cursor, messageLimit]
+        : [user.id, conversation.id, messageLimit, (page - 1) * pageSize]),
     )
+
+    const visibleMessages = cursorRequested && messages.length > pageSize
+      ? messages.slice(0, pageSize)
+      : messages
+    const nextCursor = cursorRequested && messages.length > pageSize
+      ? encodeCursor({ id: visibleMessages[visibleMessages.length - 1]?.id })
+      : null
 
     const totalCount = await db.get(
       `SELECT COUNT(*) as count FROM messages m
@@ -199,7 +212,7 @@ export const getConversation = async (req, res) => {
     const decorationUserIds = [otherUser.id, ...messages.map((message) => message.sender_id)]
     const achievementMap = await getUnlockedAchievementTypeMap(db, decorationUserIds)
     return res.json({
-      messages: messages.reverse().map(m => {
+      messages: visibleMessages.reverse().map(m => {
         const decoration = getUserDecorationFields(m, 'sender', achievementMap.get(m.sender_id))
         return {
           id: m.id, senderId: m.sender_id, senderName: m.sender_name,
@@ -221,7 +234,13 @@ export const getConversation = async (req, res) => {
         }, 'other', achievementMap.get(otherUser.id)),
         isBanned: otherUser.is_banned === 1,
       },
-      pagination: { page, pageSize, total: totalCount.count, totalPages: Math.ceil(totalCount.count / pageSize) },
+      pagination: {
+        page,
+        pageSize,
+        total: totalCount.count,
+        totalPages: Math.ceil(totalCount.count / pageSize),
+        nextCursor,
+      },
     })
   } catch (error) {
     console.error('Failed to get messages:', error)
@@ -235,7 +254,7 @@ export const sendMessage = async (req, res) => {
   const { db, user } = auth
   try {
     const { userId: otherUserId } = req.params
-    const { content } = req.body
+    const { content } = req.body || {}
 
     if (!content || typeof content !== 'string') return res.status(400).json({ message: '消息内容不能为空' })
     if (content.length > 2000) return res.status(400).json({ message: '消息内容不能超过 2000 字符' })

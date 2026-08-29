@@ -1,6 +1,8 @@
 export const DEFAULT_TESTCASE_TIME_LIMIT_MS = 1500
 export const MIN_TESTCASE_TIME_LIMIT_MS = 100
 export const MAX_TESTCASE_TIME_LIMIT_MS = 3000
+// 单题测试点数量上限，防止恶意或误配置的题目在一次评测中派生过多进程。
+export const MAX_TESTCASE_COUNT = 200
 
 export const normalizeTestcaseTimeLimit = (value) => {
   const numeric = Number(value)

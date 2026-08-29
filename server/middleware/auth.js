@@ -1,14 +1,58 @@
 import { getDb } from '../db.js'
 
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000 // 会话 30 天过期
+export const SESSION_COOKIE_NAME = 'starstack_session'
+const SESSION_MAX_AGE_SECONDS = Math.floor(SESSION_MAX_AGE_MS / 1000)
+
+const getCookies = (req) => {
+  const header = req.headers.cookie || ''
+  return Object.fromEntries(header.split(';').map((part) => {
+    const separator = part.indexOf('=')
+    if (separator < 0) return ['', '']
+    const key = part.slice(0, separator).trim()
+    const rawValue = part.slice(separator + 1).trim()
+    try {
+      return [key, decodeURIComponent(rawValue)]
+    } catch {
+      return [key, rawValue]
+    }
+  }).filter(([key]) => key))
+}
+
+export const getSessionCookieToken = (req) => {
+  const token = getCookies(req)[SESSION_COOKIE_NAME]
+  return typeof token === 'string' && /^[a-f0-9]{48}$/.test(token) ? token : null
+}
+
+export const hasSessionCookie = (req) => Boolean(getSessionCookieToken(req))
+
+const cookieFlags = () => [
+  'HttpOnly',
+  'Path=/',
+  `Max-Age=${SESSION_MAX_AGE_SECONDS}`,
+  'SameSite=Lax',
+  ...(process.env.NODE_ENV === 'production' ? ['Secure'] : []),
+].join('; ')
+
+export const setSessionCookie = (res, token) => {
+  if (!/^[a-f0-9]{48}$/.test(String(token || ''))) return
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; ${cookieFlags()}`)
+}
+
+export const clearSessionCookie = (res) => {
+  res.setHeader(
+    'Set-Cookie',
+    `${SESSION_COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`,
+  )
+}
 
 export const getAuthToken = (req) => {
   const header = req.headers.authorization || ''
   if (header.startsWith('Bearer ')) {
     const token = header.slice(7).trim()
-    return token && token.length <= 128 ? token : null
+    if (token && token.length <= 128) return token
   }
-  return null
+  return getSessionCookieToken(req)
 }
 
 export const getUserByToken = async (db, token) => {
@@ -23,7 +67,7 @@ export const getUserByToken = async (db, token) => {
     return null
   }
   const user = await db.get(
-    `SELECT id, name, password_hash, email, email_verified_at, is_admin, is_banned, avatar, bio, onboarded_at,
+    `SELECT id, name, password_hash, email, email_verified_at, is_admin, is_banned, avatar, bio, onboarded_at, rating,
             avatar_frame, avatar_overlay, equipped_title, created_at
      FROM users WHERE id = ?`,
     session.user_id

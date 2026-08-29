@@ -15,14 +15,12 @@ export default function CheckinBanner() {
   useEffect(() => {
     if (!currentUser?.id) return
 
-    let mounted = true
-    void fetchJson<CheckinResponse>('/api/me/checkin').then(({ response, data }) => {
-      if (!mounted) return
+    const controller = new AbortController()
+    void fetchJson<CheckinResponse>('/api/me/checkin', { signal: controller.signal }).then(({ response, data }) => {
+      if (controller.signal.aborted) return
       if (response.ok && data) setCheckin(data)
     }).catch(() => undefined)
-    return () => {
-      mounted = false
-    }
+    return () => controller.abort()
   }, [currentUser])
 
   const handleCheckin = async () => {

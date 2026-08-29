@@ -1,5 +1,8 @@
 import { getDb } from '../db.js'
 import { getAuthToken, getUserByToken } from '../middleware/auth.js'
+import { getDecorationIdentity, getUnlockedAchievementTypeMap } from '../utils/decorations.js'
+import { getLevelInfo } from '../stats.js'
+import { getPracticeRating } from '../utils/rating.js'
 
 function getWeekRange() {
   const now = new Date()
@@ -285,19 +288,38 @@ export const getLeaderboard = async (req, res) => {
       }
     }
 
+    const identityIds = [...new Set([
+      ...leaderboard.map((entry) => entry.user_id),
+      currentUser?.userId,
+    ].filter(Boolean))]
+    const identityByUserId = new Map()
+    if (identityIds.length > 0) {
+      const identityRows = await db.all(
+        `SELECT u.id, u.avatar_frame, u.avatar_overlay, u.equipped_title, us.xp
+         FROM users u LEFT JOIN user_stats us ON us.user_id = u.id
+         WHERE u.id IN (${identityIds.map(() => '?').join(',')})`,
+        ...identityIds,
+      )
+      const achievementMap = await getUnlockedAchievementTypeMap(db, identityRows.map((entry) => entry.id))
+      for (const entry of identityRows) {
+        identityByUserId.set(entry.id, getDecorationIdentity(entry, getLevelInfo(entry.xp || 0), achievementMap.get(entry.id)))
+      }
+    }
+    const serializeLeaderboardEntry = (row) => ({
+      rank: row.rank,
+      userId: row.user_id || row.userId,
+      userName: row.user_name || row.userName,
+      avatar: row.avatar,
+      ...identityByUserId.get(row.user_id || row.userId),
+      value: type === 'total' ? getPracticeRating(row.value) : row.value,
+      solvedCount: row.solved_problems ?? row.solvedCount ?? null,
+      previousRank: row.previousRank,
+      rankChange: row.rankChange,
+    })
     const totalPages = Math.ceil(total / perPage)
     return res.json({
-      leaderboard: leaderboard.map(row => ({
-        rank: row.rank,
-        userId: row.user_id,
-        userName: row.user_name,
-        avatar: row.avatar,
-        value: row.value,
-        solvedCount: row.solved_problems ?? null,
-        previousRank: row.previousRank,
-        rankChange: row.rankChange
-      })),
-      currentUser,
+      leaderboard: leaderboard.map(serializeLeaderboardEntry),
+      currentUser: currentUser ? serializeLeaderboardEntry(currentUser) : null,
       type,
       page,
       perPage,

@@ -8,6 +8,7 @@ import { Badge, ErrorState } from '../components/ui'
 import { fetchJson, openInNewTab, preloadOjIdeAssets } from '../utils'
 import { renderLatex } from '../latex'
 import { LANGUAGE_OPTIONS, getLanguageConfig } from '../constants'
+import { getDifficultyClassName, getDifficultyLabel } from '../utils/difficulty'
 import type { DiscussionListResponse, DiscussionPost, OjProblemDetail, ProblemResponse, OjSubmission, SubmissionResponse } from '../types'
 import './OjJudgePage.css'
 import './OjDetailPage.css'
@@ -98,7 +99,7 @@ export default function OjDetailPage() {
     }
   }, [preloadOjIde, problem])
 
-  const loadProblem = useCallback(async () => {
+  const loadProblem = useCallback(async (signal?: AbortSignal) => {
     if (!id) {
       setError('题目地址无效')
       setLoading(false)
@@ -108,7 +109,8 @@ export default function OjDetailPage() {
     setDiscussionLoading(true)
     setError('')
     try {
-      const { response, data } = await fetchJson<ProblemResponse>(`/api/oj/problems/${id}`)
+      const { response, data } = await fetchJson<ProblemResponse>(`/api/oj/problems/${id}`, { signal })
+      if (signal?.aborted) return
       if (!response.ok) {
         setError(data?.message || '无法加载题目')
         setLoading(false)
@@ -121,17 +123,21 @@ export default function OjDetailPage() {
         setError('题目数据为空，请稍后重试')
       }
     } catch {
-      setError('网络异常，暂时无法加载题目')
+      if (!signal?.aborted) setError('网络异常，暂时无法加载题目')
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
   }, [id])
 
   useEffect(() => {
+    const controller = new AbortController()
     const timer = window.setTimeout(() => {
-      void loadProblem()
+      void loadProblem(controller.signal)
     }, 0)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
   }, [loadProblem])
 
   useEffect(() => {
@@ -140,10 +146,14 @@ export default function OjDetailPage() {
       setBookmarked(false)
       return () => { cancelled = true }
     }
-    void fetchJson<{ bookmarked: boolean }>(`/api/bookmarks/status?targetType=problem&targetId=${id}`).then(({ response, data }) => {
-      if (!cancelled && response.ok) setBookmarked(Boolean(data?.bookmarked))
+    const controller = new AbortController()
+    void fetchJson<{ bookmarked: boolean }>(`/api/bookmarks/status?targetType=problem&targetId=${id}`, { signal: controller.signal }).then(({ response, data }) => {
+      if (!cancelled && !controller.signal.aborted && response.ok) setBookmarked(Boolean(data?.bookmarked))
     }).catch(() => undefined)
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
   }, [currentUser, id])
 
   const toggleProblemBookmark = async () => {
@@ -197,21 +207,10 @@ export default function OjDetailPage() {
   }
 
   useEffect(() => {
-    if (!problem) return
-    const timer = window.setTimeout(() => {
-      preloadOjIde()
-      if (currentUser) {
-        void loadLatestSubmissionForIde(problem.id)
-      }
-    }, 600)
-    return () => window.clearTimeout(timer)
-  }, [currentUser, loadLatestSubmissionForIde, preloadOjIde, problem])
-
-  useEffect(() => {
     if (!problem?.id) return
-    let shouldOpen = false
+    let shouldOpen = Boolean((location.state as { openIde?: boolean } | null)?.openIde)
     try {
-      shouldOpen = window.localStorage.getItem(`${IDE_OPEN_STORAGE_PREFIX}${problem.id}`) === '1'
+      shouldOpen = shouldOpen || window.localStorage.getItem(`${IDE_OPEN_STORAGE_PREFIX}${problem.id}`) === '1'
     } catch {
       // Ignore persistence failures.
     }
@@ -219,34 +218,43 @@ export default function OjDetailPage() {
     const timer = window.setTimeout(() => {
       setIdeOpen(true)
       preloadOjIde()
+      if ((location.state as { openIde?: boolean } | null)?.openIde) {
+        navigate(pathname, { replace: true, state: null })
+      }
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [preloadOjIde, problem?.id])
+  }, [location.state, navigate, pathname, preloadOjIde, problem?.id])
 
   useEffect(() => {
     if (!problem?.id) return
-    let cancelled = false
+    const controller = new AbortController()
     ;(async () => {
-      const params = new URLSearchParams({
-        problemId: String(problem.id),
-        pageSize: '3',
-        sort: 'hot',
-      })
-      const { response, data } = await fetchJson<DiscussionListResponse>(`/api/discussions?${params}`)
-      if (cancelled) return
-      if (response.ok && data) {
-        setRelatedPosts(data.posts || [])
-        setDiscussionTotal(data.total || 0)
-      } else {
-        setRelatedPosts([])
-        setDiscussionTotal(0)
+      try {
+        const params = new URLSearchParams({
+          problemId: String(problem.id),
+          pageSize: '3',
+          sort: 'hot',
+        })
+        const { response, data } = await fetchJson<DiscussionListResponse>(`/api/discussions?${params}`, { signal: controller.signal })
+        if (controller.signal.aborted) return
+        if (response.ok && data) {
+          setRelatedPosts(data.posts || [])
+          setDiscussionTotal(data.total || 0)
+        } else {
+          setRelatedPosts([])
+          setDiscussionTotal(0)
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setRelatedPosts([])
+          setDiscussionTotal(0)
+        }
+      } finally {
+        if (!controller.signal.aborted) setDiscussionLoading(false)
       }
-      setDiscussionLoading(false)
     })()
 
-    return () => {
-      cancelled = true
-    }
+    return () => controller.abort()
   }, [problem?.id])
 
   const handleSubmitJudge = useCallback((payload: {
@@ -369,8 +377,6 @@ export default function OjDetailPage() {
                 )}
                 <button
                   className="ghost small"
-                  onMouseEnter={preloadOjIde}
-                  onFocus={preloadOjIde}
                   onClick={ideOpen ? () => {
                     setIdeOpen(false)
                     try {
@@ -410,8 +416,6 @@ export default function OjDetailPage() {
                       <span>输入 #{index + 1}</span>
                       <button
                         className="ghost small"
-                        onMouseEnter={preloadOjIde}
-                        onFocus={preloadOjIde}
                         onClick={() => handleRunSample(index)}
                         disabled={pendingSampleRunIndex !== null}
                         aria-busy={pendingSampleRunIndex === index || undefined}
@@ -457,9 +461,39 @@ export default function OjDetailPage() {
               <div className="oj-sidebar-item">
                 <div className="oj-sidebar-label">难度</div>
                 <div className="oj-sidebar-value">
-                  <span className={`oj-badge ${problem.difficulty}`}>{problem.difficulty}</span>
+                  <span className={`oj-badge ${getDifficultyClassName(problem.difficulty)}`}>
+                    {getDifficultyLabel(problem.difficulty)}
+                  </span>
                 </div>
               </div>
+              {problem.topicTags && problem.topicTags.length > 0 && (
+                <div className="oj-sidebar-item oj-sidebar-metadata-item">
+                  <div className="oj-sidebar-label">知识点</div>
+                  <div className="oj-sidebar-value oj-sidebar-tag-list">
+                    {problem.topicTags.map((tag) => <span className="oj-tag" key={tag}>{tag}</span>)}
+                  </div>
+                </div>
+              )}
+              {problem.techniqueTags && problem.techniqueTags.length > 0 && (
+                <div className="oj-sidebar-item oj-sidebar-metadata-item">
+                  <div className="oj-sidebar-label">解题技巧</div>
+                  <div className="oj-sidebar-value oj-sidebar-tag-list">
+                    {problem.techniqueTags.map((tag) => <span className="oj-tag" key={tag}>{tag}</span>)}
+                  </div>
+                </div>
+              )}
+              {problem.estimatedMinutes && (
+                <div className="oj-sidebar-item">
+                  <div className="oj-sidebar-label">预计用时</div>
+                  <div className="oj-sidebar-value">约 {problem.estimatedMinutes} 分钟</div>
+                </div>
+              )}
+              {problem.recommendedFor && (
+                <div className="oj-sidebar-item">
+                  <div className="oj-sidebar-label">适合人群</div>
+                  <div className="oj-sidebar-value">{problem.recommendedFor}</div>
+                </div>
+              )}
               <div className="oj-sidebar-item">
                 <div className="oj-sidebar-label">通过率</div>
                 <div className="oj-sidebar-value">

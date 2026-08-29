@@ -1,3 +1,6 @@
+import { normalizeDifficultyForCreate } from './difficulty.js'
+import { normalizeProblemMetadata } from './problemMetadata.js'
+
 const parseSamples = (raw) => {
   try {
     const parsed = JSON.parse(raw || '[]')
@@ -12,8 +15,17 @@ const tagsFromValue = (value) => Array.isArray(value)
   : String(value || '').split(',').map((tag) => tag.trim()).filter(Boolean)
 
 export const buildProblemSnapshot = ({ problem = {}, testcases = [], samples } = {}) => ({
+  ...normalizeProblemMetadata({
+    topicTags: problem.topicTags ?? problem.topic_tags,
+    techniqueTags: problem.techniqueTags ?? problem.technique_tags,
+    estimatedMinutes: problem.estimatedMinutes ?? problem.estimated_minutes,
+    recommendedFor: problem.recommendedFor ?? problem.recommended_for,
+    qualityStatus: problem.qualityStatus ?? problem.quality_status,
+    editorialStatus: problem.editorialStatus ?? problem.editorial_status,
+    revisionSummary: problem.revisionSummary ?? problem.revision_summary,
+  }, { isAdmin: true }),
   title: String(problem.title || '').trim(),
-  difficulty: problem.difficulty || '入门',
+  difficulty: normalizeDifficultyForCreate(problem.difficulty),
   tags: tagsFromValue(problem.tags),
   statement: problem.statement || '',
   inputDesc: problem.inputDesc ?? problem.input_desc ?? '',
@@ -73,6 +85,7 @@ export const parseRevisionSnapshot = (raw) => {
     if (!snapshot || typeof snapshot !== 'object') return null
     return {
       ...snapshot,
+      ...normalizeProblemMetadata({}, { existing: snapshot, isAdmin: true }),
       tags: tagsFromValue(snapshot.tags),
       samples: Array.isArray(snapshot.samples) ? snapshot.samples : parseSamples(snapshot.samples),
       testData: Array.isArray(snapshot.testData) ? snapshot.testData : [],

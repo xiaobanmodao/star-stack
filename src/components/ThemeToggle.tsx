@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ACCENT_KEY, ACCENT_PRESETS, applyAccent, applyTheme, readSavedAccent, readSavedTheme, type ThemeMode,
 } from '../utils/theme'
+import { IconButton } from './ui'
 import { Monitor, Moon, Sun } from 'lucide-react'
+import { useModalFocus } from '../hooks/useModalFocus'
 
 const ORDER: ThemeMode[] = ['dark', 'light', 'system']
 
@@ -17,6 +19,7 @@ export default function ThemeToggle() {
   const [accent, setAccent] = useState<string | null>(readSavedAccent)
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
+  const dialogRef = useModalFocus(open, () => setOpen(false))
 
   useEffect(() => {
     applyTheme(mode)
@@ -34,14 +37,9 @@ export default function ThemeToggle() {
     const handleClick = (event: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(event.target as Node)) setOpen(false)
     }
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
     document.addEventListener('mousedown', handleClick)
-    document.addEventListener('keydown', handleKeyDown)
     return () => {
       document.removeEventListener('mousedown', handleClick)
-      document.removeEventListener('keydown', handleKeyDown)
     }
   }, [open])
 
@@ -58,20 +56,18 @@ export default function ThemeToggle() {
 
   return (
     <div className="theme-toggle" ref={panelRef}>
-      <button
-        type="button"
+      <IconButton
         className="topbar-message-btn theme-toggle-btn"
+        icon={(() => { const Icon = MODE_META[mode].icon; return <Icon size={18} strokeWidth={1.8} /> })()}
+        label="主题设置"
+        tooltip={`主题：${MODE_META[mode].label}（点击展开设置）`}
         onClick={() => setOpen((prev) => !prev)}
-        title={`主题：${MODE_META[mode].label}（点击展开设置）`}
-        aria-label="主题设置"
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-controls="theme-panel"
-      >
-        {(() => { const Icon = MODE_META[mode].icon; return <Icon size={18} strokeWidth={1.8} aria-hidden="true" /> })()}
-      </button>
+      />
       {open && (
-        <div id="theme-panel" className="theme-panel" role="dialog" aria-modal="false" aria-label="主题设置">
+        <div ref={dialogRef} id="theme-panel" className="theme-panel" role="dialog" aria-modal="false" aria-label="主题设置" tabIndex={-1}>
           <div className="theme-panel-section">
             <span className="theme-panel-title">外观</span>
             <div className="theme-mode-row">
@@ -80,6 +76,7 @@ export default function ThemeToggle() {
                   key={m}
                   type="button"
                   className={mode === m ? 'active' : ''}
+                  aria-pressed={mode === m}
                   onClick={() => setMode(m)}
                 >
                   {(() => { const Icon = MODE_META[m].icon; return <Icon size={16} strokeWidth={1.8} aria-hidden="true" /> })()} {MODE_META[m].label}
@@ -99,6 +96,7 @@ export default function ThemeToggle() {
                   onClick={() => pickAccent(preset.value)}
                   title={preset.name}
                   aria-label={preset.name}
+                  aria-pressed={accent === preset.value}
                 />
               ))}
               <span className="theme-accent-hint">点选切换，再点取消</span>

@@ -3,6 +3,7 @@ import {
   getDailyProblem,
   listProblems,
   getProblem,
+  listRelatedProblems,
   listSolutions,
   createSolution,
   createProblem,
@@ -19,6 +20,7 @@ const router = Router()
 
 router.get('/problems/daily', getDailyProblem)
 router.get('/oj/problems', listProblems)
+router.get('/oj/problems/:id/related', listRelatedProblems)
 router.get('/oj/problems/:id', getProblem)
 router.get('/oj/problems/:id/solutions', listSolutions)
 router.post('/oj/problems/:id/solutions', createSolution)

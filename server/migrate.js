@@ -16,10 +16,10 @@
 import { closeDb, getDb, initDb } from './db.js'
 
 const REQUIRED_SCHEMA = {
-  users: ['id', 'name', 'password_hash', 'email', 'email_verified_at', 'is_admin', 'is_banned', 'avatar', 'rating', 'bio', 'onboarded_at', 'created_at'],
+  users: ['id', 'name', 'password_hash', 'email', 'email_verified_at', 'is_admin', 'is_banned', 'avatar', 'rating', 'bio', 'onboarded_at', 'avatar_frame', 'avatar_overlay', 'equipped_title', 'created_at'],
   email_verifications: ['email', 'code_hash', 'expires_at', 'attempts', 'last_sent_at', 'created_at'],
   sessions: ['token', 'user_id', 'created_at'],
-  problems: ['id', 'slug', 'title', 'difficulty', 'tags', 'statement', 'input_desc', 'output_desc', 'data_range', 'samples', 'creator_id', 'status', 'created_at'],
+  problems: ['id', 'slug', 'title', 'difficulty', 'tags', 'statement', 'input_desc', 'output_desc', 'data_range', 'samples', 'topic_tags', 'technique_tags', 'estimated_minutes', 'recommended_for', 'quality_status', 'editorial_status', 'revision_summary', 'creator_id', 'status', 'created_at'],
   submissions: ['id', 'problem_id', 'user_id', 'language', 'code', 'status', 'time_ms', 'memory_kb', 'message', 'results_json', 'score', 'queue_position', 'started_at', 'finished_at', 'attempts', 'updated_at', 'created_at'],
   problem_revisions: ['id', 'problem_id', 'version', 'snapshot_json', 'status', 'changed_by', 'note', 'created_at'],
   problem_status_history: ['id', 'problem_id', 'from_status', 'to_status', 'changed_by', 'note', 'created_at'],
@@ -73,6 +73,10 @@ const REQUIRED_INDEXES = [
   'idx_problems_status_difficulty',
   'idx_email_verifications_expires',
   'idx_users_email_unique',
+  'idx_messages_conversation_id',
+  'idx_notifications_user_id',
+  'idx_problems_status_id',
+  'idx_problems_quality_status',
 ]
 
 const verifySchema = async (db) => {
