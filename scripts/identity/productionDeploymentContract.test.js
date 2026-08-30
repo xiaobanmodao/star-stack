@@ -169,6 +169,39 @@ describe('SS-AUTH-003 production deployment contract', () => {
     }
   })
 
+  it('schedules the installed root-owned backup copy through a sandboxed UTC systemd timer', async () => {
+    const [service, timer, productionGuide] = await Promise.all([
+      readProjectFile('infra/identity/systemd/starstack-backup.service'),
+      readProjectFile('infra/identity/systemd/starstack-backup.timer'),
+      readProjectFile('infra/identity/PRODUCTION.md'),
+    ])
+
+    expect(service).toContain('Type=oneshot')
+    expect(service).toContain('User=root')
+    expect(service).toContain('Group=root')
+    expect(service).toContain('Environment=BACKUP_DIR=/www/backup/starstack')
+    expect(service).toContain('Environment=BACKUP_GROUP=starstack')
+    expect(service).toContain('Environment=DB_PATH=/opt/star-stack/server/data/starstack.sqlite')
+    expect(service).toContain('Environment=KEEP_DAYS=7')
+    expect(service).toContain('ExecStart=/usr/bin/flock --exclusive --nonblock /run/lock/starstack-backup.lock /usr/local/sbin/starstack-backup')
+    expect(service).not.toContain('/opt/star-stack/backup.sh')
+    expect(service).toContain('ProtectSystem=strict')
+    expect(service).toContain('ReadOnlyPaths=/opt/star-stack/server/data')
+    expect(service).toContain('ReadWritePaths=/www/backup/starstack /run/lock')
+    expect(service).not.toContain('EnvironmentFile=')
+
+    expect(timer).toContain('OnCalendar=*-*-* 02:00:00 UTC')
+    expect(timer).toContain('Persistent=true')
+    expect(timer).toContain('Unit=starstack-backup.service')
+    expect(timer).toContain('WantedBy=timers.target')
+
+    expect(productionGuide).toContain('install -o root -g root -m 0755 backup.sh /usr/local/sbin/starstack-backup')
+    expect(productionGuide).toContain('systemd-analyze verify')
+    expect(productionGuide).toContain('systemctl enable --now starstack-backup.timer')
+    expect(productionGuide).toContain('BACKUP_FILE="$LATEST_BACKUP" npm run db:verify-backup')
+    expect(productionGuide).toContain('不得在 API/评测仍写入时覆盖 live SQLite')
+  })
+
   for (const environment of ['production', 'staging']) {
     it(`${environment} compose is isolated, pinned and private by construction`, async () => {
       const compose = await readProjectFile(`infra/identity/compose.${environment}.yaml`)

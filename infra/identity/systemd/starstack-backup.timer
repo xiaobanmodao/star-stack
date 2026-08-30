@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the StarStack SQLite backup every day at 02:00 UTC
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+Persistent=true
+AccuracySec=1min
+RandomizedDelaySec=0
+Unit=starstack-backup.service
+
+[Install]
+WantedBy=timers.target
