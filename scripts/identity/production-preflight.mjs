@@ -49,6 +49,15 @@ const assertHookNetwork = (address, subnet) => {
   const prefix = Number(match[2])
   const mask = (0xffffffff << (32 - prefix)) >>> 0
   if (((subnetAddress & mask) >>> 0) !== subnetAddress) fail('IDENTITY_HOOK_SUBNET must use its network address')
+  return { subnetAddress, prefix, mask, broadcast: (subnetAddress | (~mask >>> 0)) >>> 0 }
+}
+const assertHydraHookAddress = (value, network) => {
+  const address = privateIpv4(value, 'IDENTITY_HYDRA_HOOK_IP')
+  if (((address & network.mask) >>> 0) !== network.subnetAddress
+    || address === network.subnetAddress || address === network.broadcast) {
+    fail('IDENTITY_HYDRA_HOOK_IP must be one usable address inside IDENTITY_HOOK_SUBNET')
+  }
+  return value
 }
 const assertPrivateFile = async (file, { allowPublicRead = false, allowedUids = [] } = {}) => {
   const resolved = path.resolve(file)
@@ -99,7 +108,9 @@ if (hookUrl.origin !== 'http://host.docker.internal:5175'
 assertPrivateHostCidr(requireValue('IDENTITY_PROXY_CIDR'), 'IDENTITY_PROXY_CIDR')
 const hookGateway = requireValue('IDENTITY_HOST_GATEWAY_IP')
 const hookSubnet = requireValue('IDENTITY_HOOK_SUBNET')
-assertHookNetwork(hookGateway, hookSubnet)
+const hookNetwork = assertHookNetwork(hookGateway, hookSubnet)
+const hydraHookIp = assertHydraHookAddress(requireValue('IDENTITY_HYDRA_HOOK_IP'), hookNetwork)
+if (hydraHookIp === hookGateway) fail('Hydra hook IP and host-gateway IP must be different')
 
 const sensitiveValues = [
   requirePrivateSecret('HYDRA_POSTGRES_PASSWORD'),
@@ -118,14 +129,23 @@ await assertPrivateFile(requireValue('POSTGRES_TLS_CERT_FILE'), { allowPublicRea
 await assertPrivateFile(requireValue('POSTGRES_TLS_CA_FILE'), { allowPublicRead: true })
 const authNginx = await assertPrivateFile(requireValue('IDENTITY_NGINX_AUTH_CONFIG'), { allowPublicRead: true })
 const hookNginx = await assertPrivateFile(requireValue('IDENTITY_NGINX_HOOK_CONFIG'), { allowPublicRead: true })
+const backchannelNginx = await assertPrivateFile(requireValue('IDENTITY_NGINX_BCL_CONFIG'), { allowPublicRead: true })
 const authText = await readFile(authNginx, 'utf8')
 const hookText = await readFile(hookNginx, 'utf8')
+const backchannelText = await readFile(backchannelNginx, 'utf8')
 if (!authText.includes('server_name auth.xingzhan.cc;')
   || !/location \^~ \/internal\/oidc\/[\s\S]*?return 404;/.test(authText)) fail('Public identity Nginx trust surface is invalid')
 if (hookText.includes('__IDENTITY_') || !hookText.includes(`listen ${hookGateway}:5175;`)
   || !hookText.includes(`allow ${hookSubnet};`) || /listen\s+(?:0\.0\.0\.0|\[::\])/.test(hookText)
   || !hookText.includes('location = /internal/oidc/token-hook')
   || !hookText.includes('allow ') || !hookText.includes('deny all;')) fail('Bridge Token Hook Nginx trust surface is invalid')
+if (backchannelText.includes('__IDENTITY_')
+  || !backchannelText.includes('location = /auth/backchannel-logout')
+  || !backchannelText.includes(`allow ${hydraHookIp}/32;`)
+  || !backchannelText.includes('deny all;')
+  || !/limit_except\s+POST\s*\{\s*deny all;\s*\}/.test(backchannelText)
+  || !backchannelText.includes('proxy_pass http://127.0.0.1:4180;')
+  || /(^|\s)listen\s/m.test(backchannelText)) fail('Jieya Back-Channel Nginx trust surface is invalid')
 
 if (os.availableParallelism() < 2) fail('Pre-release host must provide at least two CPU cores')
 const totalMemory = os.totalmem()

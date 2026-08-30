@@ -35,6 +35,8 @@ describe('SS-AUTH-003 production deployment contract', () => {
       expect(compose).toContain(POSTGRES_IMAGE)
       expect(compose).toContain('internal: true')
       expect(compose).toContain('host.docker.internal:host-gateway')
+      expect(compose).toContain('jieya.xingzhan.cc:host-gateway')
+      expect(compose).toContain('ipv4_address: ${IDENTITY_HYDRA_HOOK_IP:')
       expect(compose).toMatch(/127\.0\.0\.1:\$\{HYDRA_PUBLIC_PORT[^}]*\}:4444/)
       expect(compose).toMatch(/127\.0\.0\.1:\$\{HYDRA_ADMIN_PORT[^}]*\}:4445/)
       expect(composeService(compose, 'postgres', 'hydra-migrate')).not.toContain('\n    ports:')
@@ -64,6 +66,7 @@ describe('SS-AUTH-003 production deployment contract', () => {
   it('public and bridge Nginx templates expose only their frozen trust surfaces', async () => {
     const publicConfig = await readProjectFile('infra/identity/nginx/auth.xingzhan.cc.conf')
     const hookTemplate = await readProjectFile('infra/identity/nginx/token-hook.bridge.conf.template')
+    const backchannelTemplate = await readProjectFile('infra/identity/nginx/jieya-backchannel.private-location.conf.template')
     const productionGuide = await readProjectFile('infra/identity/PRODUCTION.md')
     expect(publicConfig).toContain('server_name auth.xingzhan.cc;')
     expect(publicConfig).toContain('access_log off;')
@@ -82,6 +85,27 @@ describe('SS-AUTH-003 production deployment contract', () => {
     expect(hookTemplate).toMatch(/limit_except POST/)
     expect(hookTemplate).toContain('proxy_pass http://127.0.0.1:5174;')
     expect(hookTemplate).not.toContain('logout-transactions')
+    expect(backchannelTemplate).toContain('location = /auth/backchannel-logout')
+    expect(backchannelTemplate).toContain('allow __IDENTITY_HYDRA_HOOK_IP__/32;')
+    expect(backchannelTemplate).toContain('deny all;')
+    expect(backchannelTemplate).toContain('proxy_pass http://127.0.0.1:4180;')
+    expect(backchannelTemplate).not.toContain('listen ')
+  })
+
+  it('ships a fail-closed Back-Channel TLS route verifier', async () => {
+    const packageJson = JSON.parse(await readProjectFile('package.json'))
+    expect(packageJson.scripts['identity:production:render-backchannel-nginx'])
+      .toBe('node scripts/identity/render-backchannel-nginx.mjs')
+    expect(packageJson.scripts['identity:production:verify-backchannel'])
+      .toBe('node scripts/identity/verify-production-backchannel-route.mjs')
+    const verifier = await readProjectFile('scripts/identity/verify-production-backchannel-route.mjs')
+    expect(verifier).toContain("'nsenter'")
+    expect(verifier).toContain("'openssl'")
+    expect(verifier).toContain("'-verify_hostname', 'jieya.xingzhan.cc'")
+    expect(verifier).toContain("'-verify_return_error'")
+    expect(verifier).toContain("'-servername', 'jieya.xingzhan.cc'")
+    expect(verifier).toContain('X-StarStack-BCL-Route')
+    expect(verifier).not.toMatch(/rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED|--insecure|-k\b/)
   })
 
   it('PM2 keeps identity disabled and Node loopback-only by default', async () => {
@@ -142,6 +166,96 @@ describe('SS-AUTH-003 production deployment contract', () => {
       })
       expect(rejected.status).not.toBe(0)
       expect(rejected.stdout).toBe('')
+    }
+  })
+
+  it('renders only the fixed Hydra /32 into the Jieya Back-Channel location', () => {
+    const script = path.join(projectRoot, 'scripts/identity/render-backchannel-nginx.mjs')
+    const valid = spawnSync(process.execPath, [script], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        IDENTITY_HOST_GATEWAY_IP: '172.17.0.1',
+        IDENTITY_HOOK_SUBNET: '172.30.40.0/29',
+        IDENTITY_HYDRA_HOOK_IP: '172.30.40.2',
+      },
+    })
+    expect(valid.status).toBe(0)
+    expect(valid.stdout).toContain('allow 172.30.40.2/32;')
+    expect(valid.stdout).toContain('proxy_pass http://127.0.0.1:4180;')
+    expect(valid.stdout).not.toContain('__IDENTITY_')
+    for (const hydraIp of ['8.8.8.8', '172.30.40.0', '172.30.40.7', '172.30.41.2', '172.17.0.1']) {
+      const rejected = spawnSync(process.execPath, [script], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          IDENTITY_HOST_GATEWAY_IP: '172.17.0.1',
+          IDENTITY_HOOK_SUBNET: '172.30.40.0/29',
+          IDENTITY_HYDRA_HOOK_IP: hydraIp,
+        },
+      })
+      expect(rejected.status).not.toBe(0)
+      expect(rejected.stdout).toBe('')
+    }
+  })
+
+  it('proves the exact source route and verified canonical TLS path without credentials', async () => {
+    const temporary = await realpath(await mkdtemp(path.join(os.tmpdir(), 'ss-auth-003-bcl-')))
+    try {
+      const bin = path.join(temporary, 'bin')
+      await mkdir(bin, { mode: 0o700 })
+      const docker = path.join(bin, 'docker')
+      const nsenter = path.join(bin, 'nsenter')
+      const containerHosts = path.join(temporary, 'hydra-hosts')
+      await writeFile(containerHosts, '172.17.0.1\tjieya.xingzhan.cc\n', { mode: 0o644 })
+      await writeFile(docker, `#!/usr/bin/env node
+const args = process.argv.slice(2)
+if (args[0] === 'compose') process.stdout.write('aaaaaaaaaaaa\\n')
+else if (args[0] === 'inspect') process.stdout.write(JSON.stringify([{
+  State: { Running: true, Pid: 4242 },
+  HostConfig: { ExtraHosts: ['jieya.xingzhan.cc:host-gateway'] },
+  HostsPath: ${JSON.stringify(containerHosts)},
+  NetworkSettings: { Networks: { 'starstack-identity-hook-production': { IPAddress: '172.30.40.2' } } },
+}]))
+else process.exit(2)
+`)
+      await writeFile(nsenter, `#!/usr/bin/env node
+const args = process.argv.slice(2)
+if (args.includes('ip')) process.stdout.write('172.17.0.1 via 172.30.40.1 dev eth1 src 172.30.40.2\\n')
+else if (args.includes('openssl')) process.stdout.write('HTTP/1.1 401 Unauthorized\\r\\nX-StarStack-BCL-Route: private\\r\\n\\r\\n')
+else process.exit(2)
+`)
+      await Promise.all([docker, nsenter].map((file) => chmod(file, 0o700)))
+      const compose = path.join(temporary, 'compose.production.yaml')
+      const envFile = path.join(temporary, 'production.env')
+      const caBundle = path.join(temporary, 'ca-certificates.crt')
+      await writeFile(compose, 'services: {}\n', { mode: 0o644 })
+      await writeFile(envFile, 'fixture=true\n', { mode: 0o600 })
+      await writeFile(caBundle, 'fixture-ca\n', { mode: 0o644 })
+      const result = spawnSync(process.execPath, [path.join(projectRoot, 'scripts/identity/verify-production-backchannel-route.mjs')], {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          PATH: `${bin}:${process.env.PATH}`,
+          IDENTITY_ENVIRONMENT: 'production',
+          IDENTITY_COMPOSE_FILE: compose,
+          IDENTITY_ENV_FILE: envFile,
+          IDENTITY_HOST_GATEWAY_IP: '172.17.0.1',
+          IDENTITY_HYDRA_HOOK_IP: '172.30.40.2',
+          IDENTITY_TLS_CA_BUNDLE: caBundle,
+        },
+      })
+      expect(result.status).toBe(0)
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        ok: true,
+        readOnly: true,
+        canonicalHost: 'jieya.xingzhan.cc',
+        tlsVerified: true,
+        hydraSourceIp: '172.30.40.2',
+        httpStatus: 401,
+      })
+    } finally {
+      await rm(temporary, { recursive: true, force: true })
     }
   })
 
