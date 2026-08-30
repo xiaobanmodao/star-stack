@@ -42,3 +42,12 @@
 - 部署前保存不覆盖的 `starstack-api.service.pre-ss-judge-001`，安装新 unit 后先执行 `systemd-analyze verify`、内核门禁和 transient probe，再重启 API。
 - 重启后必须在 journal 看到 `Sandbox enabled`，随后健康检查和 pipe-only `run-custom` 都通过才恢复负载。
 - 回滚只恢复旧 unit 和 API 可用性；旧 unit 下评测仍会安全失败，因此必须继续关闭评测流量与身份，禁止无沙箱兜底。
+
+## 本地与临时 VM 验证证据
+
+- 失败测试先证明原 unit 的三项 `ProtectKernel*` 与现有 namespace/chroot 沙箱冲突；修复后 systemd 静态契约、身份 production 契约共 46 项通过。
+- GitHub Actions 临时 Ubuntu VM 已执行普通专用用户基线与完整 production hardening transient unit；run `33328277554` 通过，测试结束后恢复临时调整的 user namespace sysctl。
+- 全量测试：54 个文件、308 项通过；`lint`、production build、SQLite 完整性验证和 `git diff --check` 通过。
+- 临时 SQLite 副本上的 API smoke 与 100 请求/10 并发健康检查通过；gzip 备份恢复后 `PRAGMA integrity_check` 与核心表检查通过。
+- 生产依赖审计无 Critical；`sqlite3` 依赖链仍报告既有 High，未通过降级或绕过依赖审计处理。
+- 分支验证期间未连接、修改或重启生产服务器，OIDC 保持关闭。
