@@ -12,7 +12,7 @@
 - 后端：Node ≥22 + Express 4 + SQLite（WAL 模式），`server/index.js` 单文件约 5900 行、120+ API。
 - 关键依赖：Monaco（代码编辑器）、KaTeX（公式）、highlight.js（代码高亮，github-dark 主题）、lucide-react 1.31（线性图标）、web-push（推送）。
 - 部署：Nginx 单域名主站（`xingzhan.cc`）、PM2（`ecosystem.config.cjs`，端口 5174）、`backup.sh`；完整流程见 `DEPLOYMENT.md`。
-- 文档：`ROADMAP.md`（迭代 0-9 全绿）、`SSO.md`、`nginx.conf`、`DEVELOPING.md`（开发规范，重要）。
+- 文档：`ROADMAP.md`（迭代 0-9 全绿）、`SSO.md`（Hydra OIDC 与旧共享 Token 退役说明）、`nginx.conf`、`DEVELOPING.md`（开发规范，重要）。
 
 ---
 
@@ -98,7 +98,7 @@ tsc / eslint / build 通过；audit 双主题 0 违规；无硬编码颜色；�
 - **新手引导**：首次登录自动弹出星空主题引导弹窗（项目大厅/OJ/评测/聊天），完成或跳过记录到 `users.onboarded_at`。
 - **等级制度**：XP 等级体系（星尘→流星→新星→行星→恒星→超新星→黑洞）；XP 来源：每日签到 +10、发帖/题解 +20、评论 +5、聊天消息 +2；展示在顶栏用户菜单、个人中心、他人主页。
 - **帖子置顶**：管理员可置顶/取消置顶帖子（`POST/DELETE /api/discussions/:id/pin`），列表置顶优先并显示“置顶”徽标；房间消息置顶未做。
-- **聊天中心**：模块频道（发帖制，富文本编辑器 B/I/代码块/KaTeX/大小字）、房间（邀请链接/成员/房主）、私信 DM、好友系统（互相关注即好友）、通知中心、@提及、话题线程、黑名单、全站搜索（Ctrl+K）、收藏、聊天成就/活跃榜、举报+管理后台、SSO、推送通知（web-push）、FloatingChat 全局浮窗私信。
+- **聊天中心**：模块频道（发帖制，富文本编辑器 B/I/代码块/KaTeX/大小字）、房间（邀请链接/成员/房主）、私信 DM、好友系统（互相关注即好友）、通知中心、@提及、话题线程、黑名单、全站搜索（Ctrl+K）、收藏、聊天成就/活跃榜、举报+管理后台、推送通知（web-push）、FloatingChat 全局浮窗私信。跨应用登录已独立收敛为 Hydra OIDC。
 - **私信页 ChatPage**（`/messages/:userId`、`/chat/dm/:userId`）：**时间线+输入框合并为单个聊天框**（洛谷式：消息区占 ~65%、输入区 ~13% 紧凑工具栏+矮输入框，头部/面板头压缩，气泡紧凑高密度）。登录需要 auth。
 - **用户体系**：个人中心（统计卡/热力图/难度分布/等级分走势/成就）、他人主页（简介/关注/粉丝/好友/屏蔽/举报——关系卡在 sticky 身份卡内防遮挡）、头像上传（MIME 白名单）、bio 编辑。
 - **管理后台**：用户管理、题目管理、举报处理、内容审核。

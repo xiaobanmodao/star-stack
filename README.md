@@ -158,6 +158,12 @@ OJ
 
 ## 近期变更
 
+### 2026-08-31 - 界芽计划正式产品入口与账号连接
+
+- 项目大厅的界芽卡片固定指向 `https://jieya.xingzhan.cc`，明确游客模式保留，只有用户主动选择时才使用星栈账号登录。
+- 资料编辑页增加“已连接应用”，从 `oidc_login_sessions` 派生 Jieya 的连接/撤销中/未连接状态；撤销在 SQLite 事务中推进认证世代并写持久化 outbox，立即使旧 OIDC 凭据失败关闭，但不注销 StarStack 主站会话、不删除界芽本地存档。
+- 旧 `/api/sso/session` 固定返回 `410 Gone`，原共享浏览器凭据工具已删除，`/sso.html` 仅保留无脚本停用说明；管理员权限、邮箱、密码和 OJ 数据不会进入 Jieya Claims。
+
 ### 2026-08-30 - Hydra 身份运行时（本地门禁）
 
 - StarStack 作为 Ory Hydra 的 Login/Consent 应用，继续唯一保存账号、密码、不可变 `account_subject` 与账号状态；Hydra 独立保存 OAuth2/OIDC 协议对象。

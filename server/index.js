@@ -586,48 +586,6 @@ function scheduleLeaderboardHistory() {
   }, tomorrow - now)
   console.log('Leaderboard history scheduler initialized')
 }
-// SSO session check (used by sub-projects sharing auth)
-app.get('/api/sso/session', async (req, res) => {
-  try {
-    const db = await getDb()
-    const token = getAuthToken(req)
-    if (!token) return res.json({ user: null })
-    const user = await getUserByToken(db, token)
-    if (!user) return res.json({ user: null })
-    return res.json({
-      user: {
-        id: user.id, name: user.name, avatar: user.avatar,
-        isAdmin: Boolean(user.is_admin), isBanned: Boolean(user.is_banned),
-      },
-      token,
-    })
-  } catch (error) {
-    console.error('Failed to get sso session:', error)
-    return res.status(500).json({ message: '获取会话失败' })
-  }
-})
-
-app.post('/api/sso/session', async (req, res) => {
-  try {
-    const db = await getDb()
-    let token = getAuthToken(req)
-    if (!token && req.body?.token) token = String(req.body.token).slice(0, 128)
-    if (!token) return res.json({ user: null })
-    const user = await getUserByToken(db, token)
-    if (!user) return res.json({ user: null })
-    return res.json({
-      user: {
-        id: user.id, name: user.name, avatar: user.avatar,
-        isAdmin: Boolean(user.is_admin), isBanned: Boolean(user.is_banned),
-      },
-      token,
-    })
-  } catch (error) {
-    console.error('Failed to get sso session:', error)
-    return res.status(500).json({ message: '获取会话失败' })
-  }
-})
-
 // Keep API probes from receiving Express' default HTML error page or a stack trace.
 app.use('/api', (req, res) => res.status(404).json({ message: '接口不存在' }))
 

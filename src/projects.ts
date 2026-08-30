@@ -24,6 +24,8 @@ export interface PortalProject {
   external?: boolean
   featured?: boolean
   badges?: string[]
+  actionLabel?: string
+  accountHint?: string
   /** 桌面应用的本地启动指引（kind === 'desktop' 时展示） */
   launchHint?: string
 }
@@ -47,9 +49,11 @@ export const PORTAL_PROJECTS: PortalProject[] = [
     tagline: '一颗种子，由你塑造成世界',
     description: '本地优先的 2D 创造型世界沙盒：塑造地形、调节气候，观察世界对每次改造产生确定、可解释的回应。',
     kind: 'external',
-    href: 'https://xiaobanmodao.github.io/Project-JIEYA-Preview/',
+    href: 'https://jieya.xingzhan.cc',
     external: true,
-    badges: ['网页应用', '无需账号'],
+    actionLabel: '进入游戏',
+    accountHint: '进入后可选择“使用星栈账号”；游客模式和本地存档仍可继续使用。',
+    badges: ['网页游戏', '游客模式', '星栈账号可选登录'],
   },
   {
     id: 'starcode',
