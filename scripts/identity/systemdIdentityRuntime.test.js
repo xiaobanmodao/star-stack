@@ -179,6 +179,43 @@ describe('systemd StarStack identity runtime', () => {
       .rejects.toThrow(/metadata|link/i)
   })
 
+  it('accepts exact systemd runtime mode 0440 and rejects every broader group or other mode', async () => {
+    const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'starstack-systemd-runtime-credentials-')))
+    resources.push(directory)
+    const files = [
+      ['starstack-environment', `${JSON.stringify({
+        NODE_ENV: 'production', HOST: '127.0.0.1', PORT: '5174', OIDC_ENABLED: 'false',
+        VAPID_PUBLIC_KEY: 'p'.repeat(64), VAPID_PRIVATE_KEY: 'v'.repeat(48),
+      })}\n`],
+      ['oidc-token-hook-secret', 't'.repeat(48)],
+      ['oidc-logout-broker-secret', 'l'.repeat(48)],
+    ]
+    await Promise.all(files.map(([name, value]) => writeFile(path.join(directory, name), value, { mode: 0o440 })))
+    await chmod(directory, 0o550)
+
+    const launcher = await import('./systemd-server-launcher.mjs')
+    try {
+      await expect(launcher.loadSystemdServerEnvironment({ CREDENTIALS_DIRECTORY: directory }))
+        .resolves.toMatchObject({
+          NODE_ENV: 'production',
+          HOST: '127.0.0.1',
+          PORT: '5174',
+          OIDC_ENABLED: 'false',
+          OIDC_TOKEN_HOOK_SECRET: 't'.repeat(48),
+          OIDC_LOGOUT_BROKER_SECRET: 'l'.repeat(48),
+        })
+
+      const environmentFile = path.join(directory, 'starstack-environment')
+      for (const unsafeMode of [0o640, 0o460, 0o444]) {
+        await chmod(environmentFile, unsafeMode)
+        await expect(launcher.loadSystemdServerEnvironment({ CREDENTIALS_DIRECTORY: directory }))
+          .rejects.toThrow(/metadata|unsafe/i)
+      }
+    } finally {
+      await chmod(directory, 0o700)
+    }
+  })
+
   it('documents a value-safe migration and removal of the persisted PM2 dump', async () => {
     const production = await readProjectFile('infra/identity/PRODUCTION.md')
     expect(production).toContain('migrate-pm2-to-systemd-credentials.mjs')
