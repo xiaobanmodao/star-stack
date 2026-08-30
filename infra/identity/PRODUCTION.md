@@ -133,7 +133,7 @@ npm run identity:production:preflight
 
 ### Back-Channel TLS 现场硬门禁
 
-Hydra 已由另行审批启动、Jieya BFF 仍只监听 loopback 后，必须在启用 OIDC 前执行只读链路证明。验证器不重启容器、不迁移数据库、不读取客户端 Secret；它进入 Hydra 容器的 network namespace，确认 hook gateway 路由源地址精确等于 `IDENTITY_HYDRA_HOOK_IP`。随后分别向 gateway:5175 发送无凭据 Token Hook POST，以及向 gateway:443 使用 canonical SNI/系统 CA 发送无效 Back-Channel POST；两条链都必须得到预期拒绝状态与私有 route marker。403、错误 server、上游失败、证书失败或源地址变化都必须停止。
+Hydra 已由另行审批启动、Jieya BFF 仍只监听 loopback 后，必须在启用 OIDC 前执行只读链路证明。验证器不重启容器、不迁移数据库、不读取客户端 Secret；它进入 Hydra 容器的 network namespace，确认 hook gateway 路由源地址精确等于 `IDENTITY_HYDRA_HOOK_IP`。随后分别向 gateway:5175 发送无凭据 Token Hook POST，以及向 gateway:443 使用 canonical SNI/系统 CA 发送 `application/x-www-form-urlencoded` 的无效 Back-Channel Logout Token；两条链都必须得到预期拒绝状态与私有 route marker。403、415、错误 server、上游失败、证书失败或源地址变化都必须停止。
 
 ```bash
 export IDENTITY_ENVIRONMENT=production

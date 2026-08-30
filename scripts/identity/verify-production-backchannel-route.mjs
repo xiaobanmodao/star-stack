@@ -139,14 +139,15 @@ if (![400, 401, 422].includes(hookProbe.status) || hookProbe.marker !== 'private
   fail('Token Hook probe did not traverse the frozen internal gateway route')
 }
 
+const backchannelProbeBody = 'logout_token=invalid'
 const request = [
   'POST /auth/backchannel-logout HTTP/1.1',
   'Host: jieya.xingzhan.cc',
-  'Content-Type: application/json',
-  'Content-Length: 2',
+  'Content-Type: application/x-www-form-urlencoded',
+  `Content-Length: ${Buffer.byteLength(backchannelProbeBody, 'utf8')}`,
   'Connection: close',
   '',
-  '{}',
+  backchannelProbeBody,
 ].join('\r\n')
 const tlsResponse = run('nsenter', [
   '-t', pid, '-n', '--',

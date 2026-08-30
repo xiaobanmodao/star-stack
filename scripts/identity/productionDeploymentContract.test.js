@@ -686,9 +686,19 @@ else if (args[0] === 'network' && args[1] === 'inspect') process.stdout.write(JS
 else process.exit(2)
 `)
       await writeFile(nsenter, `#!/usr/bin/env node
+const { readFileSync } = require('node:fs')
 const args = process.argv.slice(2)
 if (args.includes('ip')) process.stdout.write('172.30.40.1 dev eth1 src 172.30.40.2\\n')
-else if (args.includes('openssl')) process.stdout.write('HTTP/1.1 401 Unauthorized\\r\\nX-StarStack-BCL-Route: private\\r\\n\\r\\n')
+else if (args.includes('openssl')) {
+  const request = readFileSync(0, 'utf8')
+  const body = 'logout_token=invalid'
+  const valid = request.includes('Content-Type: application/x-www-form-urlencoded\\r\\n')
+    && request.includes('Content-Length: ' + Buffer.byteLength(body) + '\\r\\n')
+    && request.endsWith('\\r\\n\\r\\n' + body)
+  process.stdout.write(valid
+    ? 'HTTP/1.1 401 Unauthorized\\r\\nX-StarStack-BCL-Route: private\\r\\n\\r\\n'
+    : 'HTTP/1.1 415 Unsupported Media Type\\r\\nX-StarStack-BCL-Route: private\\r\\n\\r\\n')
+}
 else if (args.includes('-e')) process.stdout.write(JSON.stringify({ status: 401, marker: 'private' }))
 else process.exit(2)
 `)
