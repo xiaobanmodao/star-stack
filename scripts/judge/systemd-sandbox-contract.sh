@@ -29,6 +29,7 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 touch "$FIXTURE_ROOT/.starstack-systemd-contract"
+chmod 0755 "$FIXTURE_ROOT"
 
 if getent passwd "$TEST_USER" >/dev/null; then
   echo 'contract error: reserved fixture user already exists' >&2
