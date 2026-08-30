@@ -2,8 +2,8 @@
 
 ## 状态
 
-- 分支：`codex/ss-auth-003-nginx-canonical-marker`
-- 基线：`origin/main@12b35d06108d7e6af95ce0949b53c1a0e29ba49c`
+- 分支：`codex/ss-auth-003-production-fixture-systemd`
+- 基线：`origin/main@e92b92d75317f6700444d22bf7135b734e55a58c`
 - R4 范围：生产/预发布配置与只读门禁；不部署、不启用、不写入真实 Secret 或真实用户 fixture。
 - 实现状态：原 SS-AUTH-003、Back-Channel 私网路由、HTTP-01 与组合预检已合并；本分支修复 Debian Nginx `sites-enabled` marker 与受审计 `sites-available` 普通文件之间的 canonical 激活证明，不授权启动、迁移、发布 DNS 或启用身份。
 
@@ -24,6 +24,13 @@
 - `auth.xingzhan.cc` 的 HTTP-01 只读取 `/var/lib/acme` 下的精确 challenge 文件；其他 HTTP 请求才重定向 HTTPS，challenge 不进入 StarStack/Hydra。
 - 身份域 HSTS 不扩散到未审计子域；关闭含查询串的 access log，并覆盖客户端传入的 X-Forwarded-For 链。
 - PostgreSQL/SQLite 备份集、隔离恢复说明和不改变服务器状态的预发布检查。
+- 生产门禁使用匿名 NDJSON pipe 的一次性 `jy-gate-*` 普通账号；密码不落盘，
+  root-only receipt 支持 cleanup-only，最终只经账号生命周期 tombstone 清理。
+- StarStack API 的身份 Secret 从 PM2 dump 迁移到 systemd credentials；无 Secret
+  launcher 复核文件后 `execve` Node，同时保留 Turnstile、SMTP、判题、VAPID/
+  WebPush、JWT、数据库与备份配置。
+- 混合负载只允许匿名 pipe 驱动一次固定 `/api/oj/run-custom`；helper 在内存登录、
+  执行 `1 + 2`、登出，禁止使用会留下提交/统计历史的正式 submission 接口。
 
 ## 明确禁止
 
@@ -35,6 +42,7 @@
 - 不允许 Certbot/acme.sh 自动改写仓库管理的 Nginx 模板，也不把手工 DNS-01 证书误记为已自动续期。
 - 不保存未被 active Nginx include 的完整 Back-Channel location 来伪造预检成功，也不向 Jieya server 重复 include 同名 location。
 - 不运行生产迁移、客户端注册、恢复或部署；不修改界芽仓库。
+- 不在本任务连接服务器、启用 OIDC、创建真实账号或写入真实 Secret。
 
 ## 停止线
 
@@ -53,6 +61,27 @@
 - 本机没有 Docker/Compose CLI，因此本地只完成 YAML 解析和静态 Compose 契约测试；服务器上的 `docker compose config --quiet` 是只读预检硬门禁，未通过前禁止启动。
 
 ## 本地完成证据
+
+### 生产夹具与 systemd credentials 收口（基线 `e92b92d7`）
+
+- 失败测试先行：生产协议夹具与 systemd 缺失时 2 files / 8 tests 全红；实现后
+  协议、systemd、生产部署契约专项 43/43 通过。单评测匿名 pipe helper 另有
+  2/2 通过，证明只调用 login → `run-custom` → logout，stdout/stderr 不泄漏凭据。
+- `npm run lint`：通过。
+- `npm test -- --run`：48 files / 286 tests 通过。
+- `npm run build`：通过。
+- `npm run db:verify`：50 tables，SQLite integrity/foreign keys/账号与 OIDC schema
+  通过；现有 17 个账号均保持 active，本轮未改真实数据库数据。
+- 临时隔离 SQLite + `OIDC_ENABLED=false` 的 `npm run test:smoke`：通过；测试服务
+  结束后未连接服务器或生产数据。
+- `npm run audit:deps`：Critical=0；前端 Moderate=2，后端 High=3/Moderate=1/
+  Low=2 均为既有依赖风险，本轮未变更依赖或 lockfile。
+- `git diff --check` 与 16 个改动文件的值安全秘密扫描：通过；没有真实 Secret、
+  真实账号、生产 Token、私钥或带密码 DSN。
+- 15 分钟 identity-only 与 identity + 单评测混合负载仍属于服务器预发布门禁，
+  本地未冒充执行；StarStack 已提供无 submission/统计写入的单次 `run-custom`
+  helper。服务器没有安全 sandbox、fixture cleanup 任一布尔值不为 true，或接口
+  未来新增持久化写入时必须停止。
 
 - 原阶段失败测试初始 7/7 失败；Back-Channel 跟进先新增 4 个失败断言。HTTP-01 跟进先新增真实失败契约（缺少独立 `listen 80` server）。组合式 BCL preflight 跟进先因缺少 site/snippet validator 失败，实现后 production contract 28/28 通过。canonical marker 跟进先复现标准 `sites-enabled` 无法通过及重复 canonical marker 假绿；all-internal topology 跟进再复现 Docker `ports` 与特殊 `host-gateway` 两个结构性失败。实现后 production contract 32/32 通过，并覆盖普通文件 canonical 激活、loopback Public/Admin bridge、固定 hook gateway、精确 UFW 与双私网探针。
 - `npm run lint`：通过。

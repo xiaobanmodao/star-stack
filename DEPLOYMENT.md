@@ -18,7 +18,7 @@
 
 ### 身份服务预发布状态
 
-Hydra/OIDC 当前仍默认关闭，`ecosystem.config.cjs` 明确设置 `OIDC_ENABLED=false`。SS-AUTH-003 只提供独立 production/staging 配置和只读门禁，不授权在日常更新流程中启动 Hydra、执行其迁移或注册客户端。身份拓扑、Secret、2C2GiB 资源预算、Nginx bridge、联合备份与隔离恢复说明见 [`infra/identity/PRODUCTION.md`](./infra/identity/PRODUCTION.md)。禁止复用 `infra/identity/compose.yaml` 的开发配置，禁止 `network_mode: host`，禁止将 Node、Hydra Admin、PostgreSQL 或内部 Hook 暴露公网。
+Hydra/OIDC 当前仍默认关闭，`ecosystem.config.cjs` 强制设置 `OIDC_ENABLED=false`，且不允许持久化两个身份 Secret。SS-AUTH-003 只提供独立 production/staging 配置和预发布门禁；OIDC 启用前必须按 [`infra/identity/PRODUCTION.md`](./infra/identity/PRODUCTION.md) 将 API 切换到 systemd credentials，不能由 PM2 承载身份密钥。该手册同时冻结身份拓扑、一次性协议夹具、2C2GiB 资源预算、Nginx bridge、联合备份与隔离恢复边界。禁止复用 `infra/identity/compose.yaml` 的开发配置，禁止 `network_mode: host`，禁止将 Node、Hydra Admin、PostgreSQL 或内部 Hook 暴露公网。
 
 身份域模板不使用 `includeSubDomains` HSTS，并关闭包含完整查询串的 Nginx access log。模板覆盖客户端传入的 `X-Forwarded-For`，只传 `$remote_addr`；Cloudflare 源站 ACL 与 Nginx `real_ip` 可信网段未现场确认前，身份功能必须保持关闭。
 
