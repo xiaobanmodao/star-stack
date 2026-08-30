@@ -61,9 +61,10 @@ PostgreSQL TLS 证书的 SAN 必须包含容器 DNS 名 `postgres`。固定 Alpi
 2. 创建独立 Secret、PostgreSQL TLS 材料和 production/staging env 文件；此时 `OIDC_ENABLED=false`。
 3. 用 `identity:production:render-hook-nginx` 输出 bridge Nginx 配置到标准输出，由管理员审查后安装。监听地址是服务器实测的 Docker `host-gateway` RFC1918 地址；allowlist 是独立 hook bridge 的 RFC1918 `/28`～`/30` 小网段，两者通常不是同一网段。
 4. 用 `identity:production:render-backchannel-nginx` 输出 Jieya Back-Channel 精确 location，只能合并进现有 `jieya.xingzhan.cc` TLS server。`IDENTITY_HYDRA_HOOK_IP` 必须是该 hook bridge 内为 Hydra 保留的固定可用地址，Nginx 只允许这个 `/32`。
-5. 将 `auth.xingzhan.cc.conf` 合并进现有 TLS 配置；不得覆盖 1Panel/Certbot 的证书配置。公网模板明确拒绝 `/internal/oidc/`。
-6. 运行下面的只读预检。它只读文件、资源、Compose 渲染及可选 HTTP 健康状态，不执行 pull/up/migrate/reload/写库。
-7. 另行审批后才允许在 staging 执行镜像拉取、migration、客户端创建与真实协议测试。SS-AUTH-003 不执行这一步。
+5. 创建 root 所有、普通用户不可写的 `/var/lib/acme/.well-known/acme-challenge` webroot；`auth.xingzhan.cc.conf` 的 80 server 只从该目录读取精确 HTTP-01 token，其他 HTTP 请求才执行 308。不得让 ACME challenge 进入 StarStack/Hydra，也不得让 Certbot 自动改写已审计模板。
+6. 将 `auth.xingzhan.cc.conf` 合并进现有 TLS 配置；不得覆盖 1Panel/Certbot 的证书配置。公网模板明确拒绝 `/internal/oidc/`。
+7. 运行下面的只读预检。它只读文件、资源、Compose 渲染及可选 HTTP 健康状态，不执行 pull/up/migrate/reload/写库。
+8. 另行审批后才允许在 staging 执行镜像拉取、migration、客户端创建与真实协议测试。SS-AUTH-003 不执行这一步。
 
 两个渲染器只向标准输出写配置，不直接修改 Nginx。先将输出放入仓库外的候选文件，审查无占位符、执行 `nginx -t`，再由独立变更审批决定是否安装/reload：
 
@@ -95,6 +96,12 @@ npm run identity:production:preflight
 ```
 
 运行时已由另行审批启动后，可加 `IDENTITY_PREFLIGHT_RUNTIME=1`，只读校验 Hydra Admin ready、Public Discovery 与 JWKS。预检成功仍不代表可把 `OIDC_ENABLED` 改为 true。
+
+### HTTP-01 自动续期边界
+
+身份域证书运行路径固定为 `/etc/letsencrypt/live/auth.xingzhan.cc/fullchain.pem` 与 `privkey.pem`。在 DNS 尚未发布时通过手工 DNS-01 签发的证书必须明确标记为 manual，不能宣称自动续期完成。
+
+切换到 HTTP-01 前，先安装本仓库受审计的 80 server，并用本地 `--resolve` 证明：存在 token 返回精确内容，不存在 token 返回 404，POST/PUT 被拒绝，其他 HTTP 路径才返回同 Host HTTPS 308。之后才可发布 A 记录，使用 ACME staging 的独立临时证书名验证 webroot；staging 绿色后再显式更新 production renewal method，并执行 dry-run。续期 hook 只能在 `nginx -t` 成功后 reload。整个续期转换不授权启用 OIDC、启动 Hydra 或修改 443 身份代理范围。
 
 ### Back-Channel TLS 现场硬门禁
 
