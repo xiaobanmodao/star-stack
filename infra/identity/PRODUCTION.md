@@ -107,7 +107,8 @@ sudo systemd-analyze verify /etc/systemd/system/starstack-api.service
 `LockPersonality=true`、`MemoryMax` 和 `TasksMax`。此外 `CapabilityBoundingSet=` 与
 `AmbientCapabilities=` 必须为空，宿主必须满足 `kernel.dmesg_restrict=1`。评测脚本
 只在新 user namespace 内获得挂载最小 chroot 所需的 namespace-local 能力；宿主
-capability 不会授予 Node 或用户代码。
+capability 不会授予 Node 或用户代码。`SystemCallFilter=~@module syslog` 继续从
+宿主层拒绝模块加载/卸载系统调用和内核日志 syscall，不过滤评测必需的 mount/unshare。
 
 部署前先保留唯一回滚副本，再安装候选 unit。禁止覆盖既有回滚文件：
 

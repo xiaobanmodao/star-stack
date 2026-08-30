@@ -48,6 +48,7 @@ PROPERTY_NAMES=(
   ProtectKernelModules
   ProtectKernelLogs
   ProtectControlGroups
+  SystemCallFilter
   RestrictRealtime
   RestrictSUIDSGID
   LockPersonality
@@ -82,6 +83,7 @@ declare -A EXPECTED=(
   [ProtectKernelModules]=false
   [ProtectKernelLogs]=false
   [ProtectControlGroups]=true
+  [SystemCallFilter]='~@module syslog'
   [RestrictRealtime]=true
   [RestrictSUIDSGID]=true
   [LockPersonality]=true

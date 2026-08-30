@@ -12,6 +12,7 @@ const EXACT_SINGLE_VALUE_DIRECTIVES = Object.freeze({
   ProtectKernelModules: 'false',
   ProtectKernelLogs: 'false',
   ProtectControlGroups: 'true',
+  SystemCallFilter: '~@module syslog',
   RestrictRealtime: 'true',
   RestrictSUIDSGID: 'true',
   LockPersonality: 'true',

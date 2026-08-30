@@ -87,6 +87,7 @@ PROPERTY_NAMES=(
   ProtectKernelModules
   ProtectKernelLogs
   ProtectControlGroups
+  SystemCallFilter
   RestrictRealtime
   RestrictSUIDSGID
   LockPersonality

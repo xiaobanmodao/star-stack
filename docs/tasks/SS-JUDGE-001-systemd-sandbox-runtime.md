@@ -12,7 +12,7 @@
 - minimal、`NoNewPrivileges`、PrivateDevices、PrivateTmp、文件系统保护组、Restrict 组分别通过。
 - `ProtectKernelTunables=true`、`ProtectKernelLogs=true` 分别锁死内层 `/proc` 挂载；`ProtectKernelModules=true` 锁死内层 `/usr` bind mount。
 - `ProtectControlGroups=true` 与沙箱兼容，继续保留。
-- 最小修复只在 API unit 对上述三项显式设为 `false`，同时清空 host capability，并要求 `kernel.dmesg_restrict=1`；备份 unit 不变。
+- 最小修复只在 API unit 对上述三项显式设为 `false`，同时清空 host capability、用 `SystemCallFilter=~@module syslog` 拒绝宿主模块和内核日志 syscall，并要求 `kernel.dmesg_restrict=1`；备份 unit 不变。
 
 ## 本阶段范围
 

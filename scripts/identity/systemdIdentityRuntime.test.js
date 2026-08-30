@@ -52,6 +52,7 @@ describe('systemd StarStack identity runtime', () => {
     expect(unit).toContain('ProtectKernelModules=false')
     expect(unit).toContain('ProtectKernelLogs=false')
     expect(unit).toContain('ProtectControlGroups=true')
+    expect(unit).toContain('SystemCallFilter=~@module syslog')
     expect(unit).not.toMatch(/Environment(File)?=/)
 
     expect(launcher).toContain('process.execve(')
