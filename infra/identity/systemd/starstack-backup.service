@@ -1,7 +1,7 @@
 [Unit]
 Description=StarStack SQLite daily backup
 After=local-fs.target
-ConditionPathIsRegular=/usr/local/sbin/starstack-backup
+ConditionPathExists=/usr/local/sbin/starstack-backup
 ConditionPathIsDirectory=/opt/star-stack/server/data
 ConditionPathIsDirectory=/www/backup/starstack
 
@@ -15,6 +15,8 @@ Environment=BACKUP_DIR=/www/backup/starstack
 Environment=BACKUP_GROUP=starstack
 Environment=DB_PATH=/opt/star-stack/server/data/starstack.sqlite
 Environment=KEEP_DAYS=7
+ExecCondition=/usr/bin/test -f /usr/local/sbin/starstack-backup
+ExecCondition=/usr/bin/test ! -L /usr/local/sbin/starstack-backup
 ExecStart=/usr/bin/flock --exclusive --nonblock /run/lock/starstack-backup.lock /usr/local/sbin/starstack-backup
 UMask=0077
 TimeoutStartSec=20min
