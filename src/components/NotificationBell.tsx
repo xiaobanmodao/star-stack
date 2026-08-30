@@ -6,7 +6,8 @@ import { ApiRequestError } from '../utils'
 import { useModalFocus } from '../hooks/useModalFocus'
 import { disablePush, enablePush, isPushEnabled } from '../utils/push'
 import { AtSign, Bell, BellRing, FileText, Heart, MessageCircle, Megaphone, Reply, Trophy, type LucideIcon } from 'lucide-react'
-import { EmptyState, ErrorState, LoadingState } from './ui'
+import { EmptyState, ErrorState, IconButton, LoadingState } from './ui'
+import DecoratedAvatar from './profile/DecoratedAvatar'
 import './NotificationBell.css'
 
 const TYPE_ICONS: Record<NotificationType, LucideIcon> = {
@@ -188,22 +189,17 @@ export default function NotificationBell() {
 
   return (
     <div className="notification-bell" ref={panelRef}>
-      <button
-        type="button"
+      <IconButton
         className="topbar-message-btn"
+        icon={<Bell size={20} strokeWidth={1.8} />}
+        label={unreadCount > 0 ? `通知，${unreadCount} 条未读` : '通知'}
+        badge={unreadCount > 0 ? (unreadCount > 99 ? '99+' : unreadCount) : undefined}
         onClick={() => setOpen((prev) => !prev)}
         title={unreadCount > 0 ? `${unreadCount} 条新通知` : '通知'}
-        aria-label="通知"
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-controls="notification-panel"
-      >
-        <svg viewBox="0 0 24 24" width="20" height="20">
-          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-        </svg>
-        {unreadCount > 0 && <span className="topbar-message-dot">{unreadCount > 99 ? '99+' : unreadCount}</span>}
-      </button>
+      />
 
       {open && (
         <div ref={dialogRef} id="notification-panel" className="notif-panel" role="dialog" aria-modal="false" aria-labelledby="notification-panel-title" tabIndex={-1}>
@@ -254,13 +250,15 @@ export default function NotificationBell() {
                   className={`notif-item ${item.isRead ? '' : 'unread'}`}
                   onClick={() => void handleItemClick(item)}
                 >
-                  <span className="notif-avatar">
-                    {item.actor.avatar ? (
-                      <img src={item.actor.avatar} alt="" loading="lazy" decoding="async" width="32" height="32" />
-                    ) : (
-                      <span>{item.actor.name.charAt(0).toUpperCase()}</span>
-                    )}
-                  </span>
+                  <DecoratedAvatar
+                    avatar={item.actor.avatar}
+                    fallback={item.actor.name.charAt(0).toUpperCase()}
+                    frame={item.actor.avatarFrame}
+                    overlay={item.actor.avatarOverlay}
+                    size="discussion"
+                    alt=""
+                    className="notif-avatar"
+                  />
                   <span className="notif-body">
                     <span className="notif-text">
                       <strong>{item.actor.name}</strong> {item.message}

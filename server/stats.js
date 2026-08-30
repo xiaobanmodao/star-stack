@@ -1,5 +1,12 @@
 // 站内等级（星空主题，按累计 XP 升级）
 import { createNotification } from './utils/notifications.js'
+import {
+  getDifficultyAliases,
+  getDifficultyKeys,
+  getDifficultyMeta,
+  getDifficultyRating,
+  normalizeDifficulty,
+} from './utils/difficulty.js'
 
 export const LEVELS = [
   { minXp: 0, title: '星尘', icon: '✦' },
@@ -277,8 +284,11 @@ async function checkAndUnlockAchievements(db, userId, submission) {
       `SELECT DISTINCT difficulty FROM problems`
     )
 
-    // 如果用户解决的难度种类数等于题库中的难度种类数，解锁成就
-    if (difficulties.length > 0 && difficulties.length >= allDifficulties.length) {
+    const solvedDifficultyKeys = new Set(difficulties.map((row) => normalizeDifficulty(row.difficulty)))
+    const problemDifficultyKeys = new Set(allDifficulties.map((row) => normalizeDifficulty(row.difficulty)))
+
+    // 如果用户解决的标准难度种类数等于题库中的标准难度种类数，解锁成就
+    if (solvedDifficultyKeys.size > 0 && solvedDifficultyKeys.size >= problemDifficultyKeys.size) {
       newAchievements.push({ type: 'all_difficulty', data: {} })
     }
   }
@@ -356,17 +366,17 @@ export const backfillAchievements = async (db) => {
     if (bestStreak >= 30) add('streak_30', { streak: bestStreak })
     if (bestStreak >= 100) add('streak_100', { streak: bestStreak })
 
-    const difficultyCount = await db.get(
-      `SELECT COUNT(DISTINCT difficulty) AS count
-       FROM problems WHERE difficulty IS NOT NULL AND difficulty <> ''`,
+    const difficultyRows = await db.all(
+      `SELECT DISTINCT difficulty FROM problems WHERE difficulty IS NOT NULL AND difficulty <> ''`,
     )
-    const solvedDifficultyCount = await db.get(
-      `SELECT COUNT(DISTINCT difficulty) AS count
-       FROM solved_problems
+    const solvedDifficultyRows = await db.all(
+      `SELECT DISTINCT difficulty FROM solved_problems
        WHERE user_id = ? AND difficulty IS NOT NULL AND difficulty <> ''`,
       userId,
     )
-    if ((difficultyCount?.count || 0) > 0 && (solvedDifficultyCount?.count || 0) >= difficultyCount.count) {
+    const difficultyCount = new Set(difficultyRows.map((row) => normalizeDifficulty(row.difficulty))).size
+    const solvedDifficultyCount = new Set(solvedDifficultyRows.map((row) => normalizeDifficulty(row.difficulty))).size
+    if (difficultyCount > 0 && solvedDifficultyCount >= difficultyCount) {
       add('all_difficulty')
     }
 
@@ -444,36 +454,30 @@ async function updateRankings(db) {
  * Get difficulty statistics for a user
  */
 async function getDifficultyStats(db, userId) {
-  // 获取数据库中实际存在的所有难度
-  const allDifficulties = await db.all(
-    `SELECT DISTINCT difficulty FROM problems ORDER BY difficulty`
-  )
-
   const stats = {}
 
-  for (const row of allDifficulties) {
-    const difficulty = row.difficulty
+  for (const difficultyKey of getDifficultyKeys()) {
+    const difficulty = getDifficultyMeta(difficultyKey).label
+    const aliases = getDifficultyAliases(difficultyKey)
+    const placeholders = aliases.map(() => '?').join(',')
 
     const solved = await db.get(
       `SELECT COUNT(*) as count FROM solved_problems
-       WHERE user_id = ? AND difficulty = ?`,
+       WHERE user_id = ? AND difficulty IN (${placeholders})`,
       userId,
-      difficulty
+      ...aliases
     )
 
     const tried = await db.get(
       `SELECT COUNT(DISTINCT s.problem_id) as count
        FROM submissions s
        JOIN problems p ON s.problem_id = p.id
-       WHERE s.user_id = ? AND p.difficulty = ?`,
+       WHERE s.user_id = ? AND p.difficulty IN (${placeholders})`,
       userId,
-      difficulty
+      ...aliases
     )
 
-    stats[difficulty] = {
-      solved: solved.count,
-      tried: tried.count
-    }
+    stats[difficulty] = { solved: solved.count, tried: tried.count }
   }
 
   return stats
@@ -526,16 +530,6 @@ async function getHeatmapData(db, userId) {
  * Recalculate rating for a single user based on their solved problems
  */
 async function recalculateUserRating(db, userId) {
-  const ratingMap = {
-    '入门': 0.05,
-    '普及-': 0.1,
-    '普及': 0.2,
-    '提高-': 0.3,
-    '提高': 0.4,
-    '省选': 0.5,
-    'noi': 0.6
-  }
-
   // Get all solved problems with their difficulties
   const solvedProblems = await db.all(
     `SELECT difficulty FROM solved_problems WHERE user_id = ?`,
@@ -545,8 +539,7 @@ async function recalculateUserRating(db, userId) {
   // Calculate total rating
   let totalRating = 0
   for (const problem of solvedProblems) {
-    const difficulty = problem.difficulty
-    totalRating += ratingMap[difficulty] || 0.1
+    totalRating += getDifficultyRating(problem.difficulty)
   }
 
   // Update user rating

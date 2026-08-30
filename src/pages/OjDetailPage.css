@@ -328,6 +328,18 @@
   text-align: right;
 }
 
+.oj-sidebar-metadata-item {
+  align-items: flex-start;
+}
+
+.oj-sidebar-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
 .oj-sidebar-button {
   width: 100%;
   padding: 10px 16px;

@@ -67,8 +67,20 @@
   justify-content: center;
 }
 
+.ui-button-content {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.ui-button-content.is-loading {
+  opacity: 0.76;
+}
+
 .ui-icon-button {
   display: inline-flex;
+  position: relative;
   width: 36px;
   height: 36px;
   flex: 0 0 auto;
@@ -100,6 +112,26 @@
 .ui-icon-button-sm {
   width: 30px;
   height: 30px;
+}
+
+.ui-icon-button-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  place-items: center;
+  border: 2px solid var(--ss-color-surface, var(--ss-color-bg));
+  border-radius: var(--ss-radius-pill);
+  background: var(--ss-color-danger);
+  color: var(--ss-color-bg);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .ui-button-spinner {
@@ -245,6 +277,19 @@
 
 .ui-empty-state strong {
   color: var(--ss-color-text);
+}
+
+.ui-empty-state::before {
+  content: '✦';
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--ss-accent-border);
+  border-radius: 50%;
+  background: var(--ss-accent-bg);
+  color: var(--ss-color-accent-strong);
+  font-size: 14px;
 }
 
 @keyframes ui-spin {

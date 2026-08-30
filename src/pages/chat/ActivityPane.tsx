@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { fetchJson } from '../../utils'
 import type { ActivityLeaderboardResponse, ChatStatsResponse } from '../../types'
 import { EmptyState, LoadingState } from '../../components/ui'
+import DecoratedAvatar from '../../components/profile/DecoratedAvatar'
 import './ChatHub.css'
 
 const SCORE_RULES = [
@@ -20,27 +21,32 @@ export default function ActivityPane() {
   const [stats, setStats] = useState<ChatStatsResponse | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     try {
       const [{ response, data: lb }, statsRes] = await Promise.all([
-        fetchJson<ActivityLeaderboardResponse>(`/api/chat/activity/leaderboard?days=${days}`),
-        fetchJson<ChatStatsResponse>('/api/chat/stats/me').catch(() => null),
+        fetchJson<ActivityLeaderboardResponse>(`/api/chat/activity/leaderboard?days=${days}`, { signal }),
+        fetchJson<ChatStatsResponse>('/api/chat/stats/me', { signal }).catch(() => null),
       ])
+      if (signal?.aborted) return
       if (response.ok && lb) setData(lb)
       if (statsRes?.response.ok && statsRes.data) setStats(statsRes.data)
     } catch {
       // 忽略
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
   }, [days])
 
   useEffect(() => {
+    const controller = new AbortController()
     const timer = window.setTimeout(() => {
-      void load()
+      void load(controller.signal)
     }, 0)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
   }, [load])
 
   return (
@@ -87,16 +93,20 @@ export default function ActivityPane() {
                   {entry.rank <= 3 ? ['🥇', '🥈', '🥉'][entry.rank - 1] : `#${entry.rank}`}
                 </span>
                 <span className="activity-avatar">
-                  {entry.userAvatar ? (
-                    <img src={entry.userAvatar} alt="" loading="lazy" />
-                  ) : (
-                    <span>{entry.userName.charAt(0).toUpperCase()}</span>
-                  )}
+                  <DecoratedAvatar
+                    avatar={entry.userAvatar}
+                    fallback={entry.userName.charAt(0).toUpperCase()}
+                    frame={entry.avatarFrame}
+                    overlay={entry.avatarOverlay}
+                    size="discussion"
+                    loading="lazy"
+                  />
                 </span>
                 <span className="activity-name">
                   {entry.userName}
                   {entry.userId === data.me.userId && <em>（我）</em>}
                 </span>
+                {entry.displayTitle && <span className="activity-user-title">{entry.displayTitleIcon || '✦'} {entry.displayTitle}</span>}
                 <span className="activity-score">{entry.score} 分</span>
               </button>
             ))

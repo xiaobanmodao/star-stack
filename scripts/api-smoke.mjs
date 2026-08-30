@@ -14,6 +14,9 @@ const decorationAssets = [
 const checks = [
   ['GET', '/api/health', 200],
   ['GET', '/api/oj/problems', 200],
+  ['GET', '/api/leaderboard?type=total&page=1&perPage=5', 200],
+  ['GET', '/api/learning-paths', 404],
+  ['GET', '/api/learning-paths/beginner', 404],
   ['GET', '/api/admin/metrics', 401],
   ['GET', '/api/admin/client-errors', 401],
   ['GET', '/api/me/export', 404],
@@ -44,15 +47,65 @@ if ('path' in (healthBody.disk || {}) || 'directory' in (healthBody.backup || {}
 }
 console.log('ok /api/health payload -> database, disk and backup status present')
 
+const leaderboardResponse = await fetch(`${baseUrl}/api/leaderboard?type=total&page=1&perPage=5`)
+if (leaderboardResponse.status !== 200) {
+  throw new Error(`/api/leaderboard: expected 200, got ${leaderboardResponse.status}`)
+}
+const leaderboardBody = await leaderboardResponse.json()
+if (!Array.isArray(leaderboardBody.leaderboard) || leaderboardBody.leaderboard.some((entry) => typeof entry.value !== 'number' || entry.value < 1000)) {
+  throw new Error('排行榜练习 Rating 响应格式不正确')
+}
+console.log('ok /api/leaderboard -> practice Rating presentation')
+
 const paginatedResponse = await fetch(`${baseUrl}/api/oj/problems?page=1&pageSize=2`)
 if (paginatedResponse.status !== 200) {
   throw new Error(`/api/oj/problems pagination: expected 200, got ${paginatedResponse.status}`)
 }
 const paginatedBody = await paginatedResponse.json()
-if (paginatedBody.page !== 1 || paginatedBody.pageSize !== 2 || !Number.isInteger(paginatedBody.totalPages) || !Array.isArray(paginatedBody.problems) || paginatedBody.problems.length > 2) {
+if (paginatedBody.page !== 1 || paginatedBody.pageSize !== 2 || !Number.isInteger(paginatedBody.totalPages) || !Array.isArray(paginatedBody.problems) || paginatedBody.problems.length > 2 || paginatedBody.problems.some((problem) => !Array.isArray(problem.topicTags) || !Array.isArray(problem.techniqueTags) || (problem.estimatedMinutes !== null && !Number.isInteger(problem.estimatedMinutes)))) {
   throw new Error('题库分页响应格式不正确')
 }
 console.log('ok /api/oj/problems pagination -> 200')
+
+const invalidCursorResponse = await fetch(`${baseUrl}/api/oj/problems?cursor=invalid`)
+if (invalidCursorResponse.status !== 400) {
+  throw new Error(`/api/oj/problems invalid cursor: expected 400, got ${invalidCursorResponse.status}`)
+}
+const firstCursor = Buffer.from(JSON.stringify({ id: 1 })).toString('base64url')
+const cursorResponse = await fetch(`${baseUrl}/api/oj/problems?cursor=${firstCursor}&pageSize=2`)
+if (cursorResponse.status !== 200) {
+  throw new Error(`/api/oj/problems cursor: expected 200, got ${cursorResponse.status}`)
+}
+const cursorBody = await cursorResponse.json()
+if (!Array.isArray(cursorBody.problems) || cursorBody.problems.length > 2 || (cursorBody.nextCursor !== null && typeof cursorBody.nextCursor !== 'string')) {
+  throw new Error('题库游标分页响应格式不正确')
+}
+console.log('ok /api/oj/problems cursor pagination -> 200')
+
+const relatedSource = paginatedBody.problems[0]
+if (relatedSource?.id) {
+  const relatedProblemsResponse = await fetch(`${baseUrl}/api/oj/problems/${relatedSource.id}/related`)
+  if (relatedProblemsResponse.status !== 200) {
+    throw new Error(`/api/oj/problems/${relatedSource.id}/related: expected 200, got ${relatedProblemsResponse.status}`)
+  }
+  const relatedProblemsBody = await relatedProblemsResponse.json()
+  if (relatedProblemsBody.problemId !== relatedSource.id || !Array.isArray(relatedProblemsBody.problems) || relatedProblemsBody.problems.some((problem) => !problem.id || !problem.title || !problem.matchReason || problem.id === relatedSource.id)) {
+    throw new Error('相近题目接口响应格式不正确')
+  }
+  console.log(`ok /api/oj/problems/${relatedSource.id}/related -> ranked problem metadata`)
+
+  const detailResponse = await fetch(`${baseUrl}/api/oj/problems/${relatedSource.id}`)
+  if (detailResponse.status !== 200) {
+    throw new Error(`/api/oj/problems/${relatedSource.id}: expected 200, got ${detailResponse.status}`)
+  }
+  const detailBody = await detailResponse.json()
+  if ('learningPaths' in (detailBody.problem || {})) {
+    throw new Error('题目详情不应返回学习路径字段')
+  }
+  console.log(`ok /api/oj/problems/${relatedSource.id} -> problem detail`)
+} else {
+  console.log('related problem smoke skipped: no published problems')
+}
 
 for (const asset of decorationAssets) {
   if (!fs.existsSync(path.join(projectRoot, asset))) throw new Error(`缺少装饰资源：${asset}`)

@@ -1,7 +1,13 @@
 import bcrypt from 'bcryptjs'
 import { createHash, randomBytes } from 'crypto'
-import { getDb } from '../db.js'
-import { getAuthToken, getUserByToken, requireUser } from '../middleware/auth.js'
+import { getDb, getIdentityDb } from '../db.js'
+import {
+  clearSessionCookie,
+  getAuthToken,
+  getUserByToken,
+  requireUser,
+  setSessionCookie,
+} from '../middleware/auth.js'
 import { serializeUser } from '../utils/userHelpers.js'
 import { recalculateUserRating } from '../stats.js'
 import { checkLoginLock, getLoginFailureCount, recordLoginFailure, clearLoginFailures } from '../utils/loginGuard.js'
@@ -17,6 +23,8 @@ import {
   isValidEmail,
   normalizeEmail,
 } from '../utils/emailVerification.js'
+import { createAccountSubject } from '../utils/accountIdentityMigration.js'
+import { changeAccountPassword } from '../services/accountLifecycle.js'
 
 const createToken = () => randomBytes(24).toString('hex')
 export const getSessionFingerprint = (token) => createHash('sha256').update(String(token)).digest('hex').slice(0, 16)
@@ -238,10 +246,13 @@ export const register = async (req, res) => {
 
   const passwordHash = await bcrypt.hash(password, 10)
   const createdAt = new Date().toISOString()
+  const accountSubject = createAccountSubject()
   await db.run(
-    `INSERT INTO users (id, name, password_hash, email, email_verified_at, is_admin, is_banned, created_at)
-     VALUES (?, ?, ?, ?, ?, 0, 0, ?)`,
-    id, name, passwordHash, email, createdAt, createdAt
+    `INSERT INTO users (
+       id, name, password_hash, email, email_verified_at, is_admin, is_banned,
+       account_subject, account_status, created_at
+     ) VALUES (?, ?, ?, ?, ?, 0, 0, ?, 'active', ?)`,
+    id, name, passwordHash, email, createdAt, accountSubject, createdAt
   )
   await db.run(`DELETE FROM email_verifications WHERE email = ?`, email)
   const token = createToken()
@@ -249,6 +260,7 @@ export const register = async (req, res) => {
     `INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)`,
     token, id, new Date().toISOString()
   )
+  setSessionCookie(res, token)
   return res.json({
     token,
     user: { id, name, email, isAdmin: false, isBanned: false, avatar: null },
@@ -335,7 +347,9 @@ export const login = async (req, res) => {
   }
   const db = await getDb()
   const user = await db.get(
-    `SELECT id, name, password_hash, email, is_admin, is_banned, avatar, avatar_frame, avatar_overlay, equipped_title, onboarded_at FROM users WHERE id = ?`,
+    `SELECT id, name, password_hash, email, is_admin, is_banned, account_status,
+            avatar, avatar_frame, avatar_overlay, equipped_title, onboarded_at
+     FROM users WHERE id = ?`,
     id
   )
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
@@ -343,7 +357,10 @@ export const login = async (req, res) => {
     return res.status(401).json({ message: 'ID 或密码错误' })
   }
   clearLoginFailures(clientIp)
-  if (user.is_banned) {
+  if (user.account_status === 'deleted') {
+    return res.status(401).json({ message: 'ID 或密码错误' })
+  }
+  if (user.is_banned || user.account_status !== 'active') {
     return res.status(403).json({ message: '账号已被封禁' })
   }
   await recalculateUserRating(db, user.id)
@@ -352,6 +369,7 @@ export const login = async (req, res) => {
     `INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)`,
     token, user.id, new Date().toISOString()
   )
+  setSessionCookie(res, token)
   const serialized = await serializeUser(db, user)
   return res.json({ token, user: serialized })
 }
@@ -366,7 +384,7 @@ export const getMe = async (req, res) => {
   if (!user) {
     return res.status(401).json({ message: '登录已失效' })
   }
-  if (user.is_banned) {
+  if (user.is_banned || user.account_status !== 'active') {
     await db.run(`DELETE FROM sessions WHERE token = ?`, token)
     return res.status(403).json({ message: '账号已被封禁' })
   }
@@ -377,10 +395,12 @@ export const getMe = async (req, res) => {
 export const logout = async (req, res) => {
   const token = getAuthToken(req)
   if (!token) {
+    clearSessionCookie(res)
     return res.status(204).end()
   }
   const db = await getDb()
   await db.run(`DELETE FROM sessions WHERE token = ?`, token)
+  clearSessionCookie(res)
   return res.status(204).end()
 }
 
@@ -482,10 +502,14 @@ export const updatePassword = async (req, res) => {
     return res.status(400).json({ message: '旧密码错误' })
   }
   const passwordHash = await bcrypt.hash(newPassword, 10)
-  await db.run(`UPDATE users SET password_hash = ? WHERE id = ?`, passwordHash, user.id)
-  // 密码变更后注销其他设备，当前会话保持有效，避免旧 Token 继续可用。
-  await db.run(`DELETE FROM sessions WHERE user_id = ? AND token != ?`, user.id, token)
-  return res.json({ ok: true, revokedOtherSessions: true })
+  await changeAccountPassword(await getIdentityDb(), { accountId: user.id, passwordHash })
+  clearSessionCookie(res)
+  return res.json({
+    ok: true,
+    revokedOtherSessions: true,
+    revokedAllSessions: true,
+    requiresLogin: true,
+  })
 }
 
 export const updateAvatar = async (req, res) => {

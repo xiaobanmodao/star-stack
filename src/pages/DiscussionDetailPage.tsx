@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Bookmark, Flag, Heart, Mail, X } from 'lucide-react'
 import { useAppContext } from '../context/AppContext'
 import { fetchJson, formatTime, htmlToPlainText } from '../utils'
 import { renderRichText } from '../utils/richText'
 import type { DiscussionPost, DiscussionComment, DiscussionDetailResponse } from '../types'
-import { Badge, Button, EmptyState, PageHeader, Panel } from '../components/ui'
+import { Badge, Button, EmptyState, IconButton, PageHeader, Panel } from '../components/ui'
 import DecoratedAvatar from '../components/profile/DecoratedAvatar'
 import RichTextEditor from '../components/RichTextEditor'
 import ReportModal from '../components/ReportModal'
@@ -177,16 +178,14 @@ export default function DiscussionDetailPage() {
           {comment.userDisplayTitle && <span className="discussion-author-title">{comment.userDisplayTitleIcon || '✦'} {comment.userDisplayTitle}</span>}
         </span>
         {currentUser && currentUser.id !== comment.userId && (
-          <button
+          <IconButton
             className="send-message-btn small"
+            icon={<Mail size={12} strokeWidth={1.8} />}
+            label={`给 ${comment.userName} 发送私信`}
+            tooltip="发送私信"
             onClick={() => navigate(`/messages/${comment.userId}`)}
-            title="发送私信"
-          >
-            <svg viewBox="0 0 24 24" width="12" height="12">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-              <polyline points="22,6 12,13 2,6" />
-            </svg>
-          </button>
+            size="sm"
+          />
         )}
         {comment.replyToName && (
           <span className="comment-reply-to">
@@ -197,8 +196,8 @@ export default function DiscussionDetailPage() {
       </div>
       <div className="comment-body" dangerouslySetInnerHTML={{ __html: renderRichText(comment.content) }} />
       <div className="comment-actions">
-        <button className={`like-btn ${comment.liked ? 'liked' : ''}`} onClick={() => handleLikeComment(comment.id)}>
-          <svg viewBox="0 0 24 24"><path d="M12 21C12 21 3 13.5 3 8.5C3 5.42 5.42 3 8.5 3C10.24 3 11.91 3.81 12 5C12.09 3.81 13.76 3 15.5 3C18.58 3 21 5.42 21 8.5C21 13.5 12 21 12 21Z" /></svg>
+        <button className={`like-btn ${comment.liked ? 'liked' : ''}`} onClick={() => handleLikeComment(comment.id)} aria-pressed={comment.liked}>
+          <Heart size={15} strokeWidth={1.8} aria-hidden="true" />
           {comment.likeCount}
         </button>
         <button className="reply-btn" onClick={() => setReplyTo({ id: comment.id, name: comment.userName })}>回复</button>
@@ -282,24 +281,22 @@ export default function DiscussionDetailPage() {
                 {post.userDisplayTitle && <span className="discussion-author-title">{post.userDisplayTitleIcon || '✦'} {post.userDisplayTitle}</span>}
               </span>
               {currentUser && currentUser.id !== post.userId && (
-                <button
+                <IconButton
                   className="send-message-btn"
+                  icon={<Mail size={14} strokeWidth={1.8} />}
+                  label={`给 ${post.userName} 发送私信`}
+                  tooltip="发送私信"
                   onClick={() => navigate(`/messages/${post.userId}`)}
-                  title="发送私信"
-                >
-                  <svg viewBox="0 0 24 24" width="14" height="14">
-                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-                    <polyline points="22,6 12,13 2,6" />
-                  </svg>
-                </button>
+                  size="sm"
+                />
               )}
               <span className="post-time">{formatTime(post.createdAt)}</span>
               <span className="post-views">浏览 {post.viewCount}</span>
             </div>
             <div className="post-content" dangerouslySetInnerHTML={{ __html: renderRichText(post.content || '') }} />
              <div className="post-actions">
-               <button className={`like-btn ${post.liked ? 'liked' : ''}`} onClick={handleLikePost}>
-                 <svg viewBox="0 0 24 24"><path d="M12 21C12 21 3 13.5 3 8.5C3 5.42 5.42 3 8.5 3C10.24 3 11.91 3.81 12 5C12.09 3.81 13.76 3 15.5 3C18.58 3 21 5.42 21 8.5C21 13.5 12 21 12 21Z" /></svg>
+               <button className={`like-btn ${post.liked ? 'liked' : ''}`} onClick={handleLikePost} aria-pressed={post.liked}>
+                 <Heart size={15} strokeWidth={1.8} aria-hidden="true" />
                  {post.likeCount}
                </button>
                {currentUser && (
@@ -308,9 +305,7 @@ export default function DiscussionDetailPage() {
                    onClick={() => void handleToggleBookmark()}
                    title={bookmarked ? '取消收藏' : '收藏帖子'}
                  >
-                   <svg viewBox="0 0 24 24">
-                     <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                   </svg>
+                   <Bookmark size={15} strokeWidth={1.8} aria-hidden="true" />
                    收藏
                  </button>
                )}
@@ -320,7 +315,7 @@ export default function DiscussionDetailPage() {
                    onClick={() => setReportTarget({ type: 'post', id: post.id })}
                    title="举报帖子"
                  >
-                   ⚑ 举报
+                   <Flag size={15} strokeWidth={1.8} aria-hidden="true" /> 举报
                  </button>
                )}
                {currentUser && (currentUser.id === post.userId || currentUser.isAdmin) && (
@@ -353,7 +348,13 @@ export default function DiscussionDetailPage() {
                 {replyTo && (
                   <div className="reply-hint">
                     回复 {replyTo.name}
-                    <button onClick={() => setReplyTo(null)}>x</button>
+                    <IconButton
+                      className="reply-hint-close"
+                      icon={<X size={13} strokeWidth={1.8} />}
+                      label="取消回复"
+                      onClick={() => setReplyTo(null)}
+                      size="sm"
+                    />
                   </div>
                 )}
                 <RichTextEditor

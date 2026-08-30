@@ -78,4 +78,42 @@ describe('createExecutionQueue', () => {
     expect(cancelledRunCount).toBe(0)
     gate.resolve()
   })
+
+  it('round-robins keyed work and limits active work per key', async () => {
+    const queue = createExecutionQueue({ maxActive: 1, maxActivePerKey: 1, maxQueued: 6, maxQueuedPerKey: 4 })
+    const gate = deferred()
+    const started = []
+    const first = queue.enqueue(async () => {
+      started.push('a-1')
+      await gate.promise
+    }, { key: 'a' })
+    const second = queue.enqueue(() => { started.push('a-2') }, { key: 'a' })
+    const third = queue.enqueue(() => { started.push('b-1') }, { key: 'b' })
+
+    await flush()
+    expect(started).toEqual(['a-1'])
+    gate.resolve()
+    await Promise.all([first.promise, second.promise, third.promise])
+    expect(started).toEqual(['a-1', 'b-1', 'a-2'])
+    expect(queue.getMetrics()).toMatchObject({ accepted: 3, completed: 3, failed: 0, cancelled: 0 })
+  })
+
+  it('allows active work when the waiting capacity is zero', async () => {
+    const queue = createExecutionQueue({ maxActive: 1, maxQueued: 0 })
+    const task = queue.enqueue(() => 'ok')
+    expect(task.accepted).toBe(true)
+    expect(queue.isFull()).toBe(true)
+    await expect(task.promise).resolves.toBe('ok')
+  })
+
+  it('rejects work when zero waiting capacity is already busy', async () => {
+    const queue = createExecutionQueue({ maxActive: 1, maxQueued: 0 })
+    const gate = deferred()
+    queue.enqueue(() => gate.promise)
+    const rejected = queue.enqueue(() => 'should-not-run')
+
+    expect(rejected.accepted).toBe(false)
+    await expect(rejected.promise).rejects.toMatchObject({ code: 'QUEUE_FULL' })
+    gate.resolve()
+  })
 })

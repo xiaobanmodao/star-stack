@@ -38,6 +38,8 @@ API 使用相对路径 `/api/...`，后端启用了 CORS，前后端分开启动
 
 生产环境使用 Node.js 22、PM2、Nginx 和 SQLite，完整的首次部署、日常更新、数据库迁移、备份恢复与 HTTPS 流程见 [DEPLOYMENT.md](./DEPLOYMENT.md)。
 
+下一阶段的内容体系、页面体验、性能、后端和安全开发规范见 [NEXT_PHASE_DEVELOPMENT_PLAN.md](./NEXT_PHASE_DEVELOPMENT_PLAN.md)。
+
 核心接口烟测：`npm run test:smoke`；本地监控、管理员审核和评测队列压力测试见 [DEPLOYMENT.md](./DEPLOYMENT.md)，压力脚本默认拒绝公网目标。
 
 ## 管理员初始化
@@ -74,7 +76,11 @@ API 使用相对路径 `/api/...`，后端启用了 CORS，前后端分开启动
 
 OJ
 - `GET /api/oj/problems`
-- `GET /api/oj/problems/:id`
+- `GET /api/oj/problems` 支持 `page`、`pageSize`、`search`、`difficulty`、`tag` 和 `solved` 筛选参数
+- `GET /api/oj/problems/:id`（题目详情）
+- `GET /api/oj/problems/:id/related`（按难度和标签返回相近公开题目）
+- `GET /api/my-problems`、`GET /api/problems/:id/edit`（题目编辑时返回知识点、技巧、预计用时和内容质量元数据）
+- `POST /api/problems`、`PUT /api/problems/:id`（兼容保存题目元数据；质量/题解状态仅管理员可修改）
 - `POST /api/oj/submissions`（真实判题）
 - `POST /api/oj/submissions/stream`（SSE 实时评测结果）
 - `POST /api/oj/submissions/:id/cancel`（取消尚未开始的排队提交）
@@ -85,6 +91,7 @@ OJ
 - `POST /api/oj/run-sample`
 - `POST /api/oj/run-custom`
 - `GET /api/health`（服务与评测队列健康状态）
+- `GET /api/leaderboard`（练习 Rating 总榜、周榜和月榜）
 - `GET /api/problems/:id/revisions`（题目版本历史）
 - `POST /api/problems/:id/revisions/:revisionId/restore`（恢复题目版本）
 - `POST /api/problems/:id/submit-review`（作者提交审核）
@@ -93,12 +100,23 @@ OJ
 
 提交评测会先持久化为 `Queued`，随后进入有并发上限的评测队列；服务重启会恢复未完成的评测，前端也会通过提交记录继续轮询状态。
 
+练习 Rating 以 1000 为展示基线，按照已通过题目的难度累积计算，当前只用于长期训练进度和排行榜观察；它不等同于正式比赛 Rating，后续赛事模块会独立结算竞赛分。
+
+题目内容元数据使用 `topicTags`、`techniqueTags`、`estimatedMinutes`、`recommendedFor`、`qualityStatus`、`editorialStatus` 和 `revisionSummary`。旧题目通过兼容迁移默认为空元数据、`unchecked` 和 `none`，不会改写历史题目或提交；普通作者修改题目后会重新进入草稿并回到“未检查”。
+
 ### API 错误与恢复约定
 
 - 认证接口统一使用 `{ message: "..." }` 返回业务错误；未登录或会话失效返回 HTTP `401`。
 - 前端 `fetchJson` 会自动附带 Bearer Token，并将网络失败、超时和取消规范化；收到 `401` 会清理本地会话并回到登录页，同时保留原访问路径。
 - SSE 评测流断开后，页面会切换到提交记录轮询；用户可以取消仍在 `Queued` 阶段的提交，评测服务不可用时会显示可重试的 `Judge Error`。
 - 评测沙箱不可用时不会降级为宿主机直接执行。编译和运行均需通过 Linux namespace、资源限制和 `timeout` 预检。
+
+### 分页、会话与发布安全约定
+
+- 题库支持兼容旧版的 `page`/`pageSize` 分页，也支持 `cursor` 游标分页；聊天私信和通知接口同样返回不透明的 `nextCursor`，客户端不得自行解析游标内容。
+- 登录成功后同时写入 HttpOnly 会话 Cookie；Bearer Token 继续兼容已有客户端。生产 Cookie 使用 `Secure`、`SameSite=Lax`，Cookie 写请求会校验 Origin/Referer。
+- 提交评测最多读取 200 个测试点，样例/自定义运行沿用同一评测资源限制，自定义输入最大 3MB；队列按用户限制并发和排队容量，并在健康接口报告等待与运行指标。
+- 数据库发布前使用 SQLite 一致性快照备份，`npm run db:verify` 和 `npm run db:verify-backup` 会检查完整性、外键、核心字段和关键索引。
 
 后台（用户管理）
 - `GET /api/admin/users`
@@ -128,6 +146,8 @@ OJ
 - `server/index.js` API 主入口
 - `server/judge.js` 判题与运行逻辑（C++/Java/Python，含预热机制）
 - `server/db.js` 数据库初始化
+- `server/identity/` Hydra Login/Consent、Token Hook、UserInfo 和受控 Public 代理
+- `infra/identity/` 固定版本的本地 Hydra/PostgreSQL 运行时与操作说明
 
 ## 当前维护重点
 
@@ -137,6 +157,50 @@ OJ
 - 依赖审计中暂时没有上游修复版本的条目保留在发布记录中，不通过强制升级破坏当前 React Router、Monaco 或编辑器能力；后续依赖有修复版本时再单独升级验证。
 
 ## 近期变更
+
+### 2026-08-30 - Hydra 身份运行时（本地门禁）
+
+- StarStack 作为 Ory Hydra 的 Login/Consent 应用，继续唯一保存账号、密码、不可变 `account_subject` 与账号状态；Hydra 独立保存 OAuth2/OIDC 协议对象。
+- 新增认证世代、账号中心会话、持久化撤销 outbox、自定义 Logout Broker、Token Hook 与最小 UserInfo；公开账号页、UserInfo 与私网安全操作使用隔离 SQLite 连接及有界队列，账号封禁、密码安全变更和全局退出在 Hydra 物理撤销窗口内失败关闭。
+- 身份入口增加每源/全局限流、有效 CSRF 后才消费的 HMAC 账号密码预算、512 条交互容量、每账号/客户端 16 个 active SID、每账号 16 条/全局 4,096 条账号中心会话，以及 Outbox 绝对/未解决/单世代三层上限和固定小批量 drain；密码预算键与账号精确查询一致，保留大小写和 Unicode 差异，不会让可共存账号共享限流桶。未完成授权的账号会话保持 provisional，并在 Hydra/Consent/SID 容量失败时撤销。失败的旧标签页响应不会删除其他标签页新建立的账号 Cookie，仅成功全局退出会清 Cookie。OIDC SID 显式 30 天过期并保留未完成撤销。Hydra 本地工具只允许精确的 loopback `hydra_test` DSN，坏 DSN 会在任何迁移或进程启动前失败关闭。
+- `jieya-server-local` 使用 Authorization Code + PKCE S256、`client_secret_basic` 与精确本地 callback；浏览器不应持有 StarStack Token，Jieya BFF 负责创建自己的应用会话。
+- Hydra Public 代理仅转发按版本、环境和固定 Client ID 计算出的精确 Hydra Cookie；账号中心 Cookie 双向隔离，Hydra Cookie 固定为 `/oauth2`、`HttpOnly`、`SameSite=Lax`（生产再强制 `Secure`）。身份表单使用 `Referrer-Policy: same-origin`，与 exact Origin/Referer + CSRF 校验保持一致且不向跨源泄漏路径。
+- OIDC 默认关闭；启用时 issuer 在开发环境固定为 `http://auth.localhost:5174`、生产固定为 `https://auth.xingzhan.cc`。Hydra Public/Admin origin 仅接受完整私网 IP、`localhost` 或单标签容器服务名，拒绝伪装成私网前缀的公网 DNS。本地精确 `hydra_test` DSN 只允许机器级唯一、当前 UID 所有且 mode-`0600` 的 canonical 凭据；Secret、fixture SQLite 与运行锁统一位于 checkout 外的 DSN 指纹状态目录，所有安全文件均要求单一 hard-link。fixture SQLite 主库由父子进程共同固定 inode，服务端以 `SQLITE_OPEN_NOFOLLOW` 打开，在每个 WAL/DDL/DML 写入阶段前复核目录和主库，并在 ready 前复核 rollback journal、WAL 与 SHM；这能失败关闭预存不安全路径、事故和遵守运行锁的同 UID worktree 冲突，但不宣称抵御恶意同 UID 的校验/VFS 精确竞态。协议门禁会将凭据与 Hydra 数据库作为一个单元轮换重建，并在实际 `run-local` 重启后通过真实签发 ID Token 的 header `kid` 验证公开 JWKS 和 signing key 连续性。尚未接入生产 DNS/Nginx/PM2，真实 Hydra v26.2.0 + PostgreSQL 16.15 的启动、协议测试、中断恢复、威胁边界与停止线见 `infra/identity/README.md`。
+
+### 2026-08-27 - 练习 Rating 基础能力
+
+- 统一练习 Rating 的展示基线和历史记录换算，保留数据库中原有难度权重，避免改写历史用户数据。
+- 恢复排行榜页面入口，支持总榜、周榜和月榜，用户菜单增加排行榜入口。
+- 个人主页增加练习 Rating 统计卡片和走势说明；正式比赛 Rating 暂不与练习分混用。
+
+### 2026-08-29 - 题目内容元数据与质量状态
+
+- 题目编辑支持知识点、解题技巧、预计用时、适合人群和本次修改说明。
+- 管理员可以在题目编辑页维护内容质量和题解状态，并在题目审核列表按质量状态筛选。
+- 旧数据库通过兼容字段迁移补齐默认值，历史版本恢复会同步保留元数据；普通作者修改后自动回到未检查状态。
+- 题库详情展示可用的知识点、技巧和预计用时，方便用户判断下一道训练题。
+
+### 2026-08-29 - 移除学习路径功能
+
+- 移除学习路径页面、题库学习路径筛选、题目详情路径上下文和对应公开 API。
+- 停止初始化新的学习路径数据；已有 SQLite 中的历史路径表保留为不再使用的兼容数据，不影响用户、题目和提交记录。
+
+### 2026-08-27 - 提交反馈闭环与相近题目
+
+- 评测结果页按 Accepted、答案错误、编译/运行超时和评测服务异常提供对应的继续操作入口。
+- 失败提交可以直接返回 IDE、查看题解、查看题目讨论和提交记录；评测服务异常可直接重试。
+- 通过提交可以继续浏览题库、查看题解、提交记录和成长记录，减少评测结果页的流程断点。
+- 新增 `GET /api/oj/problems/:id/related`，根据题目难度和标签返回最多 4 道相近公开题目；接口只读，不修改数据库结构和历史数据。
+- 评测结果页展示相近题目时固定卡片布局，已通过状态不会改变列表尺寸。
+
+### 2026-08-27 - 体验、性能与安全收口
+
+- 评测/沙箱队列增加按用户公平轮转、并发与排队上限、取消统计和等待/运行耗时指标，避免单个用户占满资源。
+- SQLite 增加 busy timeout、聊天/通知/题库查询索引和游标分页兼容；健康检查改为稳定使用服务端数据库路径。
+- 增加 HttpOnly Cookie 会话和 Cookie 请求来源校验，同时保留 Bearer Token 兼容；严格校验聊天、点赞、收藏、邀请链接、计划和评测输入。
+- 限制异常题目测试点数量和自定义输入大小，修复邀请链接并发超额消耗、点赞/收藏竞态和跨房间已读校验。
+- 顶部通知、聊天室成员、好友与聊天身份展示统一补充头像框、叠加层和称号；图片失败时仍回退为固定尺寸头像。
+- 完成发布门禁：lint、68 项单测、生产构建、依赖审计、数据库/备份恢复校验、API smoke、200 并发健康压力测试，以及浅色/深色三种视口对比度审计。
 
 ### 2026-08-25 - 站内装饰与资料中心发布收口
 

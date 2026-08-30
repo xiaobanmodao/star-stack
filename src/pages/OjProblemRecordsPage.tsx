@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import CustomSelect from '../components/CustomSelect'
@@ -52,9 +52,10 @@ export default function OjProblemRecordsPage() {
   const [recordsPageInput, setRecordsPageInput] = useState('1')
   const [statusFilter, setStatusFilter] = useState('')
   const [languageFilter, setLanguageFilter] = useState('')
+  const requestAbortRef = useRef<AbortController | null>(null)
   const recordsPerPage = 20
 
-  const loadRecords = useCallback(async () => {
+  const loadRecords = useCallback(async (signal?: AbortSignal) => {
     if (!id) {
       setError('题目地址无效')
       return
@@ -66,7 +67,8 @@ export default function OjProblemRecordsPage() {
       params.set('userId', userFilter.trim())
     }
     try {
-      const { response, data } = await fetchJson<SubmissionsResponse>(`/api/oj/submissions/all?${params.toString()}`)
+      const { response, data } = await fetchJson<SubmissionsResponse>(`/api/oj/submissions/all?${params.toString()}`, { signal })
+      if (signal?.aborted) return
       if (!response.ok) {
         setError(data?.message || '无法加载记录')
         return
@@ -75,17 +77,23 @@ export default function OjProblemRecordsPage() {
       setRecordsPage(1)
       setRecordsPageInput('1')
     } catch {
-      setError('网络异常，暂时无法加载记录')
+      if (!signal?.aborted) setError('网络异常，暂时无法加载记录')
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
   }, [id, userFilter])
 
   useEffect(() => {
+    const controller = new AbortController()
+    requestAbortRef.current?.abort()
+    requestAbortRef.current = controller
     const timer = window.setTimeout(() => {
-      void loadRecords()
+      void loadRecords(controller.signal)
     }, 0)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
   }, [loadRecords])
 
   const handleRecordClick = (recordId: number) => {
@@ -217,7 +225,7 @@ export default function OjProblemRecordsPage() {
           }}
           options={LANGUAGE_OPTIONS}
         />
-        <Button variant="secondary" onClick={loadRecords}>
+        <Button variant="secondary" onClick={() => void loadRecords()}>
           搜索
         </Button>
         <Button variant="ghost" onClick={() => {

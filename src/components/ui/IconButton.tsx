@@ -5,6 +5,7 @@ type IconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label
   icon: ReactNode
   label: string
   tooltip?: string
+  badge?: ReactNode
   size?: 'sm' | 'md'
 }
 
@@ -12,6 +13,7 @@ export default function IconButton({
   icon,
   label,
   tooltip,
+  badge,
   size = 'md',
   className,
   type = 'button',
@@ -26,6 +28,7 @@ export default function IconButton({
       title={tooltip || label}
     >
       <span aria-hidden="true">{icon}</span>
+      {badge !== undefined && badge !== null && <span className="ui-icon-button-badge">{badge}</span>}
     </button>
   )
 }

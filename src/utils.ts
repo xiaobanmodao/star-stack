@@ -111,8 +111,8 @@ export const fetchJson = async <T = unknown>(url: string, options: FetchJsonOpti
     externalSignal?.removeEventListener('abort', abortFromExternal)
   }
 
-  if (response.status === 401 && token && !skipAuthExpiry) {
-    localStorage.removeItem(TOKEN_KEY)
+  if (response.status === 401 && !skipAuthExpiry) {
+    if (token) localStorage.removeItem(TOKEN_KEY)
     window.dispatchEvent(new CustomEvent('starstack:auth-expired', {
       detail: { from: `${window.location.pathname}${window.location.search}${window.location.hash}` },
     }))

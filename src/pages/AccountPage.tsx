@@ -15,6 +15,7 @@ import type {
 } from '../types'
 import { fetchJson } from '../utils'
 import { OJ_ENABLED } from '../constants'
+import { aggregateDifficultyStats, getDifficultyClassName, getDifficultyLabel } from '../utils/difficulty'
 import type { FollowRelations, UserProfileResponse } from '../types'
 import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import HonorGrid from '../components/profile/HonorGrid'
@@ -132,19 +133,20 @@ export default function AccountPage() {
     if (loadedUserIdRef.current === currentUser.id) return
 
     let mounted = true
+    const controller = new AbortController()
 
     const loadProfileData = async () => {
       setLoading(true)
       setProfileError('')
       try {
         const [statsRes, heatmapRes, achievementsRes, ratingRes] = await Promise.all([
-          fetchJson<ProfileStatsResponse>(`/api/user/profile/${currentUser.id}`),
-          fetchJson<{ heatmap: HeatmapResponse }>(`/api/user/heatmap/${currentUser.id}`),
-          fetchJson<UserAchievementsResponse>(`/api/user/achievements/${currentUser.id}`),
-          fetchJson<{ history: { date: string; rating: number }[] }>(`/api/user/rating-history/${currentUser.id}`),
+          fetchJson<ProfileStatsResponse>(`/api/user/profile/${currentUser.id}`, { signal: controller.signal }),
+          fetchJson<{ heatmap: HeatmapResponse }>(`/api/user/heatmap/${currentUser.id}`, { signal: controller.signal }),
+          fetchJson<UserAchievementsResponse>(`/api/user/achievements/${currentUser.id}`, { signal: controller.signal }),
+          fetchJson<{ history: { date: string; rating: number }[] }>(`/api/user/rating-history/${currentUser.id}`, { signal: controller.signal }),
         ])
 
-        if (!mounted) return
+        if (!mounted || controller.signal.aborted) return
 
         const failed = [statsRes, heatmapRes, achievementsRes, ratingRes].some((item) => !item.response.ok)
 
@@ -165,7 +167,7 @@ export default function AccountPage() {
         console.error('Failed to load profile data:', error)
         setProfileError('网络异常，暂时无法加载成长数据。')
       } finally {
-        if (mounted) setLoading(false)
+        if (mounted && !controller.signal.aborted) setLoading(false)
       }
     }
 
@@ -173,63 +175,79 @@ export default function AccountPage() {
 
     return () => {
       mounted = false
+      controller.abort()
     }
   }, [currentUser, profileReloadKey])
 
   // 加载自己的关注/粉丝数据（与做题功能无关，始终显示）
   useEffect(() => {
     if (!currentUser?.id) return
+    const controller = new AbortController()
     const timer = window.setTimeout(() => {
-      void fetchJson<UserProfileResponse>(`/api/users/${currentUser.id}/profile`).then(({ response, data }) => {
-        if (response.ok && data) setRelations(data.relations)
+      void fetchJson<UserProfileResponse>(`/api/users/${currentUser.id}/profile`, { signal: controller.signal }).then(({ response, data }) => {
+        if (!controller.signal.aborted && response.ok && data) setRelations(data.relations)
       }).catch(() => {
-        setProfileError('关注关系加载失败，其他内容仍可正常使用。')
+        if (!controller.signal.aborted) setProfileError('关注关系加载失败，其他内容仍可正常使用。')
       })
     }, 0)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
   }, [currentUser])
 
   useEffect(() => {
     if (!currentUser?.id) return
+    const controller = new AbortController()
     const timer = window.setTimeout(() => {
-      void fetchJson<{ problems: { id: number; title: string; difficulty?: string; createdAt: string }[] }>('/api/bookmarks?targetType=problem')
+      void fetchJson<{ problems: { id: number; title: string; difficulty?: string; createdAt: string }[] }>('/api/bookmarks?targetType=problem', { signal: controller.signal })
         .then(({ response, data }) => {
-          if (response.ok && data) setProblemBookmarks(data.problems || [])
+          if (!controller.signal.aborted && response.ok && data) setProblemBookmarks(data.problems || [])
         })
         .catch(() => {
-          setProfileError('题目收藏加载失败，其他内容仍可正常使用。')
+          if (!controller.signal.aborted) setProfileError('题目收藏加载失败，其他内容仍可正常使用。')
         })
     }, 0)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
   }, [currentUser])
 
   // 加载我的收藏
   useEffect(() => {
     if (!currentUser?.id) return
+    const controller = new AbortController()
     const timer = window.setTimeout(() => {
       void fetchJson<{ posts: { id: number; title: string; userName: string; commentCount: number; createdAt: string }[] }>(
-        '/api/bookmarks?targetType=post'
+        '/api/bookmarks?targetType=post',
+        { signal: controller.signal },
       ).then(({ response, data }) => {
-        if (response.ok && data) setBookmarks(data.posts || [])
+        if (!controller.signal.aborted && response.ok && data) setBookmarks(data.posts || [])
       }).catch(() => {
-        setProfileError('帖子收藏加载失败，其他内容仍可正常使用。')
+        if (!controller.signal.aborted) setProfileError('帖子收藏加载失败，其他内容仍可正常使用。')
       })
     }, 0)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
   }, [currentUser])
 
   // 加载每日签到状态（独立于做题数据，始终显示）
   useEffect(() => {
     if (!currentUser?.id) return
     let mounted = true
-    void fetchJson<CheckinResponse>('/api/me/checkin').then(({ response, data }) => {
+    const controller = new AbortController()
+    void fetchJson<CheckinResponse>('/api/me/checkin', { signal: controller.signal }).then(({ response, data }) => {
       if (mounted && response.ok && data) setCheckin(data)
       else if (mounted) setCheckinError(data?.message || '签到状态加载失败，请重试。')
     }).catch(() => {
-      if (mounted) setCheckinError('网络异常，签到状态暂时无法加载，请重试。')
+      if (mounted && !controller.signal.aborted) setCheckinError('网络异常，签到状态暂时无法加载，请重试。')
     })
     return () => {
       mounted = false
+      controller.abort()
     }
   }, [currentUser])
 
@@ -286,9 +304,10 @@ export default function AccountPage() {
   const acceptedCount = stats.acceptedCount ?? 0
   const totalSubmissions = stats.totalSubmissions ?? 0
   const acceptanceRate = stats.acceptanceRate ?? 0
+  const rating = stats.rating ?? currentUser.rating ?? 1000
   const recentActiveDays = getRecentActiveDays(heatmapData)
   const ratingDelta = getRatingDelta(ratingHistory)
-  const difficultyEntries = Object.entries(difficultyStats)
+  const difficultyEntries = aggregateDifficultyStats(difficultyStats)
   const maxDifficultySolved = Math.max(...difficultyEntries.map(([, item]) => getDifficultySolved(item)), 1)
 
   return (
@@ -389,6 +408,10 @@ export default function AccountPage() {
             <div className="stat-value">{acceptanceRate.toFixed(1)}%</div>
             <div className="stat-label">通过率</div>
           </Panel>
+          <Panel className="stat-card profile-rating-stat-card">
+            <div className="stat-value">{Math.round(rating)}</div>
+            <div className="stat-label">练习 Rating</div>
+          </Panel>
         </div>
 
         <Panel className="heatmap-container profile-activity-panel">
@@ -446,7 +469,9 @@ export default function AccountPage() {
                 return (
                   <div key={difficulty} className="difficulty-card profile-difficulty-card">
                     <div className="difficulty-header">
-                      <span className={`difficulty-tag ${difficulty}`}>{difficulty}</span>
+                      <span className={`difficulty-tag ${getDifficultyClassName(difficulty)}`}>
+                        {getDifficultyLabel(difficulty)}
+                      </span>
                       <strong>{solved}</strong>
                     </div>
                     <div className="profile-difficulty-track">
@@ -481,7 +506,7 @@ export default function AccountPage() {
             <div className="profile-panel-head">
               <div>
                 <div className="profile-kicker">Rating</div>
-                <h2>等级分走势</h2>
+                <h2>练习 Rating 走势</h2>
               </div>
               <span>{ratingDelta >= 0 ? '+' : ''}{ratingDelta}</span>
             </div>
@@ -595,7 +620,7 @@ export default function AccountPage() {
                 <button key={bookmark.id} type="button" onClick={() => navigate(`/oj/p${bookmark.id}`)}>
                   <span className="profile-bookmark-title">P{bookmark.id} · {bookmark.title}</span>
                   <span className="profile-bookmark-meta">
-                    {bookmark.difficulty || '未分类'} · {new Date(bookmark.createdAt).toLocaleDateString('zh-CN')}
+                    {bookmark.difficulty ? getDifficultyLabel(bookmark.difficulty) : '未分类'} · {new Date(bookmark.createdAt).toLocaleDateString('zh-CN')}
                   </span>
                 </button>
               ))}

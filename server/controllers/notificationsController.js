@@ -4,6 +4,9 @@ import { getDb } from '../db.js'
 import { requireUser } from '../middleware/auth.js'
 import { BoundedCache } from '../utils/boundedCache.js'
 import { isTrustedPushEndpoint } from '../utils/pushEndpoint.js'
+import { decodePositiveIntegerCursor, encodeCursor } from '../utils/cursor.js'
+import { getDecorationIdentity, getUnlockedAchievementTypeMap } from '../utils/decorations.js'
+import { getLevelInfo } from '../stats.js'
 
 const pushSubscriptionRateLimits = new BoundedCache(5000, 60 * 1000)
 const MAX_PUSH_ENDPOINT_LENGTH = 2048
@@ -119,29 +122,55 @@ export const listNotifications = async (req, res) => {
   if (!auth) return
   const { db, user } = auth
   try {
-    const page = Math.max(1, parseInt(req.query.page) || 1)
+    const page = Math.min(10000, Math.max(1, parseInt(req.query.page) || 1))
     const pageSize = Math.min(50, Math.max(1, parseInt(req.query.pageSize) || 20))
-    const offset = (page - 1) * pageSize
+    const cursorRequested = req.query?.cursor !== undefined
+    const cursor = cursorRequested ? decodePositiveIntegerCursor(req.query.cursor) : null
+    if (cursorRequested && !cursor) return res.status(400).json({ message: '无效的分页游标' })
+    const limit = cursorRequested ? pageSize + 1 : pageSize
     const rows = await db.all(
-      `SELECT n.*, u.name as actor_name, u.avatar as actor_avatar
+      `SELECT n.*, u.name as actor_name, u.avatar as actor_avatar,
+              u.avatar_frame as actor_avatar_frame, u.avatar_overlay as actor_avatar_overlay,
+              u.equipped_title as actor_equipped_title, us.xp as actor_xp
        FROM notifications n LEFT JOIN users u ON n.actor_id = u.id
-       WHERE n.user_id = ? ORDER BY n.created_at DESC LIMIT ? OFFSET ?`,
-      user.id, pageSize, offset
+       LEFT JOIN user_stats us ON us.user_id = n.actor_id
+       WHERE n.user_id = ?${cursorRequested ? ' AND n.id < ?' : ''}
+       ORDER BY n.created_at DESC, n.id DESC LIMIT ?${cursorRequested ? '' : ' OFFSET ?'}`,
+      ...(cursorRequested
+        ? [user.id, cursor, limit]
+        : [user.id, limit, (page - 1) * pageSize]),
     )
+    const visibleRows = cursorRequested && rows.length > pageSize ? rows.slice(0, pageSize) : rows
+    const nextCursor = cursorRequested && rows.length > pageSize
+      ? encodeCursor({ id: visibleRows[visibleRows.length - 1]?.id })
+      : null
     const countRow = await db.get(
       `SELECT COUNT(*) as total, SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread FROM notifications WHERE user_id = ?`,
       user.id
     )
+    const achievementMap = await getUnlockedAchievementTypeMap(db, visibleRows.map((row) => row.actor_id))
     return res.json({
-      notifications: rows.map((n) => ({
+      notifications: visibleRows.map((n) => ({
         id: n.id, type: n.type,
-        actor: { id: n.actor_id, name: n.actor_name, avatar: n.actor_avatar },
+        actor: {
+          id: n.actor_id || 'system', name: n.actor_name || '系统通知', avatar: n.actor_avatar,
+          ...getDecorationIdentity(
+            {
+              avatar_frame: n.actor_avatar_frame,
+              avatar_overlay: n.actor_avatar_overlay,
+              equipped_title: n.actor_equipped_title,
+            },
+            getLevelInfo(n.actor_xp || 0),
+            achievementMap.get(n.actor_id),
+          ),
+        },
         message: n.message, targetType: n.target_type, targetId: n.target_id,
         isRead: Boolean(n.is_read), createdAt: n.created_at,
       })),
       unreadCount: countRow?.unread || 0,
       total: countRow?.total || 0,
       page, pageSize,
+      nextCursor,
     })
   } catch (error) {
     console.error('Failed to list notifications:', error)
@@ -168,10 +197,12 @@ export const markNotificationsRead = async (req, res) => {
   const { db, user } = auth
   try {
     const { id, all } = req.body || {}
-    if (all) {
+    if (all === true) {
       await db.run(`UPDATE notifications SET is_read = 1 WHERE user_id = ?`, user.id)
     } else if (id) {
-      await db.run(`UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?`, parseInt(id), user.id)
+      const notificationId = Number(id)
+      if (!Number.isSafeInteger(notificationId) || notificationId <= 0) return res.status(400).json({ message: '无效的通知 ID' })
+      await db.run(`UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?`, notificationId, user.id)
     } else {
       return res.status(400).json({ message: '缺少参数' })
     }

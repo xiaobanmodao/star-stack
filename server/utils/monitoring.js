@@ -1,9 +1,11 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const DEFAULT_BACKUP_DIR = '/www/backup/starstack'
 const BACKUP_MAX_AGE_SECONDS = 26 * 60 * 60
-const DEFAULT_DB_PATH = path.resolve(process.env.DB_PATH || path.join(process.cwd(), 'server', 'data', 'starstack.sqlite'))
+const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const DEFAULT_DB_PATH = path.resolve(process.env.DB_PATH || path.join(SERVER_ROOT, 'data', 'starstack.sqlite'))
 const DATABASE_HEALTH_CACHE_MS = 60 * 1000
 const databaseHealthCache = new WeakMap()
 

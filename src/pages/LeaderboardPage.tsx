@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Badge, Button, EmptyState, ErrorState, PageHeader, Panel } from '../components/ui'
 import type { LeaderboardEntry, LeaderboardResponse } from '../types'
 import { fetchJson } from '../utils'
+import DecoratedAvatar from '../components/profile/DecoratedAvatar'
 import './OpsPages.css'
 
 const leaderboardTabs: { value: 'total' | 'weekly' | 'monthly'; label: string; hint: string }[] = [
@@ -24,9 +25,13 @@ export default function LeaderboardPage() {
   const [error, setError] = useState('')
   const [periodStart, setPeriodStart] = useState<string | null>(null)
   const [periodEnd, setPeriodEnd] = useState<string | null>(null)
+  const requestAbortRef = useRef<AbortController | null>(null)
   const leaderboardPerPage = 20
 
   const loadLeaderboard = useCallback(async () => {
+    requestAbortRef.current?.abort()
+    const controller = new AbortController()
+    requestAbortRef.current = controller
     setLoading(true)
     setError('')
     try {
@@ -39,7 +44,8 @@ export default function LeaderboardPage() {
         periodStart?: string
         periodEnd?: string
         message?: string
-      }>(`/api/leaderboard?page=${leaderboardPage}&perPage=${leaderboardPerPage}&type=${leaderboardType}`)
+      }>(`/api/leaderboard?page=${leaderboardPage}&perPage=${leaderboardPerPage}&type=${leaderboardType}`, { signal: controller.signal })
+      if (controller.signal.aborted) return
       if (response.ok && data) {
         setLeaderboard(data.leaderboard || [])
         setCurrentUserRank(data.currentUser ?? null)
@@ -52,16 +58,20 @@ export default function LeaderboardPage() {
         setError(data?.message || '排行榜暂时无法加载')
       }
     } catch (loadError) {
-      console.error('Failed to load leaderboard:', loadError)
-      setLeaderboard([])
-      setError('网络异常，暂时无法加载排行榜')
+      if (!controller.signal.aborted) {
+        console.error('Failed to load leaderboard:', loadError)
+        setLeaderboard([])
+        setError('网络异常，暂时无法加载排行榜')
+      }
     } finally {
-      setLoading(false)
+      if (!controller.signal.aborted) setLoading(false)
+      if (requestAbortRef.current === controller) requestAbortRef.current = null
     }
   }, [leaderboardPage, leaderboardType])
 
   useEffect(() => {
     void loadLeaderboard()
+    return () => requestAbortRef.current?.abort()
   }, [loadLeaderboard])
 
   const getRankLabel = (rank: number) => {
@@ -148,7 +158,7 @@ export default function LeaderboardPage() {
       <PageHeader
         kicker="Rank Observatory"
         title="排行榜"
-        description="把长期实力、周榜冲刺和月度节奏放在同一个观测台里，用户能更快看到自己和头部选手的距离。"
+        description="练习 Rating 根据已通过题目的难度累积计算，用于观察长期训练进度；正式比赛分会在赛事模块中独立结算。"
         actions={<Button variant="ghost" onClick={() => void loadLeaderboard()} loading={loading}>刷新榜单</Button>}
       />
 
@@ -224,7 +234,7 @@ export default function LeaderboardPage() {
             <div className="leaderboard-row-v2 head">
               <span>排名</span>
               <span>用户</span>
-              <span>{leaderboardType === 'total' ? '等级分' : '通过题目'}</span>
+              <span>{leaderboardType === 'total' ? '练习 Rating' : '通过题目'}</span>
               <span>{leaderboardType === 'total' ? '解题数' : '周期'}</span>
               <span>变化</span>
             </div>
@@ -237,16 +247,19 @@ export default function LeaderboardPage() {
               >
                 <span className="rank-token">{getRankLabel(user.rank)}</span>
                 <span className="leaderboard-user-cell">
-                  <span className="leaderboard-avatar">
-                    {user.avatar ? (
-                      <img src={user.avatar} alt="" loading="lazy" />
-                    ) : (
-                      user.userName.charAt(0).toUpperCase()
-                    )}
-                  </span>
+                  <DecoratedAvatar
+                    avatar={user.avatar}
+                    fallback={user.userName.charAt(0).toUpperCase()}
+                    frame={user.avatarFrame}
+                    overlay={user.avatarOverlay}
+                    size="discussion"
+                    alt=""
+                    className="leaderboard-avatar"
+                  />
                   <span>
                     <strong className="leaderboard-user-name" data-user-name>{user.userName}</strong>
                     <em className="leaderboard-user-id" data-user-id>@{user.userId}</em>
+                    {user.displayTitle && <small className="leaderboard-user-title">{user.displayTitleIcon || '✦'} {user.displayTitle}</small>}
                   </span>
                 </span>
                 <span className="leaderboard-value">

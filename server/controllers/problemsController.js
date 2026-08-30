@@ -4,6 +4,7 @@ import { sanitizeProblemText, addXp } from '../utils/userHelpers.js'
 import { BoundedCache } from '../utils/boundedCache.js'
 import {
   DEFAULT_TESTCASE_TIME_LIMIT_MS,
+  MAX_TESTCASE_COUNT,
   parseTestcaseTimeLimit,
 } from '../utils/testcaseLimits.js'
 import { recordAdminAction } from '../utils/adminAudit.js'
@@ -19,6 +20,15 @@ import {
   getCreatorUpdateStatus,
   normalizeProblemStatus,
 } from '../utils/problemStatus.js'
+import {
+  getDifficultyAliases,
+  normalizeDifficultyForCreate,
+  serializeDifficulty,
+} from '../utils/difficulty.js'
+import { normalizeProblemTags } from '../utils/problemTags.js'
+import { normalizeProblemMetadata, serializeProblemMetadata, serializePublicProblemMetadata } from '../utils/problemMetadata.js'
+import { decodePositiveIntegerCursor, encodeCursor } from '../utils/cursor.js'
+import { getRelatedProblemReason, rankRelatedProblems } from '../utils/relatedProblems.js'
 
 const recordProblemChange = async ({ db, problemId, status, changedBy, snapshot, fromStatus, toStatus, note }) => {
   try {
@@ -41,6 +51,9 @@ const MAX_TEST_DATA_BYTES = 3 * 1024 * 1024
 const normalizeSamples = (samples) => {
   if (!Array.isArray(samples) || samples.length === 0) {
     return { samples: [], error: '请至少添加一个样例' }
+  }
+  if (samples.length > MAX_TESTCASE_COUNT) {
+    return { samples: [], error: `测试点总数不能超过 ${MAX_TESTCASE_COUNT} 个` }
   }
 
   const normalized = []
@@ -118,7 +131,8 @@ export const getDailyProblem = async (req, res) => {
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
   const problems = await db.all(
-    `SELECT id, slug, title, difficulty, tags FROM problems WHERE status = 'published' ORDER BY id ASC`
+    `SELECT id, slug, title, difficulty, tags, topic_tags, technique_tags, estimated_minutes, recommended_for
+     FROM problems WHERE status = 'published' ORDER BY id ASC`
   )
   if (problems.length === 0) {
     return res.json({ problem: null, solvedToday: false, streak: 0, maxStreak: 0 })
@@ -156,8 +170,9 @@ export const getDailyProblem = async (req, res) => {
 
   return res.json({
     problem: picked ? {
-      id: picked.id, slug: picked.slug, title: picked.title, difficulty: picked.difficulty,
+      id: picked.id, slug: picked.slug, title: picked.title, ...serializeDifficulty(picked.difficulty),
       tags: picked.tags ? picked.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
+      ...serializePublicProblemMetadata(picked),
       solved: userId ? solvedSet.has(picked.id) : false,
     } : null,
     solvedToday, streak, maxStreak,
@@ -168,7 +183,10 @@ export const listProblems = async (req, res) => {
   const db = await getDb()
   const { search, tag, difficulty, solved } = req.query || {}
   const paginationRequested = req.query?.page !== undefined || req.query?.pageSize !== undefined
-  const page = Math.max(1, Number.parseInt(String(req.query?.page || '1'), 10) || 1)
+  const cursorRequested = req.query?.cursor !== undefined
+  const cursor = cursorRequested ? decodePositiveIntegerCursor(req.query.cursor) : null
+  if (cursorRequested && !cursor) return res.status(400).json({ message: '无效的分页游标' })
+  const page = Math.min(10000, Math.max(1, Number.parseInt(String(req.query?.page || '1'), 10) || 1))
   const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(req.query?.pageSize || '20'), 10) || 20))
   const where = ['status = ?']
   const params = ['published']
@@ -181,20 +199,24 @@ export const listProblems = async (req, res) => {
       where.push(`(id = ? OR slug LIKE ?)`)
       params.push(Number(problemNumberMatch[1]), `%${problemNumberMatch[1]}%`)
     } else {
-      where.push(`(title LIKE ? OR statement LIKE ? OR tags LIKE ?)`)
-      params.push(`%${trimmedSearch}%`, `%${trimmedSearch}%`, `%${trimmedSearch}%`)
+      where.push(`(title LIKE ? OR statement LIKE ? OR tags LIKE ? OR topic_tags LIKE ? OR technique_tags LIKE ?)`)
+      params.push(`%${trimmedSearch}%`, `%${trimmedSearch}%`, `%${trimmedSearch}%`, `%${trimmedSearch}%`, `%${trimmedSearch}%`)
     }
   }
   if (tag) {
     const tags = tag.split(',').map(t => t.trim()).filter(Boolean)
     if (tags.length > 0) {
-      where.push(`(${tags.map(() => `tags LIKE ?`).join(' AND ')})`)
-      tags.forEach(t => params.push(`%${t}%`))
+      where.push(`(${tags.map(() => `(tags LIKE ? OR topic_tags LIKE ? OR technique_tags LIKE ?)`).join(' AND ')})`)
+      tags.forEach((tagValue) => {
+        const tagPattern = `%${tagValue}%`
+        params.push(tagPattern, tagPattern, tagPattern)
+      })
     }
   }
   if (difficulty) {
-    where.push(`difficulty = ?`)
-    params.push(difficulty)
+    const difficultyAliases = getDifficultyAliases(difficulty)
+    where.push(`difficulty IN (${difficultyAliases.map(() => '?').join(',')})`)
+    params.push(...difficultyAliases)
   }
   if (solved === 'solved' || solved === 'unsolved') {
     if (!user) return res.status(401).json({ message: '登录后才能筛选已解决题目' })
@@ -202,32 +224,44 @@ export const listProblems = async (req, res) => {
     where.push(solved === 'solved' ? existsSql : `NOT ${existsSql}`)
     params.push(user.id)
   }
+  if (cursorRequested) {
+    where.push('problems.id > ?')
+    params.push(cursor)
+  }
   const totalRow = await db.get(
     `SELECT COUNT(*) as total FROM problems WHERE ${where.join(' AND ')}`,
     ...params,
   )
   const total = Number(totalRow?.total || 0)
   const selectParams = user ? [user.id, ...params] : [...params]
-  const paginationSql = paginationRequested ? ' LIMIT ? OFFSET ?' : ''
-  if (paginationRequested) {
+  const paginationSql = cursorRequested ? ' LIMIT ?' : (paginationRequested ? ' LIMIT ? OFFSET ?' : '')
+  if (cursorRequested) {
+    selectParams.push(pageSize + 1)
+  } else if (paginationRequested) {
     selectParams.push(pageSize, (page - 1) * pageSize)
   }
   const rows = await db.all(
-    `SELECT id, slug, title, difficulty, tags, created_at,
+    `SELECT id, slug, title, difficulty, tags, topic_tags, technique_tags, estimated_minutes, recommended_for, created_at,
        (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id AND status = 'Accepted') as ac_count,
        (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id) as total_count,
        ${user ? `EXISTS (SELECT 1 FROM solved_problems sp_user WHERE sp_user.problem_id = problems.id AND sp_user.user_id = ?)` : '0'} as solved
      FROM problems WHERE ${where.join(' AND ')} ORDER BY id ASC${paginationSql}`,
     ...selectParams,
   )
+  const visibleRows = cursorRequested && rows.length > pageSize ? rows.slice(0, pageSize) : rows
+  const nextCursor = cursorRequested && rows.length > pageSize
+    ? encodeCursor({ id: visibleRows[visibleRows.length - 1]?.id })
+    : null
   return res.json({
     total,
-    page: paginationRequested ? page : 1,
-    pageSize: paginationRequested ? pageSize : total,
-    totalPages: paginationRequested ? Math.ceil(total / pageSize) : (total > 0 ? 1 : 0),
-    problems: rows.map((row) => ({
-      id: row.id, slug: row.slug, title: row.title, difficulty: row.difficulty,
+    page: paginationRequested || cursorRequested ? page : 1,
+    pageSize: paginationRequested || cursorRequested ? pageSize : total,
+    totalPages: paginationRequested || cursorRequested ? Math.ceil(total / pageSize) : (total > 0 ? 1 : 0),
+    nextCursor,
+    problems: visibleRows.map((row) => ({
+      id: row.id, slug: row.slug, title: row.title, ...serializeDifficulty(row.difficulty),
       tags: row.tags ? row.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
+      ...serializePublicProblemMetadata(row),
       createdAt: row.created_at,
       acCount: row.ac_count || 0, totalCount: row.total_count || 0,
       passRate: row.total_count > 0 ? Math.round((row.ac_count / row.total_count) * 100) : 0,
@@ -294,10 +328,11 @@ export const getProblem = async (req, res) => {
 
   return res.json({
     problem: {
-      id: row.id, slug: row.slug, title: row.title, difficulty: row.difficulty,
+      id: row.id, slug: row.slug, title: row.title, ...serializeDifficulty(row.difficulty),
       tags: row.tags ? row.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
       statement: row.statement, input: row.input_desc, output: row.output_desc,
       dataRange: row.data_range || '', samples: sampleList,
+      ...serializePublicProblemMetadata(row),
       createdAt: row.created_at, creatorId: row.creator_id, creatorName: row.creator_name, maxScore,
       acCount: problemStats?.ac_count || 0,
       totalCount: problemStats?.total_count || 0,
@@ -306,6 +341,83 @@ export const getProblem = async (req, res) => {
         : 0,
       solved,
     },
+  })
+}
+
+export const listRelatedProblems = async (req, res) => {
+  const db = await getDb()
+  const problemId = Number.parseInt(String(req.params.id), 10)
+  if (!Number.isSafeInteger(problemId) || problemId <= 0) {
+    return res.status(400).json({ message: '无效的题目ID' })
+  }
+
+  const source = await db.get(
+    `SELECT id, difficulty, tags FROM problems WHERE id = ? AND status = 'published'`,
+    problemId,
+  )
+  if (!source) return res.status(404).json({ message: '题目不存在' })
+
+  const sourceTags = String(source.tags || '').split(',').map((tag) => tag.trim()).filter(Boolean)
+  const difficultyAliases = getDifficultyAliases(source.difficulty)
+  const matchClauses = [`difficulty IN (${difficultyAliases.map(() => '?').join(',')})`]
+  const matchParams = [...difficultyAliases]
+  sourceTags.forEach((tag) => {
+    matchClauses.push(`(',' || tags || ',') LIKE ?`)
+    matchParams.push(`%,${tag},%`)
+  })
+
+  const selectColumns = `
+    id, slug, title, difficulty, tags, topic_tags, technique_tags, estimated_minutes, recommended_for, created_at,
+    (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id AND status = 'Accepted') as ac_count,
+    (SELECT COUNT(*) FROM submissions WHERE problem_id = problems.id) as total_count
+  `
+  const matchedRows = await db.all(
+    `SELECT ${selectColumns}
+     FROM problems
+     WHERE status = 'published' AND id <> ? AND (${matchClauses.join(' OR ')})
+     ORDER BY id ASC LIMIT 60`,
+    problemId,
+    ...matchParams,
+  )
+  const rows = matchedRows.length >= 4
+    ? matchedRows
+    : await db.all(
+      `SELECT ${selectColumns} FROM problems
+       WHERE status = 'published' AND id <> ?
+       ORDER BY id ASC LIMIT 60`,
+      problemId,
+    )
+
+  const token = getAuthToken(req)
+  const user = token ? await getUserByToken(db, token) : null
+  let solvedIds = new Set()
+  if (user && rows.length > 0) {
+    const solvedRows = await db.all(
+      `SELECT problem_id FROM solved_problems WHERE user_id = ?`,
+      user.id,
+    )
+    solvedIds = new Set(solvedRows.map((row) => Number(row.problem_id)))
+  }
+
+  const ranked = rankRelatedProblems({ source, candidates: rows, limit: 4 })
+  return res.json({
+    problemId,
+    problems: ranked.map(({ candidate, sharedTags }) => ({
+      id: candidate.id,
+      slug: candidate.slug,
+      title: candidate.title,
+      ...serializeDifficulty(candidate.difficulty),
+      tags: candidate.tags ? candidate.tags.split(',').map((tag) => tag.trim()).filter(Boolean) : [],
+      ...serializePublicProblemMetadata(candidate),
+      createdAt: candidate.created_at,
+      acCount: candidate.ac_count || 0,
+      totalCount: candidate.total_count || 0,
+      passRate: candidate.total_count > 0
+        ? Math.round((candidate.ac_count / candidate.total_count) * 100)
+        : 0,
+      solved: solvedIds.has(Number(candidate.id)),
+      matchReason: getRelatedProblemReason({ sharedTags, source, candidate }),
+    })),
   })
 }
 
@@ -398,6 +510,8 @@ export const createProblem = async (req, res) => {
   const { db, user } = auth
 
   const { title, difficulty, tags, statement, inputDesc, outputDesc, dataRange, samples, testFiles, status } = req.body || {}
+  const metadata = normalizeProblemMetadata(req.body, { isAdmin: Boolean(user.is_admin) })
+  const normalizedTags = normalizeProblemTags(tags)
   const sanitizedStatement = sanitizeProblemText(statement)
   const sanitizedInputDesc = sanitizeProblemText(inputDesc)
   const sanitizedOutputDesc = sanitizeProblemText(outputDesc)
@@ -409,6 +523,9 @@ export const createProblem = async (req, res) => {
   if (!sanitizedStatement) return res.status(400).json({ message: '请填写题目描述' })
   if (sampleError) return res.status(400).json({ message: sampleError })
   if (testFileError) return res.status(400).json({ message: testFileError })
+  if (normalizedSamples.length + testFilePairs.length > MAX_TESTCASE_COUNT) {
+    return res.status(400).json({ message: `测试点总数不能超过 ${MAX_TESTCASE_COUNT} 个` })
+  }
 
   // 普通出题者创建的题目始终从草稿开始，管理员创建时可以直接发布或保存草稿。
   const nextStatus = user.is_admin ? getAdminCreateStatus(status) : 'draft'
@@ -424,12 +541,15 @@ export const createProblem = async (req, res) => {
     }
 
     await db.run(
-      `INSERT INTO problems (id, slug, title, difficulty, tags, statement, input_desc, output_desc, data_range, samples, creator_id, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      nextId, `p${nextId}`, title.trim(), difficulty || '入门',
-      Array.isArray(tags) ? tags.join(',') : (tags || ''),
+    `INSERT INTO problems (id, slug, title, difficulty, tags, statement, input_desc, output_desc, data_range, samples,
+       topic_tags, technique_tags, estimated_minutes, recommended_for, quality_status, editorial_status, revision_summary,
+       creator_id, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      nextId, `p${nextId}`, title.trim(), normalizeDifficultyForCreate(difficulty),
+      normalizedTags.join(','),
       sanitizedStatement, sanitizedInputDesc, sanitizedOutputDesc, sanitizedDataRange,
-      JSON.stringify(normalizedSamples), user.id,
+      JSON.stringify(normalizedSamples), metadata.topicTags.join(','), metadata.techniqueTags.join(','), metadata.estimatedMinutes,
+      metadata.recommendedFor, metadata.qualityStatus, metadata.editorialStatus, metadata.revisionSummary, user.id,
       nextStatus,
       now
     )
@@ -450,7 +570,7 @@ export const createProblem = async (req, res) => {
 
     await db.exec('COMMIT')
     const snapshot = buildProblemSnapshot({
-      problem: { title, difficulty, tags, statement: sanitizedStatement, inputDesc: sanitizedInputDesc, outputDesc: sanitizedOutputDesc, dataRange: sanitizedDataRange },
+      problem: { title, difficulty: normalizeDifficultyForCreate(difficulty), tags: normalizedTags, statement: sanitizedStatement, inputDesc: sanitizedInputDesc, outputDesc: sanitizedOutputDesc, dataRange: sanitizedDataRange, ...metadata },
       samples: normalizedSamples,
       testcases: testFilePairs.map((pair) => ({ input: pair.in.content, output: pair.out.content, is_sample: 0, time_limit_ms: pair.timeLimitMs })),
     })
@@ -482,14 +602,16 @@ export const getMyProblems = async (req, res) => {
   const { db, user } = auth
 
   const rows = await db.all(
-    `SELECT id, slug, title, difficulty, tags, status, created_at
+    `SELECT id, slug, title, difficulty, tags, topic_tags, technique_tags, estimated_minutes, recommended_for,
+            quality_status, editorial_status, revision_summary, status, created_at
      FROM problems WHERE creator_id = ? ORDER BY created_at DESC`,
     user.id
   )
   return res.json({
     problems: rows.map((row) => ({
-      id: row.id, slug: row.slug, title: row.title, difficulty: row.difficulty,
+      id: row.id, slug: row.slug, title: row.title, ...serializeDifficulty(row.difficulty),
       tags: row.tags ? row.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
+      ...serializeProblemMetadata(row),
       status: row.status, createdAt: row.created_at,
     })),
   })
@@ -523,10 +645,13 @@ export const getProblemForEdit = async (req, res) => {
 
   return res.json({
     problem: {
-      id: problem.id, slug: problem.slug, title: problem.title, difficulty: problem.difficulty,
+      id: problem.id, slug: problem.slug, title: problem.title,
+      ...serializeDifficulty(problem.difficulty),
+      difficulty: normalizeDifficultyForCreate(problem.difficulty),
       tags: problem.tags ? problem.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
       statement: problem.statement, inputDesc: problem.input_desc, outputDesc: problem.output_desc,
       dataRange: problem.data_range, samples, testFiles, testDataCount: testData.length,
+      ...serializeProblemMetadata(problem),
       status: problem.status, createdAt: problem.created_at,
     },
   })
@@ -545,6 +670,12 @@ export const updateProblem = async (req, res) => {
   if (problem.creator_id !== user.id && !user.is_admin) return res.status(403).json({ message: '无权限编辑此题目' })
 
   const { title, difficulty, tags, statement, inputDesc, outputDesc, dataRange, samples, testFiles, status } = req.body || {}
+  const metadata = normalizeProblemMetadata(req.body, { existing: problem, isAdmin: Boolean(user.is_admin) })
+  if (!user.is_admin) {
+    metadata.qualityStatus = 'unchecked'
+    metadata.editorialStatus = 'none'
+  }
+  const normalizedTags = normalizeProblemTags(tags)
   const sanitizedStatement = sanitizeProblemText(statement)
   const sanitizedInputDesc = sanitizeProblemText(inputDesc)
   const sanitizedOutputDesc = sanitizeProblemText(outputDesc)
@@ -556,6 +687,9 @@ export const updateProblem = async (req, res) => {
   if (!sanitizedStatement) return res.status(400).json({ message: '请填写题目描述' })
   if (sampleError) return res.status(400).json({ message: sampleError })
   if (testFileError) return res.status(400).json({ message: testFileError })
+  if (normalizedSamples.length + testFilePairs.length > MAX_TESTCASE_COUNT) {
+    return res.status(400).json({ message: `测试点总数不能超过 ${MAX_TESTCASE_COUNT} 个` })
+  }
 
   // 管理员可以调整审核状态；普通作者编辑非草稿题目时退回草稿，必须重新提交审核。
   const nextStatus = user.is_admin
@@ -566,12 +700,14 @@ export const updateProblem = async (req, res) => {
   try {
     await db.exec('BEGIN IMMEDIATE')
     await db.run(
-      `UPDATE problems SET title = ?, difficulty = ?, tags = ?, statement = ?, input_desc = ?, output_desc = ?, data_range = ?, samples = ?, status = ?
+      `UPDATE problems SET title = ?, difficulty = ?, tags = ?, statement = ?, input_desc = ?, output_desc = ?, data_range = ?, samples = ?,
+       topic_tags = ?, technique_tags = ?, estimated_minutes = ?, recommended_for = ?, quality_status = ?, editorial_status = ?, revision_summary = ?, status = ?
        WHERE id = ?`,
-      title.trim(), difficulty || '入门',
-      Array.isArray(tags) ? tags.join(',') : (tags || ''),
+      title.trim(), normalizeDifficultyForCreate(difficulty),
+      normalizedTags.join(','),
       sanitizedStatement, sanitizedInputDesc, sanitizedOutputDesc, sanitizedDataRange,
-      JSON.stringify(normalizedSamples), nextStatus, problemId
+      JSON.stringify(normalizedSamples), metadata.topicTags.join(','), metadata.techniqueTags.join(','), metadata.estimatedMinutes,
+      metadata.recommendedFor, metadata.qualityStatus, metadata.editorialStatus, metadata.revisionSummary, nextStatus, problemId
     )
 
     await db.run(`DELETE FROM testcases WHERE problem_id = ?`, problemId)
@@ -592,7 +728,7 @@ export const updateProblem = async (req, res) => {
 
     await db.exec('COMMIT')
     const snapshot = buildProblemSnapshot({
-      problem: { title, difficulty, tags, statement: sanitizedStatement, inputDesc: sanitizedInputDesc, outputDesc: sanitizedOutputDesc, dataRange: sanitizedDataRange },
+      problem: { title, difficulty: normalizeDifficultyForCreate(difficulty), tags: normalizedTags, statement: sanitizedStatement, inputDesc: sanitizedInputDesc, outputDesc: sanitizedOutputDesc, dataRange: sanitizedDataRange, ...metadata },
       samples: normalizedSamples,
       testcases: testFilePairs.map((pair) => ({ input: pair.in.content, output: pair.out.content, is_sample: 0, time_limit_ms: pair.timeLimitMs })),
     })
@@ -732,14 +868,23 @@ export const restoreProblemRevision = async (req, res) => {
     return res.status(400).json({ message: '该版本内容不完整，无法恢复' })
   }
 
+  const metadata = normalizeProblemMetadata({}, { existing: snapshot, isAdmin: true })
+  if (!user.is_admin) {
+    metadata.qualityStatus = 'unchecked'
+    metadata.editorialStatus = 'none'
+  }
   const nextStatus = user.is_admin ? normalizeProblemStatus(revision.status, problem.status || 'draft') : 'draft'
   const now = new Date().toISOString()
   try {
     await db.exec('BEGIN IMMEDIATE')
     await db.run(
-      `UPDATE problems SET title = ?, difficulty = ?, tags = ?, statement = ?, input_desc = ?, output_desc = ?, data_range = ?, samples = ?, status = ? WHERE id = ?`,
-      snapshot.title, snapshot.difficulty || '入门', snapshot.tags.join(','), snapshot.statement,
-      snapshot.inputDesc || '', snapshot.outputDesc || '', snapshot.dataRange || '', JSON.stringify(snapshot.samples), nextStatus, problemId,
+      `UPDATE problems SET title = ?, difficulty = ?, tags = ?, statement = ?, input_desc = ?, output_desc = ?, data_range = ?, samples = ?,
+       topic_tags = ?, technique_tags = ?, estimated_minutes = ?, recommended_for = ?, quality_status = ?, editorial_status = ?, revision_summary = ?, status = ?
+       WHERE id = ?`,
+      snapshot.title, normalizeDifficultyForCreate(snapshot.difficulty), snapshot.tags.join(','), snapshot.statement,
+      snapshot.inputDesc || '', snapshot.outputDesc || '', snapshot.dataRange || '', JSON.stringify(snapshot.samples),
+      metadata.topicTags.join(','), metadata.techniqueTags.join(','), metadata.estimatedMinutes, metadata.recommendedFor,
+      metadata.qualityStatus, metadata.editorialStatus, metadata.revisionSummary, nextStatus, problemId,
     )
     await db.run(`DELETE FROM testcases WHERE problem_id = ?`, problemId)
     for (const sample of snapshot.samples) {

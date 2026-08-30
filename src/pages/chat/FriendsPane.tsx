@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../../context/AppContext'
 import { LoadingState } from '../../components/ui'
+import DecoratedAvatar from '../../components/profile/DecoratedAvatar'
 import type { FollowListResponse, FollowUser, FriendsResponse } from '../../types'
 import { fetchJson } from '../../utils'
 import './ChatHub.css'
@@ -49,24 +50,30 @@ export default function FriendsPane() {
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults([])
+      setSearching(false)
       return
     }
+    const controller = new AbortController()
     setSearching(true)
     const timer = window.setTimeout(async () => {
       try {
-        const { response, data } = await fetchJson<{ users: { id: string; name: string; avatar?: string }[] }>(
-          `/api/users/search?q=${encodeURIComponent(searchQuery.trim())}`
+        const { response, data } = await fetchJson<{ users: FollowUser[] }>(
+          `/api/users/search?q=${encodeURIComponent(searchQuery.trim())}`,
+          { signal: controller.signal },
         )
-        if (response.ok && data) {
+        if (!controller.signal.aborted && response.ok && data) {
           setSearchResults(data.users.map((u) => ({ ...u, online: false, isFriend: false })))
         }
       } catch {
         // 忽略
       } finally {
-        setSearching(false)
+        if (!controller.signal.aborted) setSearching(false)
       }
     }, 300)
-    return () => window.clearTimeout(timer)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
   }, [searchQuery])
 
   const handleToggleFollow = async (targetId: string) => {
@@ -87,13 +94,21 @@ export default function FriendsPane() {
     <div key={user.id} className="friend-row">
       <button type="button" className="friend-row-main" onClick={() => navigate(`/user/${user.id}`)}>
         <span className="friend-avatar">
-          {user.avatar ? <img src={user.avatar} alt="" loading="lazy" /> : <span>{user.name.charAt(0).toUpperCase()}</span>}
+          <DecoratedAvatar
+            avatar={user.avatar}
+            fallback={user.name.charAt(0).toUpperCase()}
+            frame={user.avatarFrame}
+            overlay={user.avatarOverlay}
+            size="discussion"
+            loading="lazy"
+          />
         </span>
         <span className="friend-info">
           <strong>
             {user.name}
             {user.isFriend && <em className="friend-badge">好友</em>}
           </strong>
+          {user.displayTitle && <small className="friend-user-title">{user.displayTitleIcon || '✦'} {user.displayTitle}</small>}
           <span>@{user.id} · {user.online ? '在线' : '离线'}</span>
         </span>
       </button>
@@ -161,10 +176,18 @@ export default function FriendsPane() {
               <div key={user.id} className="friend-row">
                 <button type="button" className="friend-row-main" onClick={() => navigate(`/user/${user.id}`)}>
                   <span className="friend-avatar">
-                    {user.avatar ? <img src={user.avatar} alt="" loading="lazy" /> : <span>{user.name.charAt(0).toUpperCase()}</span>}
+                    <DecoratedAvatar
+                      avatar={user.avatar}
+                      fallback={user.name.charAt(0).toUpperCase()}
+                      frame={user.avatarFrame}
+                      overlay={user.avatarOverlay}
+                      size="discussion"
+                      loading="lazy"
+                    />
                   </span>
                   <span className="friend-info">
                     <strong>{user.name}</strong>
+                    {user.displayTitle && <small className="friend-user-title">{user.displayTitleIcon || '✦'} {user.displayTitle}</small>}
                     <span>@{user.id}</span>
                   </span>
                 </button>

@@ -33,7 +33,7 @@ export default function Button({
       {loading ? <span className="ui-button-spinner" aria-hidden="true" /> : icon && (
         <span className="ui-button-icon" aria-hidden="true">{icon}</span>
       )}
-      {children}
+      <span className={classNames('ui-button-content', loading && 'is-loading')}>{children}</span>
     </button>
   )
 }

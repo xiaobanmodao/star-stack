@@ -5,13 +5,14 @@ import { getLevelInfo, getDifficultyStats, getHeatmapData, ACHIEVEMENTS } from '
 import { getFollowRelations } from '../utils/socialHelpers.js'
 import { localDay } from '../utils/dateHelpers.js'
 import { getDecorationIdentity, getUnlockedAchievementTypes } from '../utils/decorations.js'
+import { getPracticeRating } from '../utils/rating.js'
 
 export const getUserProfile = async (req, res) => {
   try {
     const db = await getDb()
     const userId = req.params.userId
     const user = await db.get(
-      `SELECT id, name, avatar, avatar_frame, avatar_overlay, equipped_title, created_at, is_admin FROM users WHERE id = ?`, userId
+      `SELECT id, name, avatar, avatar_frame, avatar_overlay, equipped_title, rating, created_at, is_admin FROM users WHERE id = ?`, userId
     )
     if (!user) return res.status(404).json({ message: '用户不存在' })
 
@@ -32,7 +33,7 @@ export const getUserProfile = async (req, res) => {
     return res.json({
       user: {
         id: user.id, name: user.name, avatar: user.avatar,
-        createdAt: user.created_at, isAdmin: user.is_admin === 1,
+        createdAt: user.created_at, isAdmin: user.is_admin === 1, rating: getPracticeRating(user.rating),
         ...levelInfo, ...getDecorationIdentity(user, levelInfo, achievementTypes),
       },
       stats: {
@@ -44,6 +45,7 @@ export const getUserProfile = async (req, res) => {
         currentStreak: stats.current_streak,
         maxStreak: stats.max_streak,
         xp: stats.xp || 0,
+        rating: getPracticeRating(user.rating),
         rank: stats.rank,
       },
       difficultyStats,
@@ -81,7 +83,10 @@ export const getRatingHistory = async (req, res) => {
        ORDER BY recorded_at DESC LIMIT 30`,
       userId
     )
-    return res.json({ history: rows.reverse() })
+    return res.json({ history: rows.reverse().map((row) => ({
+      date: row.date,
+      rating: getPracticeRating(row.rating),
+    })) })
   } catch (error) {
     console.error('Failed to get rating history:', error)
     return res.status(500).json({ message: '获取Rating历史失败' })

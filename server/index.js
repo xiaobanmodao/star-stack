@@ -1,7 +1,14 @@
 import express from 'express'
 import cors from 'cors'
-import { getDb, initDb } from './db.js'
+import {
+  getDb,
+  getIdentityDb,
+  getIdentityPublicDb,
+  getIdentityUserInfoDb,
+  initDb,
+} from './db.js'
 import { getAuthToken, getUserByToken } from './middleware/auth.js'
+import { createCsrfProtection } from './middleware/csrf.js'
 import { errorHandler } from './middleware/errorHandler.js'
 import { createRateLimiter } from './middleware/rateLimit.js'
 import { BoundedCache } from './utils/boundedCache.js'
@@ -9,10 +16,22 @@ import { initPush } from './controllers/notificationsController.js'
 import { getBackupHealth, getDatabaseHealth, getDiskHealth } from './utils/monitoring.js'
 import { backfillAchievements } from './stats.js'
 import {
+  getDifficultyAliases,
+  getDifficultyKeys,
+  getDifficultyRank,
+  serializeDifficulty,
+} from './utils/difficulty.js'
+import {
   getJudgeQueueSnapshot,
   recoverPendingSubmissions,
   setLeaderboardSaveCallback,
 } from './controllers/submissionsController.js'
+import { loadIdentityConfig } from './identity/config.js'
+import { createHydraAdminClient } from './identity/hydraAdminClient.js'
+import { createIdentityRouter } from './identity/router.js'
+import { createHydraPublicProxy } from './identity/hydraPublicProxy.js'
+import { processIdentityOutboxBatch } from './services/identityOutbox.js'
+import { cleanupIdentityRetention } from './services/identityRetention.js'
 
 import authRouter from './routes/auth.js'
 import userRouter from './routes/user.js'
@@ -32,6 +51,13 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
 
 const app = express()
 app.disable('x-powered-by')
+const identityConfig = loadIdentityConfig()
+const identityAdmin = identityConfig.enabled
+  ? createHydraAdminClient({
+      baseUrl: identityConfig.hydraAdminUrl,
+      issuer: identityConfig.issuer,
+    })
+  : null
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -54,6 +80,22 @@ const configuredProxyHops = Number.parseInt(
   10,
 )
 app.set('trust proxy', Number.isInteger(configuredProxyHops) && configuredProxyHops >= 0 ? configuredProxyHops : 0)
+
+// OIDC is opt-in and intentionally mounted before the main JSON/CORS stack:
+// Hydra protocol requests include form bodies and secrets that must never be
+// parsed, echoed or logged by the regular API middleware.
+if (identityConfig.enabled) {
+  app.use(createIdentityRouter({
+    getDb: getIdentityDb,
+    getPublicDb: getIdentityPublicDb,
+    getUserInfoDb: getIdentityUserInfoDb,
+    getCriticalDb: getIdentityDb,
+    admin: identityAdmin,
+    config: identityConfig,
+  }))
+  app.use(createHydraPublicProxy({ config: identityConfig }))
+}
+
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('X-Frame-Options', 'SAMEORIGIN')
@@ -85,6 +127,10 @@ app.use(cors({
   credentials: true,
 }))
 app.use(express.json({ limit: '4mb' }))
+app.use(createCsrfProtection({
+  allowedOrigins: ALLOWED_ORIGINS || [],
+  isProduction: process.env.NODE_ENV === 'production',
+}))
 
 // Mount modular routers
 app.use('/api', authRouter)
@@ -203,7 +249,7 @@ app.post('/api/client-errors', clientErrorLimiter, async (req, res) => {
 app.get('/api/oj/recommendations', async (req, res) => {
   try {
     const db = await getDb()
-    const token = req.headers.authorization?.replace('Bearer ', '')
+    const token = getAuthToken(req)
     let userId = null
     if (token) {
       const session = await db.get(`SELECT user_id FROM sessions WHERE token = ?`, token)
@@ -229,15 +275,16 @@ app.get('/api/oj/recommendations', async (req, res) => {
         const tagFreq = {}
         allTags.forEach(tag => { tagFreq[tag] = (tagFreq[tag] || 0) + 1 })
         const topTags = Object.entries(tagFreq).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([tag]) => tag)
-        const difficultyOrder = ['入门', '普及-', '普及', '提高-', '提高', '省选', 'noi']
-        const avgDifficultyIndex = Math.round(
-          difficulties.reduce((sum, d) => sum + difficultyOrder.indexOf(d), 0) / difficulties.length
+        const difficultyOrder = getDifficultyKeys()
+        const avgDifficultyRank = Math.round(
+          difficulties.reduce((sum, d) => sum + getDifficultyRank(d), 0) / difficulties.length
         )
-        const targetDifficulties = [
-          difficultyOrder[Math.max(0, avgDifficultyIndex - 1)],
-          difficultyOrder[avgDifficultyIndex],
-          difficultyOrder[Math.min(difficultyOrder.length - 1, avgDifficultyIndex + 1)]
+        const targetDifficultyKeys = [
+          difficultyOrder[Math.max(0, avgDifficultyRank - 2)],
+          difficultyOrder[Math.max(0, avgDifficultyRank - 1)],
+          difficultyOrder[Math.min(difficultyOrder.length - 1, avgDifficultyRank)],
         ].filter(Boolean)
+        const targetDifficulties = [...new Set(targetDifficultyKeys.flatMap((key) => getDifficultyAliases(key)))]
         const acProblemIds = await db.all(
           `SELECT DISTINCT problem_id FROM submissions WHERE user_id = ? AND status = 'Accepted'`,
           userId
@@ -274,12 +321,13 @@ app.get('/api/oj/recommendations', async (req, res) => {
                 (SELECT COUNT(*) FROM submissions WHERE problem_id = p.id AND status = 'Accepted') as ac_count,
                 (SELECT COUNT(*) FROM submissions WHERE problem_id = p.id) as total_count
          FROM problems p
-         WHERE p.status = 'published' AND p.difficulty = '入门'
-         ORDER BY (SELECT COUNT(*) FROM submissions WHERE problem_id = p.id) DESC LIMIT 4`
+         WHERE p.status = 'published' AND p.difficulty IN (${getDifficultyAliases('simple').map(() => '?').join(',')})
+         ORDER BY (SELECT COUNT(*) FROM submissions WHERE problem_id = p.id) DESC LIMIT 4`,
+        ...getDifficultyAliases('simple')
       )
     }
     return res.json({ recommendations: recommendations.map(p => ({
-      id: p.id, slug: p.slug, title: p.title, difficulty: p.difficulty,
+      id: p.id, slug: p.slug, title: p.title, ...serializeDifficulty(p.difficulty),
       tags: p.tags ? p.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
       passRate: p.total_count > 0 ? Math.round((p.ac_count / p.total_count) * 100) : 0
     })) })
@@ -298,7 +346,10 @@ app.get('/api/oj/overview', async (req, res) => {
       `SELECT difficulty, COUNT(*) as count FROM problems WHERE status = 'published' GROUP BY difficulty`
     )
     const difficulties = {}
-    difficultyStats.forEach(row => { difficulties[row.difficulty] = row.count })
+    difficultyStats.forEach(row => {
+      const label = serializeDifficulty(row.difficulty).difficulty
+      difficulties[label] = (difficulties[label] || 0) + row.count
+    })
     const allProblems = await db.all(
       `SELECT tags FROM problems WHERE status = 'published' AND tags IS NOT NULL AND tags != ''`
     )
@@ -329,7 +380,10 @@ app.get('/api/oj/hot-problems', async (req, res) => {
        GROUP BY p.id ORDER BY submission_count DESC LIMIT 5`,
       oneDayAgo
     )
-    return res.json({ hotProblems })
+    return res.json({ hotProblems: hotProblems.map((problem) => ({
+      ...problem,
+      ...serializeDifficulty(problem.difficulty),
+    })) })
   } catch (error) {
     console.error('Failed to get hot problems:', error)
     return res.status(500).json({ message: '获取热门题目失败' })
@@ -355,7 +409,7 @@ app.get('/api/oj/recent-ac', async (req, res) => {
 app.get('/api/oj/continue-last', async (req, res) => {
   try {
     const db = await getDb()
-    const token = req.headers.authorization?.replace('Bearer ', '')
+    const token = getAuthToken(req)
     if (!token) return res.json({ problem: null })
     const session = await db.get(`SELECT user_id FROM sessions WHERE token = ?`, token)
     if (!session) return res.json({ problem: null })
@@ -372,7 +426,7 @@ app.get('/api/oj/continue-last', async (req, res) => {
     if (lastProblem) {
       return res.json({ problem: {
         id: lastProblem.id, slug: lastProblem.slug, title: lastProblem.title,
-        difficulty: lastProblem.difficulty,
+        ...serializeDifficulty(lastProblem.difficulty),
         tags: lastProblem.tags ? lastProblem.tags.split(',').map(t => t.trim()).filter(Boolean) : []
       }})
     }
@@ -390,12 +444,16 @@ app.get('/api/oj/random-problem', async (req, res) => {
     const { difficulty } = req.query
     let query = `SELECT id, slug, title, difficulty, tags FROM problems WHERE status = 'published'`
     const params = []
-    if (difficulty) { query += ` AND difficulty = ?`; params.push(difficulty) }
+    if (difficulty) {
+      const aliases = getDifficultyAliases(difficulty)
+      query += ` AND difficulty IN (${aliases.map(() => '?').join(',')})`
+      params.push(...aliases)
+    }
     query += ` ORDER BY RANDOM() LIMIT 1`
     const problem = await db.get(query, ...params)
     if (!problem) return res.status(404).json({ message: '没有找到题目' })
     return res.json({ problem: {
-      id: problem.id, slug: problem.slug, title: problem.title, difficulty: problem.difficulty,
+      id: problem.id, slug: problem.slug, title: problem.title, ...serializeDifficulty(problem.difficulty),
       tags: problem.tags ? problem.tags.split(',').map(t => t.trim()).filter(Boolean) : []
     }})
   } catch (error) {
@@ -615,11 +673,58 @@ const cleanupOperationalRecords = async () => {
     const verifications = await db.run(`DELETE FROM email_verifications WHERE expires_at < ?`, now)
     const clientErrors = await db.run(`DELETE FROM client_errors WHERE created_at < ?`, clientErrorCutoff)
     const auditLogs = await db.run(`DELETE FROM admin_audit_logs WHERE created_at < ?`, auditCutoff)
-    const removed = (sessions.changes || 0) + (verifications.changes || 0) + (clientErrors.changes || 0) + (auditLogs.changes || 0)
+    const accountCenterSessions = await db.run(`DELETE FROM account_center_sessions WHERE expires_at < ?`, now)
+    const interactions = await db.run(
+      `DELETE FROM oidc_interactions
+       WHERE expires_at < ? OR (consumed_at IS NOT NULL AND consumed_at < ?)`,
+      now,
+      clientErrorCutoff,
+    )
+    const logoutTransactions = await db.run(
+      `DELETE FROM oidc_logout_transactions
+       WHERE expires_at < ? OR (consumed_at IS NOT NULL AND consumed_at < ?)`,
+      now,
+      clientErrorCutoff,
+    )
+    const outbox = await db.run(
+      `DELETE FROM identity_outbox WHERE status = 'completed' AND completed_at < ?`,
+      auditCutoff,
+    )
+    const identitySessions = await cleanupIdentityRetention(db, { now: () => new Date(now) })
+    const removed = (sessions.changes || 0) + (verifications.changes || 0)
+      + (clientErrors.changes || 0) + (auditLogs.changes || 0)
+      + (accountCenterSessions.changes || 0) + (interactions.changes || 0)
+      + (logoutTransactions.changes || 0) + (outbox.changes || 0)
+      + identitySessions.expiredActive
+      + identitySessions.staleAuthorizationPending + identitySessions.oldRevoked
     if (removed > 0) console.log(`[retention] cleaned sessions=${sessions.changes || 0} verifications=${verifications.changes || 0} clientErrors=${clientErrors.changes || 0} auditLogs=${auditLogs.changes || 0}`)
   } catch (error) {
     console.error('[retention] operational cleanup failed:', error)
   }
+}
+
+let identityOutboxRunning = false
+const processIdentityOutbox = async () => {
+  if (!identityConfig.enabled || identityOutboxRunning) return
+  identityOutboxRunning = true
+  try {
+    const db = await getIdentityDb()
+    const results = await processIdentityOutboxBatch(db, identityAdmin, { limit: 25 })
+    const completed = results.filter((result) => result.processed).length
+    const failed = results.filter((result) => result.retrying || result.dead).length
+    if (completed || failed) console.log(`[identity-outbox] completed=${completed} pending_or_dead=${failed}`)
+  } catch (error) {
+    console.error('[identity-outbox] worker failed:', error?.name || 'Error')
+  } finally {
+    identityOutboxRunning = false
+  }
+}
+
+const scheduleIdentityOutbox = () => {
+  if (!identityConfig.enabled) return
+  void processIdentityOutbox()
+  setInterval(() => { void processIdentityOutbox() }, 5000)
+  console.log(`[identity] Hydra adapter enabled for issuer ${identityConfig.issuer}`)
 }
 
 const scheduleOperationalCleanup = () => {
@@ -648,7 +753,10 @@ initDb()
       initPush()
       setLeaderboardSaveCallback(queueLeaderboardHistorySave)
       scheduleLeaderboardHistory()
-      void saveLeaderboardHistory(true)
+      // Sequence the first history write before starting the dedicated identity
+      // outbox connection to reduce startup write-lock contention. Later outbox
+      // failures remain durable and retry on the normal interval.
+      void saveLeaderboardHistory(true).finally(scheduleIdentityOutbox)
       scheduleMessageCleanup()
       scheduleOperationalCleanup()
     })

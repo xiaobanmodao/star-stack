@@ -1,15 +1,27 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Search } from 'lucide-react'
 import { OJ_ENABLED } from '../constants'
 import type { DiscussionListResponse, OjProblemSummary } from '../types'
 import { fetchJson } from '../utils'
+import { getDifficultyLabel } from '../utils/difficulty'
 import { useModalFocus } from '../hooks/useModalFocus'
+import { ErrorState, LoadingState } from './ui'
+import DecoratedAvatar from './profile/DecoratedAvatar'
 import './SearchOverlay.css'
 
 type SearchResults = {
   problems: OjProblemSummary[]
   posts: DiscussionListResponse['posts']
-  users: { id: string; name: string; avatar?: string }[]
+  users: {
+    id: string
+    name: string
+    avatar?: string | null
+    avatarFrame?: import('../types').AvatarFrameId
+    avatarOverlay?: import('../types').AvatarOverlayId
+    displayTitle?: string
+    displayTitleIcon?: string
+  }[]
   messages: {
     id: number
     channelKey?: string | null
@@ -46,6 +58,8 @@ export default function SearchOverlay({ open, onClose }: { open: boolean; onClos
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResults>(EMPTY_RESULTS)
   const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState('')
+  const [searchRetryKey, setSearchRetryKey] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const timerRef = useRef<number | null>(null)
   const requestAbortRef = useRef<AbortController | null>(null)
@@ -66,9 +80,11 @@ export default function SearchOverlay({ open, onClose }: { open: boolean; onClos
     if (!q) {
       setResults(EMPTY_RESULTS)
       setSearching(false)
+      setSearchError('')
       return
     }
     setSearching(true)
+    setSearchError('')
     const controller = new AbortController()
     requestAbortRef.current = controller
     timerRef.current = window.setTimeout(async () => {
@@ -78,7 +94,7 @@ export default function SearchOverlay({ open, onClose }: { open: boolean; onClos
             ? fetchJson<{ problems: OjProblemSummary[] }>(`/api/oj/problems?search=${encodeURIComponent(q)}&pageSize=5`, { signal: controller.signal })
             : Promise.resolve({ response: { ok: false } as Response, data: null }),
           fetchJson<DiscussionListResponse>(`/api/discussions?search=${encodeURIComponent(q)}&pageSize=5`, { signal: controller.signal }),
-          fetchJson<{ users: { id: string; name: string; avatar?: string }[] }>(`/api/users/search?q=${encodeURIComponent(q)}`, { signal: controller.signal }),
+          fetchJson<{ users: SearchResults['users'] }>(`/api/users/search?q=${encodeURIComponent(q)}`, { signal: controller.signal }),
           fetchJson<{ messages: SearchResults['messages'] }>(`/api/chat/search?q=${encodeURIComponent(q)}&limit=5`, { signal: controller.signal }),
         ])
         if (controller.signal.aborted) return
@@ -89,7 +105,10 @@ export default function SearchOverlay({ open, onClose }: { open: boolean; onClos
           messages: messagesRes.response.ok && messagesRes.data ? messagesRes.data.messages : [],
         })
       } catch {
-        if (!controller.signal.aborted) setResults(EMPTY_RESULTS)
+        if (!controller.signal.aborted) {
+          setResults(EMPTY_RESULTS)
+          setSearchError('搜索服务暂时不可用。')
+        }
       } finally {
         if (!controller.signal.aborted) setSearching(false)
       }
@@ -99,16 +118,7 @@ export default function SearchOverlay({ open, onClose }: { open: boolean; onClos
       controller.abort()
       if (requestAbortRef.current === controller) requestAbortRef.current = null
     }
-  }, [query])
-
-  useEffect(() => {
-    if (!open) return
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [open, onClose])
+  }, [query, searchRetryKey])
 
   if (!open) return null
 
@@ -124,7 +134,7 @@ export default function SearchOverlay({ open, onClose }: { open: boolean; onClos
       <div ref={dialogRef} className="search-panel" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
         <h2 id="search-dialog-title" className="sr-only">全局搜索</h2>
         <div className="search-input-row">
-          <span className="search-icon" aria-hidden="true">⌕</span>
+          <span className="search-icon" aria-hidden="true"><Search size={18} strokeWidth={1.8} /></span>
           <input
             ref={inputRef}
             type="text"
@@ -141,7 +151,9 @@ export default function SearchOverlay({ open, onClose }: { open: boolean; onClos
           {!query.trim() ? (
             <div className="search-hint">输入关键词开始搜索，覆盖题目 / 帖子 / 用户 / 聊天消息</div>
           ) : searching ? (
-            <div className="search-hint">搜索中...</div>
+            <LoadingState variant="compact" label="正在搜索…" />
+          ) : searchError ? (
+            <ErrorState description={searchError} onRetry={() => setSearchRetryKey((value) => value + 1)} />
           ) : total === 0 ? (
             <div className="search-hint">没有找到与「{query.trim()}」相关的内容</div>
           ) : (
@@ -152,7 +164,7 @@ export default function SearchOverlay({ open, onClose }: { open: boolean; onClos
                   {results.problems.map((problem) => (
                     <button key={problem.id} type="button" className="search-item" onClick={() => go(`/oj/p${problem.id}`)}>
                       <span className="search-item-title">P{problem.id} {problem.title}</span>
-                      <span className="search-item-meta">{problem.difficulty} · {problem.passRate}%</span>
+                      <span className="search-item-meta">{getDifficultyLabel(problem.difficulty)} · {problem.passRate}%</span>
                     </button>
                   ))}
                 </div>
@@ -175,11 +187,17 @@ export default function SearchOverlay({ open, onClose }: { open: boolean; onClos
                   <div className="search-group-title">用户</div>
                   {results.users.map((user) => (
                     <button key={user.id} type="button" className="search-item" onClick={() => go(`/user/${user.id}`)}>
-                      <span className="search-item-avatar">
-                        {user.avatar ? <img src={user.avatar} alt="" loading="lazy" /> : <span>{user.name.charAt(0).toUpperCase()}</span>}
-                      </span>
+                      <DecoratedAvatar
+                        avatar={user.avatar}
+                        fallback={user.name.charAt(0).toUpperCase()}
+                        frame={user.avatarFrame}
+                        overlay={user.avatarOverlay}
+                        size="discussion-small"
+                        alt=""
+                        className="search-item-avatar"
+                      />
                       <span className="search-item-title">{user.name}</span>
-                      <span className="search-item-meta">@{user.id}</span>
+                      <span className="search-item-meta">{user.displayTitle ? `${user.displayTitleIcon || '✦'} ${user.displayTitle} · ` : ''}@{user.id}</span>
                     </button>
                   ))}
                 </div>

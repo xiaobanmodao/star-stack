@@ -122,11 +122,12 @@ BACKUP_FILE="$BACKUP_DIR/starstack_${TIMESTAMP}.db"
 echo "正在备份数据库..."
 if command -v sqlite3 > /dev/null 2>&1; then
   sqlite3 "$DB_PATH" ".backup '$BACKUP_FILE'"
+elif command -v node > /dev/null 2>&1 && [ -f "$PROJECT_ROOT/server/backup-database.js" ]; then
+  # 使用 SQLite 的 VACUUM INTO 生成一致性快照，不能直接 cp WAL 主库文件。
+  DB_PATH="$DB_PATH" BACKUP_FILE="$BACKUP_FILE" node "$PROJECT_ROOT/server/backup-database.js"
 else
-  cp "$DB_PATH" "$BACKUP_FILE"
-  # 复制 WAL 尾日志（若存在）
-  [ -f "$DB_PATH-wal" ] && cp "$DB_PATH-wal" "${BACKUP_FILE}-wal"
-  [ -f "$DB_PATH-shm" ] && cp "$DB_PATH-shm" "${BACKUP_FILE}-shm"
+  echo -e "${RED}错误: 未找到 sqlite3 CLI 或 Node.js 备份实现，拒绝生成不一致的 WAL 文件副本${NC}"
+  exit 1
 fi
 
 # 压缩备份

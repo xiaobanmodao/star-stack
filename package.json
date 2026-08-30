@@ -14,6 +14,12 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:smoke": "node scripts/api-smoke.mjs",
+    "test:identity-smoke": "node scripts/account-identity-api-smoke.mjs",
+    "identity:hydra:fetch": "node scripts/identity/fetch-hydra-local.mjs",
+    "identity:hydra:bootstrap": "node scripts/identity/bootstrap-hydra.mjs",
+    "identity:hydra:verify": "node scripts/identity/verify-hydra-runtime.mjs",
+    "identity:hydra:protocol": "node scripts/identity/local-protocol-test.mjs",
+    "identity:hydra:run": "node scripts/identity/run-local-runtime.mjs",
     "db:verify": "node server/verify-database.js",
     "db:verify-backup": "node server/verify-backup.js",
     "test:release": "node scripts/release-check.mjs",
@@ -35,7 +41,7 @@
     "monaco-editor": "^0.55.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "7.18.1",
+    "react-router-dom": "7.18.2",
     "web-push": "^3.6.7"
   },
   "devDependencies": {

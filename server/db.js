@@ -5,15 +5,67 @@ import { fileURLToPath } from 'url'
 import bcrypt from 'bcryptjs'
 import { randomBytes } from 'crypto'
 import fs from 'fs'
+import {
+  createAccountSubject,
+  ensureAccountIdentitySchema,
+} from './utils/accountIdentityMigration.js'
+import { ensureOidcIdentitySchema } from './utils/oidcIdentityMigration.js'
+import {
+  prepareSecureSqliteUnit,
+  SQLITE_OPEN_NOFOLLOW,
+} from './utils/secureSqliteGuard.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = path.join(__dirname, 'data')
-const DB_PATH = path.join(DATA_DIR, 'starstack.sqlite')
+const DEFAULT_DATA_DIR = path.join(__dirname, 'data')
+const DB_PATH = path.resolve(process.env.DB_PATH || path.join(DEFAULT_DATA_DIR, 'starstack.sqlite'))
+const DATA_DIR = path.dirname(DB_PATH)
+const localIdentitySqliteGuardEnabled = Boolean(process.env.IDENTITY_TEST_SQLITE_GUARD)
+const localIdentitySqliteGuardRequired = process.env.OIDC_ENABLED === 'true'
+  && process.env.OIDC_ISSUER === 'http://auth.localhost:5174'
+if (localIdentitySqliteGuardRequired && !process.env.IDENTITY_TEST_SQLITE_GUARD) {
+  throw new Error('Local OIDC runtime requires a pinned canonical SQLite file guard')
+}
+const localIdentitySqliteGuardPromise = process.env.IDENTITY_TEST_SQLITE_GUARD
+  ? prepareSecureSqliteUnit({
+      databasePath: DB_PATH,
+      createMain: false,
+      expectedGuard: process.env.IDENTITY_TEST_SQLITE_GUARD,
+    })
+  : Promise.resolve(null)
 
-const dbPromise = open({
-  filename: DB_PATH,
-  driver: sqlite3.Database,
-})
+const openDatabaseConnection = async () => {
+  const localIdentitySqliteGuard = await localIdentitySqliteGuardPromise
+  // Reject a path replacement that happened after the parent process pinned
+  // the canonical SQLite unit, before handing the path to SQLite's VFS.
+  await localIdentitySqliteGuard?.verify({ allowNewSidecars: true })
+  const db = await open({
+    filename: DB_PATH,
+    driver: sqlite3.Database,
+    ...(localIdentitySqliteGuard ? {
+      mode: sqlite3.OPEN_READWRITE | sqlite3.OPEN_FULLMUTEX | SQLITE_OPEN_NOFOLLOW,
+    } : {}),
+  })
+  try {
+    // Opening the descriptor and checking the path are separate operations.
+    // Re-check before the first pragma so a replacement already present at
+    // this phase boundary cannot receive WAL/schema writes.
+    await localIdentitySqliteGuard?.verify({ allowNewSidecars: true })
+    // 多个 API 请求和评测完成回调可能同时写入 SQLite；显式忙等待可减少
+    // SQLITE_BUSY 瞬态错误，同时避免把写事务无限阻塞在应用层。
+    db.configure('busyTimeout', 5000)
+    await db.exec(`PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;`)
+    await localIdentitySqliteGuard?.verify({ allowNewSidecars: true })
+    return db
+  } catch (error) {
+    await db.close().catch(() => {})
+    throw error
+  }
+}
+
+const dbPromise = openDatabaseConnection()
+let identityDbPromise = null
+let identityPublicDbPromise = null
+let identityUserInfoDbPromise = null
 
 const BUILTIN_PROBLEMS = [
   {
@@ -168,6 +220,13 @@ const LEGACY_COLUMN_PATCHES = [
   { table: 'problems', column: 'output_desc', definition: "TEXT NOT NULL DEFAULT ''" },
   { table: 'problems', column: 'data_range', definition: "TEXT NOT NULL DEFAULT ''" },
   { table: 'problems', column: 'samples', definition: "TEXT NOT NULL DEFAULT '[]'" },
+  { table: 'problems', column: 'topic_tags', definition: "TEXT NOT NULL DEFAULT ''" },
+  { table: 'problems', column: 'technique_tags', definition: "TEXT NOT NULL DEFAULT ''" },
+  { table: 'problems', column: 'estimated_minutes', definition: 'INTEGER' },
+  { table: 'problems', column: 'recommended_for', definition: "TEXT NOT NULL DEFAULT ''" },
+  { table: 'problems', column: 'quality_status', definition: "TEXT NOT NULL DEFAULT 'unchecked'" },
+  { table: 'problems', column: 'editorial_status', definition: "TEXT NOT NULL DEFAULT 'none'" },
+  { table: 'problems', column: 'revision_summary', definition: "TEXT NOT NULL DEFAULT ''" },
   { table: 'problems', column: 'creator_id', definition: 'TEXT' },
   { table: 'problems', column: 'status', definition: "TEXT NOT NULL DEFAULT 'published'" },
   { table: 'submissions', column: 'message', definition: 'TEXT' },
@@ -249,21 +308,36 @@ const ensureBuiltinProblems = async (db) => {
 }
 
 export const initDb = async () => {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 })
-  }
-  // SQLite contains passwords, sessions and private messages. Keep the live
-  // database and WAL sidecars readable only by the service account.
-  try { fs.chmodSync(DATA_DIR, 0o700) } catch {}
-  for (const filePath of [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`]) {
-    if (fs.existsSync(filePath)) {
-      try { fs.chmodSync(filePath, 0o600) } catch {}
+  // The local identity runtime has already pinned secure file descriptors and
+  // passes the exact inode set into this process. Path-based chmod would
+  // follow a symlink introduced after that pin and mutate an unrelated target
+  // before the final guard verification. In guarded mode, creation, mode and
+  // sidecar checks belong exclusively to the descriptor-backed guard.
+  if (!localIdentitySqliteGuardEnabled) {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 })
+    }
+    // SQLite contains passwords, sessions and private messages. Keep the live
+    // database and WAL sidecars readable only by the service account.
+    try { fs.chmodSync(DATA_DIR, 0o700) } catch {}
+    for (const filePath of [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`]) {
+      if (fs.existsSync(filePath)) {
+        try { fs.chmodSync(filePath, 0o600) } catch {}
+      }
     }
   }
+  const localIdentitySqliteGuard = await localIdentitySqliteGuardPromise
+  // initDb may be called well after the connection was opened. Verify the
+  // canonical directory and main-file identity again before any WAL or schema
+  // statement can write through a path that was replaced in the meantime.
+  await localIdentitySqliteGuard?.verify({ allowNewSidecars: true })
   const db = await dbPromise
+  await localIdentitySqliteGuard?.verify({ allowNewSidecars: true })
   await db.exec(`
     PRAGMA foreign_keys = ON;
     PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA busy_timeout = 5000;
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -272,6 +346,11 @@ export const initDb = async () => {
       email_verified_at TEXT,
       is_admin INTEGER NOT NULL DEFAULT 0,
       is_banned INTEGER NOT NULL DEFAULT 0,
+      account_subject TEXT NOT NULL UNIQUE,
+      account_status TEXT NOT NULL DEFAULT 'active'
+        CHECK (account_status IN ('active', 'suspended', 'deleted')),
+      account_tombstoned_at TEXT,
+      auth_generation INTEGER NOT NULL DEFAULT 0 CHECK (auth_generation >= 0),
       onboarded_at TEXT,
       avatar_frame TEXT NOT NULL DEFAULT 'none',
       avatar_overlay TEXT NOT NULL DEFAULT 'none',
@@ -303,6 +382,13 @@ export const initDb = async () => {
       output_desc TEXT NOT NULL DEFAULT '',
       data_range TEXT NOT NULL DEFAULT '',
       samples TEXT NOT NULL DEFAULT '[]',
+      topic_tags TEXT NOT NULL DEFAULT '',
+      technique_tags TEXT NOT NULL DEFAULT '',
+      estimated_minutes INTEGER,
+      recommended_for TEXT NOT NULL DEFAULT '',
+      quality_status TEXT NOT NULL DEFAULT 'unchecked',
+      editorial_status TEXT NOT NULL DEFAULT 'none',
+      revision_summary TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS submissions (
@@ -369,12 +455,16 @@ export const initDb = async () => {
   `)
 
   await ensureLegacyColumns(db)
+  await ensureAccountIdentitySchema(db)
+  await ensureOidcIdentitySchema(db)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_submissions_problem_status ON submissions (problem_id, status);
     CREATE INDEX IF NOT EXISTS idx_submissions_status_queue ON submissions (status, queue_position, id);
     CREATE INDEX IF NOT EXISTS idx_submissions_user_created ON submissions (user_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_testcases_problem_sample ON testcases (problem_id, is_sample, id);
     CREATE INDEX IF NOT EXISTS idx_problems_status_difficulty ON problems (status, difficulty, id);
+    CREATE INDEX IF NOT EXISTS idx_problems_status_id ON problems (status, id);
+    CREATE INDEX IF NOT EXISTS idx_problems_quality_status ON problems (quality_status, status, id);
   `)
 
   const columns = await db.all(`PRAGMA table_info(users)`)
@@ -448,12 +538,16 @@ export const initDb = async () => {
     // 初始管理员密码：优先取环境变量；否则生成随机密码并打印（避免硬编码弱口令）
     const adminPassword = process.env.ADMIN_PASSWORD || randomBytes(9).toString('base64url')
     const passwordHash = bcrypt.hashSync(adminPassword, 10)
+    const accountSubject = createAccountSubject()
     await db.run(
-      `INSERT INTO users (id, name, password_hash, is_admin, is_banned, created_at)
-       VALUES (?, ?, ?, 1, 0, ?)`,
+      `INSERT INTO users (
+         id, name, password_hash, is_admin, is_banned,
+         account_subject, account_status, created_at
+       ) VALUES (?, ?, ?, 1, 0, ?, 'active', ?)`,
       adminId,
       adminName,
       passwordHash,
+      accountSubject,
       new Date().toISOString()
     )
     if (!process.env.ADMIN_PASSWORD) {
@@ -669,6 +763,7 @@ export const initDb = async () => {
     CREATE INDEX IF NOT EXISTS idx_conversations_last_message ON conversations(last_message_at);
     CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id, id);
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_sender_read ON messages(conversation_id, sender_id, is_read);
     CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
     CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
@@ -777,6 +872,7 @@ export const initDb = async () => {
       FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, is_read, created_at);
+    CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id, id);
 
     -- 黑名单（屏蔽后对方不可私信/评论/查看档案）
     CREATE TABLE IF NOT EXISTS blocks (
@@ -993,6 +1089,9 @@ export const initDb = async () => {
       )
     }
   }
+
+  await localIdentitySqliteGuard?.verify({ allowNewSidecars: true })
+
 }
 
 export const getDb = async () => {
@@ -1000,7 +1099,45 @@ export const getDb = async () => {
   return db
 }
 
+// Identity requests and the durable Hydra outbox use a dedicated SQLite
+// connection. This lets SQLite coordinate through WAL/busy_timeout instead of
+// allowing unrelated main-app statements to leak into an identity transaction
+// on the same connection.
+export const getIdentityDb = async () => {
+  if (!identityDbPromise) identityDbPromise = openDatabaseConnection()
+  return identityDbPromise
+}
+
+// Public browser interactions and UserInfo introspection use isolated
+// connections so a slow/untrusted request cannot occupy the connection used
+// by private token hooks, logout broker operations or the durable outbox.
+export const getIdentityPublicDb = async () => {
+  if (!identityPublicDbPromise) identityPublicDbPromise = openDatabaseConnection()
+  return identityPublicDbPromise
+}
+
+export const getIdentityUserInfoDb = async () => {
+  if (!identityUserInfoDbPromise) identityUserInfoDbPromise = openDatabaseConnection()
+  return identityUserInfoDbPromise
+}
+
 export const closeDb = async () => {
+  if (identityUserInfoDbPromise) {
+    const identityUserInfoDb = await identityUserInfoDbPromise
+    if (identityUserInfoDb.open) await identityUserInfoDb.close()
+    identityUserInfoDbPromise = null
+  }
+  if (identityPublicDbPromise) {
+    const identityPublicDb = await identityPublicDbPromise
+    if (identityPublicDb.open) await identityPublicDb.close()
+    identityPublicDbPromise = null
+  }
+  if (identityDbPromise) {
+    const identityDb = await identityDbPromise
+    if (identityDb.open) await identityDb.close()
+    identityDbPromise = null
+  }
   const db = await dbPromise
   if (db.open) await db.close()
+  await (await localIdentitySqliteGuardPromise)?.close()
 }

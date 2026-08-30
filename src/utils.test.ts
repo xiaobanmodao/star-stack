@@ -95,4 +95,18 @@ describe('fetchJson', () => {
     controller.abort()
     await expect(request).rejects.toMatchObject({ code: 'ABORTED' })
   })
+
+  it('emits auth-expired for cookie-only sessions without a local token', async () => {
+    const { storage, dispatchEvent } = installBrowserGlobals()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ message: '登录已过期' }), {
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+    })))
+
+    const { response } = await fetchJson('/api/me')
+
+    expect(response.status).toBe(401)
+    expect(storage.removeItem).not.toHaveBeenCalled()
+    expect(dispatchEvent).toHaveBeenCalledTimes(1)
+  })
 })

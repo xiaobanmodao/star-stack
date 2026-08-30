@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import './UserMenu.css'
 import { OJ_ENABLED } from '../constants'
 import type { UserRecord } from '../types'
-import { BookOpen, CircleUserRound, FileText, LogOut, ShieldCheck, UserRound } from 'lucide-react'
+import { BookOpen, CircleUserRound, FileText, LogOut, ShieldCheck, Trophy, UserRound } from 'lucide-react'
 import DecoratedAvatar from './profile/DecoratedAvatar'
 
 interface UserMenuProps {
@@ -19,6 +19,8 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
   const closeTimerRef = useRef<number | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const avatarRef = useRef<HTMLButtonElement>(null)
+  const suppressFocusOpenRef = useRef(false)
+  const pointerFocusRef = useRef(false)
 
   const handleMouseEnter = () => {
     if (closeTimerRef.current) {
@@ -29,12 +31,43 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
   }
 
   const handleMouseLeave = () => {
+    if (menuRef.current?.contains(document.activeElement)) return
     closeTimerRef.current = window.setTimeout(() => {
       setUserMenuOpen(false)
     }, 300)
   }
 
+  const handleKeyboardFocus = () => {
+    if (pointerFocusRef.current) {
+      pointerFocusRef.current = false
+      return
+    }
+    if (suppressFocusOpenRef.current) {
+      suppressFocusOpenRef.current = false
+      return
+    }
+    handleMouseEnter()
+    window.setTimeout(() => {
+      menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+    }, 0)
+  }
+
+  const handleMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') || [])
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement)
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      if (items.length === 0) return
+      const delta = event.key === 'ArrowDown' ? 1 : -1
+      items[(currentIndex + delta + items.length) % items.length]?.focus()
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault()
+      items[event.key === 'Home' ? 0 : items.length - 1]?.focus()
+    }
+  }
+
   const toggleMenu = () => {
+    pointerFocusRef.current = false
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current)
       closeTimerRef.current = null
@@ -50,6 +83,7 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
       if (event.key !== 'Escape' || !userMenuOpen) return
       event.preventDefault()
       setUserMenuOpen(false)
+      suppressFocusOpenRef.current = true
       avatarRef.current?.focus()
     }
     document.addEventListener('pointerdown', handlePointerDown)
@@ -74,8 +108,9 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
         aria-label={`打开用户菜单，当前用户 ${currentUser.name || currentUser.id}`}
         aria-haspopup="menu"
         aria-expanded={userMenuOpen}
+        onPointerDown={() => { pointerFocusRef.current = true }}
         onClick={toggleMenu}
-        onFocus={handleMouseEnter}
+        onFocus={handleKeyboardFocus}
       >
         <DecoratedAvatar
           avatar={currentUser.avatar}
@@ -93,6 +128,7 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
         role="menu"
         aria-label="用户菜单"
         aria-hidden={!userMenuOpen}
+        onKeyDown={handleMenuKeyDown}
       >
         <div className="user-menu-level">
           <span aria-hidden="true">{currentUser.displayTitleIcon || currentUser.icon || <CircleUserRound size={16} strokeWidth={1.8} />}</span>
@@ -126,6 +162,14 @@ export default function UserMenu({ currentUser, initial, openLogoutConfirm }: Us
             setUserMenuOpen(false)
           }}>
             <FileText size={15} strokeWidth={1.8} aria-hidden="true" /> 我的提交
+          </button>
+        )}
+        {OJ_ENABLED && (
+          <button className="user-menu-item" role="menuitem" type="button" onClick={() => {
+            if (location.pathname !== '/leaderboard') navigate('/leaderboard')
+            setUserMenuOpen(false)
+          }}>
+            <Trophy size={15} strokeWidth={1.8} aria-hidden="true" /> 排行榜
           </button>
         )}
         <div className="user-menu-divider" aria-hidden="true" />

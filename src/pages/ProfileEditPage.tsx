@@ -13,7 +13,7 @@ import type {
   UserResponse,
 } from '../types'
 import { fetchJson } from '../utils'
-import { Button, PageHeader, Panel } from '../components/ui'
+import { Button, LoadingState, PageHeader, Panel } from '../components/ui'
 import { useToast } from '../components/ui/ToastContext'
 import './ProfileEditPage.css'
 
@@ -414,7 +414,7 @@ export default function ProfileEditPage() {
           </div>
           <div className="profile-edit-decoration-content">
             {decorationLoading ? (
-              <div className="profile-decoration-loading" aria-live="polite">正在加载装饰选项…</div>
+              <LoadingState className="profile-decoration-loading" variant="compact" label="正在加载装饰选项…" />
             ) : decorations ? (
               <>
                 <div className="profile-decoration-preview">

@@ -1,5 +1,6 @@
 import { getDb } from '../db.js'
 import { requireUser } from '../middleware/auth.js'
+import { serializeDifficulty } from '../utils/difficulty.js'
 
 export const getProblemPlan = async (req, res) => {
   const auth = await requireUser(req, res)
@@ -16,7 +17,7 @@ export const getProblemPlan = async (req, res) => {
        ORDER BY pp.completed ASC, pp.added_at DESC`,
       user.id
     )
-    return res.json({ plans })
+    return res.json({ plans: plans.map((plan) => ({ ...plan, ...serializeDifficulty(plan.difficulty) })) })
   } catch (error) {
     console.error('Failed to get problem plan:', error)
     return res.status(500).json({ message: '获取做题计划失败' })
@@ -27,7 +28,7 @@ export const addToPlan = async (req, res) => {
   const auth = await requireUser(req, res)
   if (!auth) return
   const { db, user } = auth
-  const { problemId } = req.body
+  const { problemId } = req.body || {}
 
   if (!problemId) return res.status(400).json({ message: '缺少题目ID' })
 
@@ -79,7 +80,7 @@ export const completePlanItem = async (req, res) => {
   if (!auth) return
   const { db, user } = auth
   const planId = req.params.id
-  const { completed } = req.body
+  const { completed } = req.body || {}
 
   try {
     const plan = await db.get(
@@ -88,6 +89,7 @@ export const completePlanItem = async (req, res) => {
     )
     if (!plan) return res.status(404).json({ message: '计划项不存在' })
 
+    if (completed !== true && completed !== false) return res.status(400).json({ message: '完成状态不正确' })
     const now = completed ? new Date().toISOString() : null
     await db.run(
       `UPDATE problem_plan SET completed = ?, completed_at = ? WHERE id = ?`,

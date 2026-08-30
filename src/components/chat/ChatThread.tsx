@@ -7,6 +7,15 @@ import MessageItem from './MessageItem'
 import { EmptyState, LoadingState } from '../ui'
 import '../../pages/chat/ChatHub.css' // 聊天线程样式：全局可用（浮窗在非聊天页也需加载）
 import { PRESET_EMOJIS } from './chatMeta'
+import DecoratedAvatar from '../profile/DecoratedAvatar'
+
+type MentionUser = {
+  id: string
+  name: string
+  avatar?: string | null
+  avatarFrame?: import('../../types').AvatarFrameId
+  avatarOverlay?: import('../../types').AvatarOverlayId
+}
 
 export default function ChatThread({
   scopeType,
@@ -282,11 +291,13 @@ export default function ChatThread({
   // ---------- @ 提及自动补全 ----------
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [mention, setMention] = useState<{ query: string; start: number } | null>(null)
-  const [mentionResults, setMentionResults] = useState<{ id: string; name: string; avatar?: string | null }[]>([])
+  const [mentionResults, setMentionResults] = useState<MentionUser[]>([])
   const [mentionIndex, setMentionIndex] = useState(0)
   const mentionTimerRef = useRef<number | null>(null)
+  const mentionAbortRef = useRef<AbortController | null>(null)
 
   const updateMention = (value: string, cursor: number) => {
+    mentionAbortRef.current?.abort()
     const before = value.slice(0, cursor)
     const at = before.lastIndexOf('@')
     if (at < 0) {
@@ -306,19 +317,22 @@ export default function ChatThread({
     setMention({ query, start: at })
     if (mentionTimerRef.current !== null) window.clearTimeout(mentionTimerRef.current)
     mentionTimerRef.current = window.setTimeout(() => {
+      const controller = new AbortController()
+      mentionAbortRef.current = controller
       if (query) {
-        void fetchJson<{ users: { id: string; name: string; avatar?: string }[] }>(
-          `/api/users/search?q=${encodeURIComponent(query)}`
+        void fetchJson<{ users: MentionUser[] }>(
+          `/api/users/search?q=${encodeURIComponent(query)}`,
+          { signal: controller.signal },
         ).then(({ response, data }) => {
-          if (response.ok && data) {
+          if (!controller.signal.aborted && response.ok && data) {
             setMentionResults(data.users)
             setMentionIndex(0)
           }
         })
       } else {
         // 未输入关键字时展示好友
-        void fetchJson<{ friends: { id: string; name: string; avatar?: string | null }[] }>('/api/me/friends').then(({ response, data }) => {
-          if (response.ok && data) {
+        void fetchJson<{ friends: MentionUser[] }>('/api/me/friends', { signal: controller.signal }).then(({ response, data }) => {
+          if (!controller.signal.aborted && response.ok && data) {
             setMentionResults(data.friends)
             setMentionIndex(0)
           }
@@ -353,6 +367,7 @@ export default function ChatThread({
   useEffect(() => {
     return () => {
       if (mentionTimerRef.current !== null) window.clearTimeout(mentionTimerRef.current)
+      mentionAbortRef.current?.abort()
     }
   }, [])
 
@@ -476,13 +491,15 @@ export default function ChatThread({
                         }}
                         onMouseEnter={() => setMentionIndex(index)}
                       >
-                        <span className="chat-mention-avatar">
-                          {user.avatar ? (
-                            <img src={user.avatar} alt="" loading="lazy" />
-                          ) : (
-                            <span>{user.name.charAt(0).toUpperCase()}</span>
-                          )}
-                        </span>
+                          <DecoratedAvatar
+                            avatar={user.avatar}
+                            fallback={user.name.charAt(0).toUpperCase()}
+                            frame={user.avatarFrame}
+                            overlay={user.avatarOverlay}
+                            size="discussion-small"
+                            alt=""
+                            className="chat-mention-avatar"
+                          />
                         <span className="chat-mention-info">
                           <strong>{user.name}</strong>
                           <em>@{user.id}</em>

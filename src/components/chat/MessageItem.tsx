@@ -5,6 +5,7 @@ import type { ChatMessage } from '../../types'
 import { formatChatTime } from '../../utils/chat'
 import ChatContent from './ChatContent'
 import { PRESET_EMOJIS } from './chatMeta'
+import DecoratedAvatar from '../profile/DecoratedAvatar'
 
 /** 线程面板内的紧凑回复项 */
 function ThreadReplyItem({
@@ -26,15 +27,19 @@ function ThreadReplyItem({
         onClick={() => navigate(`/user/${reply.senderId}`)}
         title="查看个人主页"
       >
-        {reply.senderAvatar ? (
-          <img src={reply.senderAvatar} alt="" loading="lazy" decoding="async" width="24" height="24" />
-        ) : (
-          <span>{reply.senderName.charAt(0).toUpperCase()}</span>
-        )}
+        <DecoratedAvatar
+          avatar={reply.senderAvatar}
+          fallback={reply.senderName.charAt(0).toUpperCase()}
+          frame={reply.senderAvatarFrame}
+          overlay={reply.senderAvatarOverlay}
+          size="discussion"
+          loading="lazy"
+        />
       </button>
       <div className="chat-thread-reply-body">
         <div className="chat-thread-reply-head">
           <strong>{reply.senderName}</strong>
+          {reply.senderDisplayTitle && <span className="chat-message-user-title">{reply.senderDisplayTitleIcon || '✦'} {reply.senderDisplayTitle}</span>}
           <span>{formatChatTime(reply.createdAt)}</span>
         </div>
         <ChatContent content={reply.content} />
@@ -120,15 +125,19 @@ export default function MessageItem({
         onClick={() => navigate(`/user/${message.senderId}`)}
         title="查看个人主页"
       >
-        {message.senderAvatar ? (
-          <img src={message.senderAvatar} alt="" loading="lazy" decoding="async" width="32" height="32" />
-        ) : (
-          <span>{message.senderName.charAt(0).toUpperCase()}</span>
-        )}
+        <DecoratedAvatar
+          avatar={message.senderAvatar}
+          fallback={message.senderName.charAt(0).toUpperCase()}
+          frame={message.senderAvatarFrame}
+          overlay={message.senderAvatarOverlay}
+          size="discussion"
+          loading="lazy"
+        />
       </button>
       <div className="chat-message-body">
         <div className="chat-message-head">
           <strong className="chat-message-name">{message.senderName}</strong>
+          {message.senderDisplayTitle && <span className="chat-message-user-title">{message.senderDisplayTitleIcon || '✦'} {message.senderDisplayTitle}</span>}
           <span className="chat-message-time">{formatChatTime(message.createdAt)}</span>
         </div>
         <ChatContent content={message.content} />

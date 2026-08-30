@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react'
-import { PRESET_TAGS } from '../constants'
+import { useMemo, useState, type MouseEvent } from 'react'
+import { X } from 'lucide-react'
+import { PRESET_TAGS, PROBLEM_TAG_CATEGORIES } from '../constants'
 import { useModalFocus } from '../hooks/useModalFocus'
+import { IconButton } from './ui'
 import './TagSelector.css'
 
 type TagSelectorProps = {
@@ -11,30 +13,26 @@ type TagSelectorProps = {
 export default function TagSelector({ selectedTags, onTagsChange }: TagSelectorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [activeCategory, setActiveCategory] = useState('all')
   const dialogRef = useModalFocus(isOpen, () => setIsOpen(false))
 
-  useEffect(() => {
-    if (!isOpen) return
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsOpen(false)
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen])
+  const maxTags = 8
 
   const filteredTags = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return PRESET_TAGS
-    }
+    const categoryTags = activeCategory === 'all'
+      ? PRESET_TAGS
+      : PROBLEM_TAG_CATEGORIES.find((category) => category.key === activeCategory)?.tags || PRESET_TAGS
+    if (!searchQuery.trim()) return categoryTags
     const query = searchQuery.toLowerCase()
-    return PRESET_TAGS.filter((tag) => tag.toLowerCase().includes(query))
-  }, [searchQuery])
+    return categoryTags.filter((tag) => tag.toLowerCase().includes(query))
+  }, [activeCategory, searchQuery])
 
   const handleTagClick = (tag: string) => {
     if (selectedTags.includes(tag)) {
       onTagsChange(selectedTags.filter((item) => item !== tag))
       return
     }
+    if (selectedTags.length >= maxTags) return
     onTagsChange([...selectedTags, tag])
   }
 
@@ -45,20 +43,7 @@ export default function TagSelector({ selectedTags, onTagsChange }: TagSelectorP
 
   return (
     <div className="tag-selector">
-      <div
-        className="tag-selector-input"
-        role="button"
-        tabIndex={0}
-        aria-haspopup="dialog"
-        aria-expanded={isOpen}
-        onClick={() => setIsOpen(true)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault()
-            setIsOpen(true)
-          }
-        }}
-      >
+      <div className="tag-selector-input" onClick={() => setIsOpen(true)}>
         <div className="selected-tags">
           {selectedTags.length === 0 ? (
             <span className="tag-placeholder">点击选择标签</span>
@@ -70,30 +55,38 @@ export default function TagSelector({ selectedTags, onTagsChange }: TagSelectorP
                   className="remove-tag-btn"
                   onClick={(event) => handleRemoveTag(tag, event)}
                   type="button"
+                  aria-label={`移除标签 ${tag}`}
                 >
-                  ×
+                  <X size={12} strokeWidth={2} aria-hidden="true" />
                 </button>
               </span>
             ))
           )}
         </div>
-        <button type="button" className="tag-selector-btn" tabIndex={-1} aria-hidden="true">
+        <button
+          type="button"
+          className="tag-selector-btn"
+          aria-haspopup="dialog"
+          aria-expanded={isOpen}
+          aria-controls="tag-selector-dialog"
+          onClick={() => setIsOpen(true)}
+        >
           选择标签
         </button>
       </div>
 
       {isOpen && (
-        <div className="tag-selector-modal" role="dialog" aria-modal="true" aria-labelledby="tag-selector-dialog-title" onClick={() => setIsOpen(false)}>
+        <div id="tag-selector-dialog" className="tag-selector-modal" role="dialog" aria-modal="true" aria-labelledby="tag-selector-dialog-title" onClick={() => setIsOpen(false)}>
           <div ref={dialogRef} className="tag-selector-content" tabIndex={-1} onClick={(event) => event.stopPropagation()}>
             <div className="tag-selector-header">
               <h3 id="tag-selector-dialog-title">选择标签</h3>
-              <button
+              <IconButton
                 className="tag-selector-close"
+                icon={<X size={17} strokeWidth={1.8} />}
+                label="关闭标签选择"
                 onClick={() => setIsOpen(false)}
-                type="button"
-              >
-                ×
-              </button>
+                size="sm"
+              />
             </div>
 
             <div className="tag-selector-search">
@@ -103,8 +96,31 @@ export default function TagSelector({ selectedTags, onTagsChange }: TagSelectorP
                 placeholder="搜索标签..."
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                autoFocus
               />
+            </div>
+
+            <div className="tag-selector-categories" role="tablist" aria-label="标签分类">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeCategory === 'all'}
+                className={activeCategory === 'all' ? 'active' : ''}
+                onClick={() => setActiveCategory('all')}
+              >
+                全部
+              </button>
+              {PROBLEM_TAG_CATEGORIES.map((category) => (
+                <button
+                  key={category.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeCategory === category.key}
+                  className={activeCategory === category.key ? 'active' : ''}
+                  onClick={() => setActiveCategory(category.key)}
+                >
+                  {category.label}
+                </button>
+              ))}
             </div>
 
             <div className="tag-selector-body">
@@ -116,8 +132,9 @@ export default function TagSelector({ selectedTags, onTagsChange }: TagSelectorP
                     <button
                       key={tag}
                       type="button"
-                      className={`tag-selector-item ${selectedTags.includes(tag) ? 'selected' : ''}`}
+                      className={`tag-selector-item ${selectedTags.includes(tag) ? 'selected' : ''} ${!selectedTags.includes(tag) && selectedTags.length >= maxTags ? 'disabled' : ''}`}
                       onClick={() => handleTagClick(tag)}
+                      disabled={!selectedTags.includes(tag) && selectedTags.length >= maxTags}
                     >
                       {tag}
                       {selectedTags.includes(tag) && <span className="tag-check">✓</span>}
@@ -129,7 +146,7 @@ export default function TagSelector({ selectedTags, onTagsChange }: TagSelectorP
 
             <div className="tag-selector-footer">
               <div className="tag-selector-count">
-                已选择 {selectedTags.length} 个标签
+                已选择 {selectedTags.length}/{maxTags} 个标签；第一个为主知识点
               </div>
               <button
                 className="primary"

@@ -26,6 +26,23 @@
   --ss-color-danger: #f85149;
   --ss-color-info: #58a6ff;
 
+  /* 题目五层难度：简单 / 中等 / 较难 / 困难 / 极难 */
+  --ss-difficulty-simple: #3fb950;
+  --ss-difficulty-simple-bg: rgba(63, 185, 80, 0.14);
+  --ss-difficulty-simple-border: rgba(63, 185, 80, 0.42);
+  --ss-difficulty-medium: #d29922;
+  --ss-difficulty-medium-bg: rgba(210, 153, 34, 0.14);
+  --ss-difficulty-medium-border: rgba(210, 153, 34, 0.42);
+  --ss-difficulty-challenging: #f0883e;
+  --ss-difficulty-challenging-bg: rgba(240, 136, 62, 0.14);
+  --ss-difficulty-challenging-border: rgba(240, 136, 62, 0.42);
+  --ss-difficulty-difficult: #ff7b8a;
+  --ss-difficulty-difficult-bg: rgba(255, 123, 138, 0.14);
+  --ss-difficulty-difficult-border: rgba(255, 123, 138, 0.42);
+  --ss-difficulty-extreme: #b62324;
+  --ss-difficulty-extreme-bg: rgba(182, 35, 36, 0.18);
+  --ss-difficulty-extreme-border: rgba(182, 35, 36, 0.5);
+
   --ss-radius-xs: 4px;
   --ss-radius-sm: 6px;
   --ss-radius-md: 8px;
@@ -72,7 +89,7 @@
   --ss-danger-border: rgba(248, 113, 113, 0.35);
   --ss-danger-bg: rgba(248, 113, 113, 0.05);
 
-  /* 热力图 / 星图节点 */
+  /* 热力图节点 */
   --ss-heat-1: rgba(56, 189, 248, 0.32);
   --ss-heat-2: rgba(56, 189, 248, 0.5);
   --ss-heat-3: rgba(34, 197, 94, 0.58);
@@ -237,6 +254,23 @@
   --ss-color-danger: #dc2626;
   --ss-color-info: #0969da;
 
+  /* 题目五层难度：浅色主题使用更高对比度文字色 */
+  --ss-difficulty-simple: #15803d;
+  --ss-difficulty-simple-bg: rgba(21, 128, 61, 0.1);
+  --ss-difficulty-simple-border: rgba(21, 128, 61, 0.35);
+  --ss-difficulty-medium: #a16207;
+  --ss-difficulty-medium-bg: rgba(161, 98, 7, 0.1);
+  --ss-difficulty-medium-border: rgba(161, 98, 7, 0.35);
+  --ss-difficulty-challenging: #c2410c;
+  --ss-difficulty-challenging-bg: rgba(194, 65, 12, 0.1);
+  --ss-difficulty-challenging-border: rgba(194, 65, 12, 0.35);
+  --ss-difficulty-difficult: #be123c;
+  --ss-difficulty-difficult-bg: rgba(190, 18, 60, 0.1);
+  --ss-difficulty-difficult-border: rgba(190, 18, 60, 0.35);
+  --ss-difficulty-extreme: #991b1b;
+  --ss-difficulty-extreme-bg: rgba(153, 27, 27, 0.12);
+  --ss-difficulty-extreme-border: rgba(153, 27, 27, 0.4);
+
   --ss-shadow-raised: 0 1px 3px rgba(31, 35, 40, 0.12);
   --ss-shadow-card: 0 4px 18px rgba(31, 35, 40, 0.1);
   --ss-shadow-card-soft: 0 2px 10px rgba(31, 35, 40, 0.08);
@@ -253,7 +287,7 @@
   --ss-danger-border: rgba(220, 38, 38, 0.3);
   --ss-danger-bg: rgba(220, 38, 38, 0.05);
 
-  /* 热力图 / 星图节点（浅色） */
+  /* 热力图节点（浅色） */
   --ss-heat-1: rgba(56, 189, 248, 0.28);
   --ss-heat-2: rgba(56, 189, 248, 0.45);
   --ss-heat-3: rgba(34, 197, 94, 0.5);

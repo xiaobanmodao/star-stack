@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs'
-import { getDb } from '../db.js'
+import { getDb, getIdentityDb } from '../db.js'
 import { requireAdmin } from '../middleware/auth.js'
 import { localDay } from '../utils/dateHelpers.js'
 import { broadcastToScope } from './chatController.js'
@@ -8,6 +8,19 @@ import { createNotification } from '../utils/notifications.js'
 import { parseRevisionSnapshot, recordProblemStatusChange } from '../utils/problemRevisions.js'
 import { collectSystemMetrics } from '../utils/monitoring.js'
 import { getJudgeQueueSnapshot } from './submissionsController.js'
+import { serializeDifficulty } from '../utils/difficulty.js'
+import {
+  PROBLEM_EDITORIAL_LABELS,
+  PROBLEM_QUALITY_LABELS,
+  PROBLEM_QUALITY_STATUSES,
+  serializeProblemMetadata,
+} from '../utils/problemMetadata.js'
+import { createAccountSubject } from '../utils/accountIdentityMigration.js'
+import {
+  AccountLifecycleError,
+  changeAccountPassword,
+  transitionAccountStatus,
+} from '../services/accountLifecycle.js'
 
 const parsePositiveInteger = (value) => {
   const parsed = Number.parseInt(String(value ?? ''), 10)
@@ -30,7 +43,9 @@ export const listAdminUsers = async (req, res) => {
   const { db } = auth
   const limit = Math.min(500, Math.max(1, parsePositiveInteger(req.query.limit) || 200))
   const users = await db.all(
-    `SELECT id, name, email, is_admin, is_banned, created_at FROM users ORDER BY created_at DESC LIMIT ?`,
+    `SELECT id, name, email, is_admin, is_banned, created_at
+     FROM users WHERE account_status <> 'deleted'
+     ORDER BY created_at DESC LIMIT ?`,
     limit,
   )
   return res.json({
@@ -59,9 +74,13 @@ export const createAdminUser = async (req, res) => {
   const existing = await db.get(`SELECT id FROM users WHERE id = ?`, id)
   if (existing) return res.status(409).json({ message: '该 ID 已被注册' })
   const passwordHash = await bcrypt.hash(password, 10)
+  const accountSubject = createAccountSubject()
   await db.run(
-    `INSERT INTO users (id, name, password_hash, is_admin, is_banned, created_at) VALUES (?, ?, ?, ?, 0, ?)`,
-    id, name, passwordHash, isAdmin ? 1 : 0, new Date().toISOString()
+    `INSERT INTO users (
+       id, name, password_hash, is_admin, is_banned,
+       account_subject, account_status, created_at
+     ) VALUES (?, ?, ?, ?, 0, ?, 'active', ?)`,
+    id, name, passwordHash, isAdmin ? 1 : 0, accountSubject, new Date().toISOString()
   )
   await recordAdminAction(db, {
     adminId: auth.user.id,
@@ -79,8 +98,9 @@ export const promoteUser = async (req, res) => {
   if (!auth) return
   const { db } = auth
   const targetId = req.params.id
-  const target = await db.get(`SELECT id, is_admin FROM users WHERE id = ?`, targetId)
+  const target = await db.get(`SELECT id, is_admin, account_status FROM users WHERE id = ?`, targetId)
   if (!target) return res.status(404).json({ message: '用户不存在' })
+  if (target.account_status === 'deleted') return res.status(409).json({ message: '已注销账号不可修改权限' })
   if (target.is_admin) return res.json({ ok: true })
   await db.run(`UPDATE users SET is_admin = 1 WHERE id = ?`, targetId)
   await recordAdminAction(db, {
@@ -99,16 +119,22 @@ export const demoteUser = async (req, res) => {
   if (targetId === auth.user.id) return res.status(400).json({ message: '不能降级自己的管理员权限' })
   try {
     await db.exec('BEGIN IMMEDIATE')
-    const target = await db.get(`SELECT id, is_admin FROM users WHERE id = ?`, targetId)
+    const target = await db.get(`SELECT id, is_admin, account_status FROM users WHERE id = ?`, targetId)
     if (!target) {
       await db.exec('ROLLBACK')
       return res.status(404).json({ message: '用户不存在' })
+    }
+    if (target.account_status === 'deleted') {
+      await db.exec('ROLLBACK')
+      return res.status(409).json({ message: '已注销账号不可修改权限' })
     }
     if (!target.is_admin) {
       await db.exec('ROLLBACK')
       return res.json({ ok: true })
     }
-    const adminCount = await db.get(`SELECT COUNT(*) as count FROM users WHERE is_admin = 1`)
+    const adminCount = await db.get(
+      `SELECT COUNT(*) as count FROM users WHERE is_admin = 1 AND account_status <> 'deleted'`,
+    )
     if (adminCount?.count <= 1) {
       await db.exec('ROLLBACK')
       return res.status(400).json({ message: '不能降级最后一个管理员' })
@@ -137,11 +163,11 @@ export const resetPassword = async (req, res) => {
   if (typeof password !== 'string' || !password) return res.status(400).json({ message: '请输入新密码' })
   if (password.length < 6) return res.status(400).json({ message: '密码至少 6 位' })
   if (password.length > 128) return res.status(400).json({ message: '密码不能超过 128 个字符' })
-  const target = await db.get(`SELECT id FROM users WHERE id = ?`, targetId)
+  const target = await db.get(`SELECT id, account_status FROM users WHERE id = ?`, targetId)
   if (!target) return res.status(404).json({ message: '用户不存在' })
+  if (target.account_status === 'deleted') return res.status(409).json({ message: '已注销账号不可重置密码' })
   const passwordHash = await bcrypt.hash(password, 10)
-  await db.run(`UPDATE users SET password_hash = ? WHERE id = ?`, passwordHash, targetId)
-  await db.run(`DELETE FROM sessions WHERE user_id = ?`, targetId)
+  await changeAccountPassword(await getIdentityDb(), { accountId: targetId, passwordHash })
   await recordAdminAction(db, {
     adminId: auth.user.id,
     adminName: getAdminName(auth.user),
@@ -156,39 +182,41 @@ export const banUser = async (req, res) => {
   const { db, user: adminUser } = auth
   const targetId = req.params.id
   const { banned } = req.body || {}
-  const banValue = banned ? 1 : 0
   try {
-    await db.exec('BEGIN IMMEDIATE')
-    const target = await db.get(`SELECT id, is_admin, is_banned FROM users WHERE id = ?`, targetId)
-    if (!target) {
-      await db.exec('ROLLBACK')
-      return res.status(404).json({ message: '用户不存在' })
-    }
-    if (banValue === 1) {
-      if (targetId === adminUser.id) {
-        await db.exec('ROLLBACK')
-        return res.status(400).json({ message: '不能封禁自己' })
-      }
-      if (target.is_admin) {
-        const adminCount = await db.get(`SELECT COUNT(*) as count FROM users WHERE is_admin = 1`)
-        if (adminCount?.count <= 1) {
-          await db.exec('ROLLBACK')
-          return res.status(400).json({ message: '不能封禁最后一个管理员' })
+    await transitionAccountStatus(await getIdentityDb(), {
+      accountId: targetId,
+      status: banned ? 'suspended' : 'active',
+      validate: async ({ db: transactionDb, account, status }) => {
+        if (status !== 'suspended') return
+        if (targetId === adminUser.id) {
+          throw new AccountLifecycleError('SELF_SUSPEND', '不能封禁自己')
         }
+        if (account.is_admin) {
+          const adminCount = await transactionDb.get(
+            `SELECT COUNT(*) AS count FROM users
+             WHERE is_admin = 1 AND account_status <> 'deleted'`,
+          )
+          if (adminCount?.count <= 1) {
+            throw new AccountLifecycleError('LAST_ADMIN', '不能封禁最后一个管理员')
+          }
+        }
+      },
+    })
+  } catch (error) {
+    if (error instanceof AccountLifecycleError) {
+      if (error.code === 'NOT_FOUND') return res.status(404).json({ message: error.message })
+      if (error.code === 'TERMINAL_STATUS') return res.status(409).json({ message: error.message })
+      if (error.code === 'SELF_SUSPEND' || error.code === 'LAST_ADMIN') {
+        return res.status(400).json({ message: error.message })
       }
     }
-    await db.run(`UPDATE users SET is_banned = ? WHERE id = ?`, banValue, targetId)
-    if (banValue === 1) await db.run(`DELETE FROM sessions WHERE user_id = ?`, targetId)
-    await db.exec('COMMIT')
-  } catch (error) {
-    await db.exec('ROLLBACK').catch(() => undefined)
     console.error('Failed to update user ban status:', error)
     return res.status(500).json({ message: '用户状态更新失败' })
   }
   await recordAdminAction(db, {
     adminId: auth.user.id,
     adminName: getAdminName(auth.user),
-    action: banValue === 1 ? 'user.ban' : 'user.unban',
+    action: banned ? 'user.ban' : 'user.unban',
     targetType: 'user', targetId,
   })
   return res.json({ ok: true })
@@ -201,24 +229,25 @@ export const deleteAdminUser = async (req, res) => {
   const targetId = req.params.id
   if (targetId === adminUser.id) return res.status(400).json({ message: '不能删除自己' })
   try {
-    await db.exec('BEGIN IMMEDIATE')
-    const target = await db.get(`SELECT id, is_admin FROM users WHERE id = ?`, targetId)
-    if (!target) {
-      await db.exec('ROLLBACK')
-      return res.status(404).json({ message: '用户不存在' })
-    }
-    if (target.is_admin) {
-      const adminCount = await db.get(`SELECT COUNT(*) as count FROM users WHERE is_admin = 1`)
-      if (adminCount?.count <= 1) {
-        await db.exec('ROLLBACK')
-        return res.status(400).json({ message: '不能删除最后一个管理员' })
-      }
-    }
-    await db.run(`DELETE FROM users WHERE id = ?`, targetId)
-    await db.run(`DELETE FROM sessions WHERE user_id = ?`, targetId)
-    await db.exec('COMMIT')
+    await transitionAccountStatus(await getIdentityDb(), {
+      accountId: targetId,
+      status: 'deleted',
+      validate: async ({ db: transactionDb, account }) => {
+        if (!account.is_admin) return
+        const adminCount = await transactionDb.get(
+          `SELECT COUNT(*) AS count FROM users
+           WHERE is_admin = 1 AND account_status <> 'deleted'`,
+        )
+        if (adminCount?.count <= 1) {
+          throw new AccountLifecycleError('LAST_ADMIN', '不能删除最后一个管理员')
+        }
+      },
+    })
   } catch (error) {
-    await db.exec('ROLLBACK').catch(() => undefined)
+    if (error instanceof AccountLifecycleError) {
+      if (error.code === 'NOT_FOUND') return res.status(404).json({ message: error.message })
+      if (error.code === 'LAST_ADMIN') return res.status(400).json({ message: error.message })
+    }
     console.error('Failed to delete admin user:', error)
     return res.status(500).json({ message: '用户删除失败' })
   }
@@ -237,6 +266,7 @@ export const listAdminProblems = async (req, res) => {
   try {
     const query = normalizeSearch(req.query.q)
     const requestedStatus = normalizeSearch(req.query.status, 20)
+    const requestedQuality = normalizeSearch(req.query.qualityStatus, 20)
     const allowedStatuses = new Set(['draft', 'pending_review', 'published', 'hidden'])
     const where = []
     const params = []
@@ -244,18 +274,24 @@ export const listAdminProblems = async (req, res) => {
       where.push('p.status = ?')
       params.push(requestedStatus)
     }
+    if (PROBLEM_QUALITY_STATUSES.includes(requestedQuality)) {
+      where.push('p.quality_status = ?')
+      params.push(requestedQuality)
+    }
     if (query) {
       const problemId = parsePositiveInteger(query)
       if (problemId) {
         where.push('(p.id = ? OR p.title LIKE ? OR p.slug LIKE ?)')
         params.push(problemId, `%${query}%`, `%${query}%`)
       } else {
-        where.push('(p.title LIKE ? OR p.slug LIKE ? OR p.tags LIKE ?)')
-        params.push(`%${query}%`, `%${query}%`, `%${query}%`)
+        where.push('(p.title LIKE ? OR p.slug LIKE ? OR p.tags LIKE ? OR p.topic_tags LIKE ? OR p.technique_tags LIKE ?)')
+        params.push(`%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`)
       }
     }
     const rows = await db.all(
-      `SELECT p.id, p.slug, p.title, p.difficulty, p.tags, p.status, p.creator_id, p.created_at,
+      `SELECT p.id, p.slug, p.title, p.difficulty, p.tags, p.topic_tags, p.technique_tags, p.estimated_minutes,
+              p.recommended_for, p.quality_status, p.editorial_status, p.revision_summary,
+              p.status, p.creator_id, p.created_at,
               u.name AS creator_name,
               (SELECT COUNT(*) FROM testcases t WHERE t.problem_id = p.id) AS testcase_count
        FROM problems p
@@ -270,8 +306,11 @@ export const listAdminProblems = async (req, res) => {
         id: row.id,
         slug: row.slug,
         title: row.title,
-        difficulty: row.difficulty,
+        ...serializeDifficulty(row.difficulty),
         tags: row.tags ? row.tags.split(',').map((tag) => tag.trim()).filter(Boolean) : [],
+        ...serializeProblemMetadata(row),
+        qualityLabel: PROBLEM_QUALITY_LABELS[serializeProblemMetadata(row).qualityStatus],
+        editorialLabel: PROBLEM_EDITORIAL_LABELS[serializeProblemMetadata(row).editorialStatus],
         status: row.status || 'published',
         creatorId: row.creator_id,
         creatorName: row.creator_name || row.creator_id || '未知用户',
@@ -410,8 +449,10 @@ export const getAdminProblemReview = async (req, res) => {
   if (!problemId) return res.status(400).json({ message: '无效的题目 ID' })
   try {
     const problem = await auth.db.get(
-      `SELECT p.id, p.slug, p.title, p.difficulty, p.tags, p.statement, p.input_desc, p.output_desc,
-              p.data_range, p.status, p.creator_id, p.created_at, u.name AS creator_name
+      `SELECT p.id, p.slug, p.title, p.difficulty, p.tags, p.topic_tags, p.technique_tags, p.estimated_minutes,
+              p.recommended_for, p.quality_status, p.editorial_status, p.revision_summary,
+              p.statement, p.input_desc, p.output_desc, p.data_range, p.status, p.creator_id, p.created_at,
+              u.name AS creator_name
        FROM problems p LEFT JOIN users u ON u.id = p.creator_id WHERE p.id = ?`,
       problemId,
     )
@@ -429,8 +470,11 @@ export const getAdminProblemReview = async (req, res) => {
     return res.json({
       review: {
         problem: {
-          id: problem.id, slug: problem.slug, title: problem.title, difficulty: problem.difficulty,
+          id: problem.id, slug: problem.slug, title: problem.title, ...serializeDifficulty(problem.difficulty),
           tags: String(problem.tags || '').split(',').map((tag) => tag.trim()).filter(Boolean),
+          ...serializeProblemMetadata(problem),
+          qualityLabel: PROBLEM_QUALITY_LABELS[serializeProblemMetadata(problem).qualityStatus],
+          editorialLabel: PROBLEM_EDITORIAL_LABELS[serializeProblemMetadata(problem).editorialStatus],
           statement: problem.statement, inputDesc: problem.input_desc, outputDesc: problem.output_desc,
           dataRange: problem.data_range, status: problem.status, creatorId: problem.creator_id,
           creatorName: problem.creator_name || problem.creator_id, createdAt: problem.created_at,

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import CheckinBanner from '../components/CheckinBanner'
 import type { OjProblemSummary } from '../types'
 import { fetchJson, openInNewTab } from '../utils'
 import { Badge, Button, EmptyState, ErrorState, LoadingState, Panel } from '../components/ui'
+import { getDifficultyClassName, getDifficultyLabel, getDifficultyMeta, getDifficultyOptions } from '../utils/difficulty'
 import './EntryPages.css'
 
 type OjOverview = {
@@ -79,7 +80,16 @@ export default function OjHomePage() {
     }
   }
 
-  const difficultyEntries = Object.entries(overview?.difficulties || {})
+  const difficultyEntries = useMemo(() => {
+    const counts = new Map<string, number>()
+    Object.entries(overview?.difficulties || {}).forEach(([value, count]) => {
+      const key = getDifficultyMeta(value).key
+      counts.set(key, (counts.get(key) || 0) + Number(count || 0))
+    })
+    return getDifficultyOptions()
+      .filter((option) => counts.has(option.value))
+      .map((option) => [option.value, counts.get(option.value) || 0] as const)
+  }, [overview])
   const topTags = overview?.topTags || []
 
   return (
@@ -166,7 +176,9 @@ export default function OjHomePage() {
           <div className="oj-workbench-difficulty-list">
             {difficultyEntries.map(([name, count]) => (
               <button key={name} type="button" onClick={() => navigate(`/oj/list?difficulty=${encodeURIComponent(name)}`)}>
-                <span className={`oj-badge ${name}`}>{name}</span>
+                <span className={`oj-badge ${getDifficultyClassName(name)}`}>
+                  {getDifficultyLabel(name)}
+                </span>
                 <strong>{count}</strong>
               </button>
             ))}

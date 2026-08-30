@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo, type CSSProperties } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
-import { ApiRequestError, fetchJson, formatTime, isPollingPageVisible } from '../utils'
-import type { Achievement, OjSubmission, ProfileStatsResponse, SubmissionResponse } from '../types'
+import { ApiRequestError, fetchJson, formatTime, isPollingPageVisible, openInNewTab } from '../utils'
+import type { Achievement, OjSubmission, ProfileStatsResponse, RelatedProblem, RelatedProblemsResponse, SubmissionResponse } from '../types'
 import { Badge, Button, PageHeader, Panel } from '../components/ui'
+import { getSubmissionActionPlan, type SubmissionAction } from '../utils/submissionFeedback'
 import './OjJudgePage.css'
 
 type JudgeCelebrationStats = {
@@ -166,6 +167,7 @@ export default function OjJudgePage() {
     problemTitle?: string
     language?: string
     code?: string
+    openIde?: boolean
   }
   const submissionId = params.id ? Number(params.id) : null
   const [submission, setSubmission] = useState<OjSubmission | null>(null)
@@ -194,6 +196,9 @@ export default function OjJudgePage() {
   const [celebrationStats, setCelebrationStats] = useState<JudgeCelebrationStats | null>(null)
   const [recentAchievements, setRecentAchievements] = useState<Achievement[]>([])
   const [cancelling, setCancelling] = useState(false)
+  const [relatedProblems, setRelatedProblems] = useState<RelatedProblem[]>([])
+  const [relatedProblemsLoading, setRelatedProblemsLoading] = useState(false)
+  const relatedProblemsAbortRef = useRef<AbortController | null>(null)
 
   const loadSubmission = useCallback(async (idValue: number) => {
     submissionLoadAbortRef.current?.abort()
@@ -612,6 +617,39 @@ export default function OjJudgePage() {
     }
   }, [currentUser?.id, stage, submission])
 
+  const problemId = submission?.problemId || locationState.problemId || retryPayload?.problemId
+
+  useEffect(() => {
+    const canLoadRelated = Boolean(problemId) && showResults && stage !== 'running'
+    relatedProblemsAbortRef.current?.abort()
+    if (!canLoadRelated || !problemId) {
+      setRelatedProblems([])
+      setRelatedProblemsLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    relatedProblemsAbortRef.current = controller
+    setRelatedProblemsLoading(true)
+    void fetchJson<RelatedProblemsResponse>(`/api/oj/problems/${problemId}/related`, { signal: controller.signal })
+      .then(({ response, data }) => {
+        if (controller.signal.aborted) return
+        setRelatedProblems(response.ok ? (data?.problems || []) : [])
+      })
+      .catch((requestError) => {
+        if (requestError instanceof ApiRequestError && requestError.code === 'ABORTED') return
+        if (!controller.signal.aborted) setRelatedProblems([])
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRelatedProblemsLoading(false)
+      })
+
+    return () => {
+      controller.abort()
+      if (relatedProblemsAbortRef.current === controller) relatedProblemsAbortRef.current = null
+    }
+  }, [problemId, showResults, stage])
+
   const results = submission?.results || []
   const animClass =
     stage === 'running' ? 'launch' : stage === 'success' ? 'success' : stage === 'fail' ? 'fail' : ''
@@ -631,7 +669,6 @@ export default function OjJudgePage() {
     []
   )
 
-  const problemId = submission?.problemId || locationState.problemId || retryPayload?.problemId
   const problemTitle = submission?.problemTitle || locationState.problemTitle || retryPayload?.problemTitle || (problemId ? `P${problemId}` : '提交结果')
   const statusMeta = getJudgeStatusMeta(submission?.status, stage)
   const canRetrySubmission = stage === 'fail' && Boolean(retryPayload)
@@ -660,6 +697,54 @@ export default function OjJudgePage() {
       value: submission?.language || locationState.language || retryPayload?.language || '--',
     },
   ]
+  const actionPlan = getSubmissionActionPlan(statusMeta.kind, stage === 'success' ? 'success' : 'fail')
+
+  const openProblemIde = useCallback(() => {
+    if (!problemId) return
+    const restoreSubmission = submission?.canViewCode && submission.code
+      ? {
+          problemId,
+          problemTitle,
+          language: submission.language,
+          code: submission.code,
+        }
+      : undefined
+    navigate(`/oj/p${problemId}`, {
+      state: {
+        openIde: true,
+        ...(restoreSubmission ? { restoreSubmission } : {}),
+      },
+    })
+  }, [navigate, problemId, problemTitle, submission])
+
+  const runFollowUpAction = useCallback((action: SubmissionAction) => {
+    if (!problemId) return
+    if (action.key === 'edit') {
+      openProblemIde()
+    } else if (action.key === 'retry') {
+      retrySubmission()
+    } else if (action.key === 'solutions') {
+      navigate(`/oj/solutions/${problemId}`)
+    } else if (action.key === 'discussion') {
+      openInNewTab(`/chat/plaza?problemId=${problemId}`)
+    } else if (action.key === 'records') {
+      navigate('/oj/submissions')
+    } else if (action.key === 'problemset') {
+      navigate('/oj/list')
+    } else if (action.key === 'account') {
+      navigate('/account')
+    }
+  }, [openProblemIde, navigate, problemId, retrySubmission])
+
+  const renderFollowUpActions = (className = '') => (
+    <div className={`judge-followup-actions ${className}`.trim()}>
+      {actionPlan.map((action) => (
+        <Button key={action.key} variant={action.variant} onClick={() => runFollowUpAction(action)}>
+          {action.label}
+        </Button>
+      ))}
+    </div>
+  )
 
   return (
     <section className={`section judge-page-v2 judge-page-${statusMeta.kind}`} aria-busy={stage === 'running' || undefined}>
@@ -814,6 +899,21 @@ export default function OjJudgePage() {
         </Panel>
       )}
 
+      {showResults && stage === 'fail' && problemId && (
+        <Panel className="judge-followup-panel">
+          <div className="judge-followup-copy">
+            <div className="judge-panel-kicker">Continue</div>
+            <h3>{statusMeta.kind === 'judge' ? '评测服务恢复后可以继续提交' : '现在可以继续处理这次提交'}</h3>
+            <p>
+              {statusMeta.kind === 'judge'
+                ? '如果只是临时服务异常，直接重新提交即可；如果需要定位代码问题，也可以先回到题目页。'
+                : '从第一个失败测试点开始修改，或参考已有题解和讨论，避免在同一个错误上反复试错。'}
+            </p>
+          </div>
+          {renderFollowUpActions()}
+        </Panel>
+      )}
+
       {stage === 'success' && submission && (
         <div className="judge-celebration-panel">
           <div className="judge-celebration-copy">
@@ -844,19 +944,7 @@ export default function OjJudgePage() {
               <strong>{celebrationStats?.acceptanceRate !== undefined ? `${celebrationStats.acceptanceRate.toFixed(1)}%` : '--'}</strong>
             </div>
           </div>
-          <div className="judge-celebration-actions">
-            {submission.problemId && (
-              <Button variant="ghost" onClick={() => navigate(`/oj/p${submission.problemId}`)}>
-                返回题目
-              </Button>
-            )}
-            <Button variant="ghost" onClick={() => navigate('/oj/submissions')}>
-              查看我的提交
-            </Button>
-            <Button variant="primary" onClick={() => navigate('/account')}>
-              查看成长记录
-            </Button>
-          </div>
+          {renderFollowUpActions('judge-celebration-actions')}
           {recentAchievements.length > 0 && (
             <div className="judge-achievement-strip">
               <div className="judge-achievement-strip-title">刚刚解锁的成就</div>
@@ -874,6 +962,47 @@ export default function OjJudgePage() {
             </div>
           )}
         </div>
+      )}
+
+      {showResults && stage !== 'running' && relatedProblemsLoading && (
+        <Panel className="judge-related-panel">
+          <div className="judge-panel-head">
+            <div>
+              <div className="judge-panel-kicker">Practice</div>
+              <h3>正在整理相近题目</h3>
+            </div>
+          </div>
+          <div className="judge-related-loading" role="status" aria-live="polite">正在根据难度和标签匹配练习…</div>
+        </Panel>
+      )}
+
+      {showResults && stage !== 'running' && !relatedProblemsLoading && relatedProblems.length > 0 && (
+        <Panel className="judge-related-panel">
+          <div className="judge-panel-head">
+            <div>
+              <div className="judge-panel-kicker">Practice</div>
+              <h3>{stage === 'success' ? '保持手感，继续练习' : '换一道相近题目巩固'}</h3>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => navigate('/oj/list')}>浏览全部题目</Button>
+          </div>
+          <div className="judge-related-grid">
+            {relatedProblems.map((related) => (
+              <button
+                key={related.id}
+                type="button"
+                className="judge-related-card"
+                onClick={() => navigate(`/oj/p${related.id}`)}
+              >
+                <span className="judge-related-code">P{related.id}</span>
+                <strong>{related.title}</strong>
+                <span className="judge-related-meta">
+                  <span className={`oj-badge difficulty-${related.difficultyKey || 'medium'}`}>{related.difficultyLabel || related.difficulty}</span>
+                  <span>{related.solved ? '已通过' : related.matchReason}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </Panel>
       )}
 
       {stage === 'running' && (totalCases > 0 || streamResults.length > 0) && (

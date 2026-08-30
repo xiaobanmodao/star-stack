@@ -34,7 +34,16 @@ export const LANGUAGE_OPTIONS = [
   },
 ]
 
-export const DIFFICULTY_OPTIONS = ['入门', '普及-', '普及', '提高-', '提高', '省选', 'noi']
+export const DIFFICULTY_LEVELS = [
+  { key: 'simple', label: '简单', colorToken: '--ss-difficulty-simple' },
+  { key: 'medium', label: '中等', colorToken: '--ss-difficulty-medium' },
+  { key: 'challenging', label: '较难', colorToken: '--ss-difficulty-challenging' },
+  { key: 'difficult', label: '困难', colorToken: '--ss-difficulty-difficult' },
+  { key: 'extreme', label: '极难', colorToken: '--ss-difficulty-extreme' },
+] as const
+
+export type DifficultyKey = typeof DIFFICULTY_LEVELS[number]['key']
+export const DIFFICULTY_OPTIONS = DIFFICULTY_LEVELS.map((item) => item.key)
 
 // 预设标签列表（参考洛谷）
 export const PRESET_TAGS = [
@@ -42,7 +51,7 @@ export const PRESET_TAGS = [
   '图论', '最短路', '最小生成树', '树', '二叉树',
   '线段树', '树状数组', '并查集', '字符串', '字符串匹配',
   '前缀和', '差分', '数学', '数论', '组合数学',
-  '概率论', '计算几何', '模拟', '枚举', '递推',
+  '概率论', '计算几何', '模拟', '枚举', '递推', '递归',
   '分治', '二分', '排序', '哈希', '栈',
   '队列', '链表', '堆', '位运算', '高精度',
   '矩阵', '博弈论', '网络流', '二分图', '拓扑排序',
@@ -59,6 +68,16 @@ export const PRESET_TAGS = [
   'LCT', '线性规划', '网络流24题', '费用流', '上下界网络流',
   '2-SAT', '构造', '交互题', '提答题', 'Special Judge',
 ]
+
+// 题目标签按知识点/技巧分组，编辑题目时使用分组浏览；存储仍保持原有 tags 字段兼容。
+export const PROBLEM_TAG_CATEGORIES = [
+  { key: 'fundamentals', label: '基础与思维', tags: ['模拟', '枚举', '递推', '排序', '二分', '前缀和', '差分', '双指针', '滑动窗口', '构造'] },
+  { key: 'data-structures', label: '数据结构', tags: ['栈', '队列', '链表', '堆', '哈希', '树', '二叉树', '线段树', '树状数组', '并查集', '字典树', '平衡树', 'Treap', '伸展树', '红黑树', '跳表', '可持久化数据结构', '主席树', '分块', '单调栈', '单调队列', '动态树', 'LCT'] },
+  { key: 'algorithms', label: '算法策略', tags: ['贪心', '分治', '递归', '搜索', '深度优先搜索', '广度优先搜索', '动态规划', '快速幂', '矩阵快速幂', '线性规划'] },
+  { key: 'graphs', label: '图论', tags: ['图论', '最短路', '最小生成树', '拓扑排序', '强连通分量', '欧拉回路', '哈密尔顿回路', '最近公共祖先', '树链剖分', '网络流', '二分图', '网络流24题', '费用流', '上下界网络流', '2-SAT'] },
+  { key: 'math', label: '数学', tags: ['数学', '数论', '组合数学', '概率论', '计算几何', '高精度', '矩阵', '线性代数', '容斥原理', '逆元', '中国剩余定理', '扩展欧几里得', '筛法', '质数', '因数分解', '最大公约数', '最小公倍数', '斐波那契', '卡特兰数', '斯特林数', '莫比乌斯反演', '生成函数', '多项式', 'FFT', 'NTT'] },
+  { key: 'strings', label: '字符串', tags: ['字符串', '字符串匹配', 'KMP', '马拉车算法', '回文树', '后缀数组', '后缀自动机', 'AC自动机'] },
+] as const
 
 export const getLanguageConfig = (value: string) =>
   LANGUAGE_OPTIONS.find((item) => item.value === value) ?? LANGUAGE_OPTIONS[0]

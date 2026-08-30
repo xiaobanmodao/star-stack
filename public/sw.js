@@ -1,7 +1,9 @@
-const CACHE_NAME = 'starstack-v3'
+// 每次发布更新版本号，activate 阶段会清理旧前端资源，避免旧 bundle 与新 HTML 混用。
+const CACHE_NAME = 'starstack-v4'
 const STATIC_ASSETS = [
   '/',
   '/starstack.svg',
+  '/manifest.json',
 ]
 
 self.addEventListener('install', (event) => {
@@ -29,7 +31,7 @@ self.addEventListener('fetch', (event) => {
     fetch(request)
       .then((response) => {
         // Cache successful responses for static assets
-        if (response.ok && (request.url.match(/\.(js|css|svg|woff2?)$/) || request.url.endsWith('/'))) {
+        if (response.ok && (request.url.match(/\.(js|css|svg|png|jpe?g|webp|gif|ico|woff2?)$/) || request.url.endsWith('/') || request.url.endsWith('/manifest.json'))) {
           const clone = response.clone()
           caches.open(CACHE_NAME).then((cache) => cache.put(request, clone))
         }

@@ -380,7 +380,7 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  overflow: hidden;
+  overflow: visible;
   background: var(--ss-color-border);
   display: grid;
   place-items: center;
@@ -388,6 +388,11 @@
   font-size: 13px;
   font-weight: 700;
   color: var(--ss-color-text);
+}
+
+.chat-message-avatar .decorated-avatar {
+  width: 32px;
+  height: 32px;
 }
 
 .chat-message-avatar img {
@@ -793,6 +798,15 @@
   font-style: normal;
 }
 
+.chat-member-name small {
+  overflow: hidden;
+  color: var(--ss-color-accent);
+  font-size: 10px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chat-member-role {
   color: var(--ss-color-accent);
   font-size: 11px;
@@ -1187,7 +1201,7 @@
   border-radius: 50%;
   border: 1px solid var(--ss-accent-border);
   background: var(--ss-accent-bg);
-  overflow: hidden;
+  overflow: visible;
   cursor: pointer;
   padding: 0;
   display: grid;
@@ -1313,7 +1327,7 @@
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  overflow: hidden;
+  overflow: visible;
   background: var(--ss-color-border);
   display: grid;
   place-items: center;
@@ -1321,6 +1335,11 @@
   font-size: 15px;
   font-weight: 700;
   color: var(--ss-color-text);
+}
+
+.friend-avatar .decorated-avatar {
+  width: 38px;
+  height: 38px;
 }
 
 .friend-avatar img {
@@ -1342,6 +1361,17 @@
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.friend-user-title,
+.activity-user-title,
+.chat-message-user-title {
+  max-width: 140px;
+  overflow: hidden;
+  color: var(--ss-color-accent);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .friend-info span {
@@ -1587,9 +1617,14 @@
   padding: 4px 12px;
   cursor: pointer;
   max-width: 260px;
-  overflow: hidden;
+  overflow: visible;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.chat-message-avatar .decorated-avatar {
+  width: 32px;
+  height: 32px;
 }
 
 /* 发帖弹窗：绑定题目 */
@@ -1684,7 +1719,7 @@
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  overflow: hidden;
+  overflow: visible;
   background: var(--ss-color-border);
   display: grid;
   place-items: center;
@@ -1694,10 +1729,16 @@
   color: var(--ss-color-text);
 }
 
-.chat-mention-avatar img {
+.chat-mention-avatar.decorated-avatar {
+  width: 26px;
+  height: 26px;
+  background: transparent;
+}
+
+.chat-mention-avatar .decorated-avatar-media,
+.chat-mention-avatar .decorated-avatar-fallback {
   width: 100%;
   height: 100%;
-  object-fit: cover;
 }
 
 .chat-mention-info {
@@ -1831,7 +1872,7 @@
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  overflow: hidden;
+  overflow: visible;
   background: var(--ss-color-border);
   display: grid;
   place-items: center;
@@ -1842,6 +1883,11 @@
   border: none;
   padding: 0;
   cursor: pointer;
+}
+
+.chat-thread-reply-avatar .decorated-avatar {
+  width: 24px;
+  height: 24px;
 }
 
 .chat-thread-reply-avatar img {
@@ -2032,7 +2078,7 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  overflow: hidden;
+  overflow: visible;
   background: var(--ss-color-border);
   display: grid;
   place-items: center;
@@ -2040,6 +2086,11 @@
   font-size: 13px;
   font-weight: 700;
   color: var(--ss-color-text);
+}
+
+.activity-avatar .decorated-avatar {
+  width: 30px;
+  height: 30px;
 }
 
 .plaza-post-author-title {
@@ -2067,10 +2118,18 @@
   white-space: nowrap;
 }
 
+.activity-user-title {
+  flex: 0 1 120px;
+}
+
 .activity-name em {
   color: var(--ss-color-accent);
   font-style: normal;
   font-size: 11px;
+}
+
+.chat-message-user-title {
+  flex: 0 1 auto;
 }
 
 .activity-score {
