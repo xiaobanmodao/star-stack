@@ -27,6 +27,7 @@ describe('custom UserInfo', () => {
   it('returns only the accepted public profile claims after private introspection', async () => {
     const resource = await openIdentityFixture()
     resources.push(resource)
+    await resource.db.run(`UPDATE users SET is_admin = 1 WHERE id = 'alice'`)
     const admin = { introspectToken: vi.fn(async () => activeIntrospection()) }
 
     const result = await resolveUserInfo(resource.db, admin, 'opaque-access-token', { client })

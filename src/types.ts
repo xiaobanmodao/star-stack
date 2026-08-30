@@ -198,6 +198,29 @@ export type AuthSession = {
   current: boolean
 }
 
+export type ConnectedApplicationStatus = 'not_connected' | 'connected' | 'revocation_pending'
+
+export type ConnectedApplication = {
+  id: 'jieya'
+  name: string
+  description: string
+  homepage: string
+  permissions: {
+    id: string
+    label: string
+    description: string
+  }[]
+  status: ConnectedApplicationStatus
+  connectedAt: string | null
+  sessionCount: number
+  canRevoke: boolean
+}
+
+export type ConnectedApplicationsResponse = {
+  applications: ConnectedApplication[]
+  message?: string
+}
+
 export type UserResponse = {
   user: UserRecord
   message?: string

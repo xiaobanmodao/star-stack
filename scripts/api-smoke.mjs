@@ -22,6 +22,9 @@ const checks = [
   ['GET', '/api/me/export', 404],
   ['GET', '/api/me/sessions', 401],
   ['GET', '/api/me/decorations', 401],
+  ['GET', '/api/me/connected-apps', 401],
+  ['DELETE', '/api/me/connected-apps/jieya', 401],
+  ['GET', '/api/sso/session', 410],
   ['PATCH', '/api/me/decorations', 401],
   ['POST', '/api/me/sessions/revoke-others', 401],
   ['POST', '/api/oj/submissions/1/cancel', 401],
@@ -36,6 +39,20 @@ for (const [method, path, expected] of checks) {
   }
   console.log(`ok ${path} -> ${response.status}`)
 }
+
+const retiredSsoResponse = await fetch(`${baseUrl}/api/sso/session`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ token: 'smoke-secret-that-must-not-be-echoed' }),
+})
+const retiredSsoBody = await retiredSsoResponse.json()
+if (retiredSsoResponse.status !== 410
+  || retiredSsoBody.error !== 'legacy_sso_retired'
+  || 'token' in retiredSsoBody
+  || JSON.stringify(retiredSsoBody).includes('smoke-secret')) {
+  throw new Error('旧 SSO 端点没有失败关闭或回显了凭据')
+}
+console.log('ok /api/sso/session -> legacy shared-token SSO retired')
 
 const healthResponse = await fetch(`${baseUrl}/api/health`)
 const healthBody = await healthResponse.json()
@@ -150,8 +167,24 @@ if (process.env.SMOKE_TOKEN) {
     throw new Error('装饰保存响应缺少 success/user/decorations.equipped')
   }
   console.log('ok /api/me/decorations authenticated -> load/save response shape')
+
+  const connectedAppsResponse = await fetch(`${baseUrl}/api/me/connected-apps`, { headers: authHeaders })
+  if (connectedAppsResponse.status !== 200) {
+    throw new Error(`/api/me/connected-apps authenticated: expected 200, got ${connectedAppsResponse.status}`)
+  }
+  const connectedApps = await connectedAppsResponse.json()
+  const jieya = connectedApps.applications?.find((application) => application.id === 'jieya')
+  if (!jieya
+    || jieya.homepage !== 'https://jieya.xingzhan.cc'
+    || !['not_connected', 'connected', 'revocation_pending'].includes(jieya.status)
+    || 'clientId' in jieya
+    || 'accountSubject' in jieya
+    || 'isAdmin' in jieya) {
+    throw new Error('连接应用接口缺少固定 Jieya 元数据或暴露了内部身份字段')
+  }
+  console.log('ok /api/me/connected-apps authenticated -> safe Jieya connection metadata')
 } else {
-  console.log('authenticated decoration smoke skipped: set SMOKE_TOKEN to enable')
+  console.log('authenticated decoration/connected-app smoke skipped: set SMOKE_TOKEN to enable')
 }
 
 console.log('API smoke checks passed')

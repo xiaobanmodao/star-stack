@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Sprout, Unlink } from 'lucide-react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAppContext } from '../context/AppContext'
 import DecoratedAvatar from '../components/profile/DecoratedAvatar'
@@ -9,15 +9,23 @@ import type {
   AvatarFrameId,
   AvatarOverlayId,
   DecorationOptionsResponse,
+  ConnectedApplication,
+  ConnectedApplicationsResponse,
   EquippedTitleId,
   UserResponse,
 } from '../types'
-import { fetchJson } from '../utils'
-import { Button, LoadingState, PageHeader, Panel } from '../components/ui'
+import { fetchJson, openInNewTab } from '../utils'
+import { Badge, Button, LoadingState, PageHeader, Panel } from '../components/ui'
 import { useToast } from '../components/ui/ToastContext'
 import './ProfileEditPage.css'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+const CONNECTED_APP_STATUS = {
+  not_connected: { label: '未连接', tone: 'neutral' as const },
+  connected: { label: '已连接', tone: 'success' as const },
+  revocation_pending: { label: '撤销处理中', tone: 'warning' as const },
+}
 
 const getRequestErrorMessage = (error: unknown, fallback: string) => (
   error instanceof Error && error.message ? error.message : fallback
@@ -39,6 +47,11 @@ export default function ProfileEditPage() {
   const [uploading, setUploading] = useState(false)
   const [sessions, setSessions] = useState<AuthSession[]>([])
   const [sessionActionBusy, setSessionActionBusy] = useState('')
+  const [connectedApps, setConnectedApps] = useState<ConnectedApplication[]>([])
+  const [connectedAppsLoading, setConnectedAppsLoading] = useState(true)
+  const [connectedAppsError, setConnectedAppsError] = useState('')
+  const [connectedAppsReloadKey, setConnectedAppsReloadKey] = useState(0)
+  const [connectedAppBusy, setConnectedAppBusy] = useState('')
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -83,6 +96,34 @@ export default function ProfileEditPage() {
     }).catch(() => undefined)
     return () => { cancelled = true }
   }, [currentUser])
+
+  useEffect(() => {
+    if (!currentUser) return
+    let cancelled = false
+    const controller = new AbortController()
+    setConnectedAppsLoading(true)
+    setConnectedAppsError('')
+    void fetchJson<ConnectedApplicationsResponse>('/api/me/connected-apps', {
+      signal: controller.signal,
+    }).then(({ response, data }) => {
+      if (cancelled || controller.signal.aborted) return
+      if (!response.ok || !data) {
+        setConnectedAppsError(data?.message || '连接应用状态加载失败，请重试。')
+        return
+      }
+      setConnectedApps(data.applications || [])
+    }).catch(() => {
+      if (!cancelled && !controller.signal.aborted) {
+        setConnectedAppsError('网络异常，暂时无法读取连接应用。')
+      }
+    }).finally(() => {
+      if (!cancelled && !controller.signal.aborted) setConnectedAppsLoading(false)
+    })
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [currentUser, connectedAppsReloadKey])
 
   useEffect(() => {
     if (!currentUser) return
@@ -296,6 +337,32 @@ export default function ProfileEditPage() {
       showEditError(getRequestErrorMessage(error, '会话注销失败，请重试。'))
     } finally {
       if (mountedRef.current) setSessionActionBusy('')
+    }
+  }
+
+  const handleRevokeConnectedApp = async (application: ConnectedApplication) => {
+    if (!application.canRevoke || connectedAppBusy) return
+    if (!window.confirm(`确定撤销${application.name}的星栈账号授权吗？界芽本地存档不会被删除。`)) return
+    setConnectedAppBusy(application.id)
+    setConnectedAppsError('')
+    try {
+      const { response, data } = await fetchJson<ApiResponse<{ application?: ConnectedApplication }>>(
+        `/api/me/connected-apps/${application.id}`,
+        { method: 'DELETE' },
+      )
+      if (!mountedRef.current) return
+      if (!response.ok || !data?.application) {
+        showEditError(data?.message || '应用授权撤销失败，请重试。')
+        return
+      }
+      setConnectedApps((current) => current.map((item) => (
+        item.id === application.id ? data.application as ConnectedApplication : item
+      )))
+      showEditSuccess(data.message || '应用授权已撤销。')
+    } catch (error) {
+      showEditError(getRequestErrorMessage(error, '应用授权撤销失败，请重试。'))
+    } finally {
+      if (mountedRef.current) setConnectedAppBusy('')
     }
   }
 
@@ -624,6 +691,83 @@ export default function ProfileEditPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </section>
+
+        <section className="profile-edit-section profile-edit-connected-apps-section">
+          <div className="profile-edit-section-copy">
+            <h2>已连接应用</h2>
+            <p>管理通过星栈账号授权的独立应用。应用拥有自己的会话和数据，不会继承星栈管理员权限。</p>
+          </div>
+          <div className="profile-edit-connected-apps-content">
+            {connectedAppsLoading ? (
+              <LoadingState variant="compact" label="正在读取连接应用…" />
+            ) : connectedAppsError ? (
+              <div className="profile-edit-connected-app-error" role="status">
+                <span>{connectedAppsError}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConnectedAppsReloadKey((value) => value + 1)}
+                >
+                  重试
+                </Button>
+              </div>
+            ) : connectedApps.map((application) => {
+              const status = CONNECTED_APP_STATUS[application.status]
+              return (
+                <article className="profile-connected-app" key={application.id}>
+                  <div className="profile-connected-app-head">
+                    <span className="profile-connected-app-icon" aria-hidden="true"><Sprout size={20} /></span>
+                    <div>
+                      <div className="profile-connected-app-title">
+                        <strong>{application.name}</strong>
+                        <Badge tone={status.tone}>{status.label}</Badge>
+                      </div>
+                      <p>{application.description}</p>
+                    </div>
+                  </div>
+                  <ul className="profile-connected-app-permissions" aria-label={`${application.name}授权范围`}>
+                    {application.permissions.map((permission) => (
+                      <li key={permission.id}>
+                        <strong>{permission.label}</strong>
+                        <span>{permission.description}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="profile-connected-app-foot">
+                    <span>
+                      {application.status === 'connected' && application.connectedAt
+                        ? `授权于 ${new Date(application.connectedAt).toLocaleString('zh-CN')}`
+                        : application.status === 'revocation_pending'
+                          ? '旧凭据已失效，后台正在完成物理撤销。'
+                          : '尚未授权；进入界芽后可选择使用星栈账号。'}
+                    </span>
+                    <div className="profile-connected-app-actions">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<ExternalLink size={14} />}
+                        onClick={() => openInNewTab(application.homepage)}
+                      >
+                        进入游戏
+                      </Button>
+                      {application.status === 'connected' && (
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          icon={<Unlink size={14} />}
+                          loading={connectedAppBusy === application.id}
+                          onClick={() => void handleRevokeConnectedApp(application)}
+                        >
+                          撤销授权
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              )
+            })}
           </div>
         </section>
 

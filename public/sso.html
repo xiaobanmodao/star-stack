@@ -1,59 +1,23 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>星栈 · 登录状态桥接</title>
-<style>
-  body { margin: 0; padding: 24px; font-family: system-ui, sans-serif; background: #f2f6fb; color: #101828; }
-  .card { max-width: 420px; margin: 40px auto; padding: 24px; background: #fff; border-radius: 12px; box-shadow: 0 8px 24px rgba(15,23,42,.1); }
-  h1 { font-size: 18px; margin: 0 0 8px; }
-  p { color: #666; font-size: 13px; line-height: 1.7; margin: 0; }
-  .status { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; }
-  .ok { background: #ecfdf5; color: #059669; }
-  .no { background: #f1f5f9; color: #64748b; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>旧登录桥接已停用 · 星栈</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #050816; color: #eef2ff; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 20% 10%, #172554 0, transparent 38%), #050816; }
+    main { width: min(460px, 100%); padding: 28px; border: 1px solid #334155; border-radius: 20px; background: rgba(15, 23, 42, .94); box-shadow: 0 24px 80px rgba(0, 0, 0, .45); }
+    h1 { margin: 0 0 10px; font-size: 1.4rem; }
+    p { margin: 0; color: #cbd5e1; line-height: 1.7; }
+  </style>
 </head>
 <body>
-  <div class="card">
-    <h1>星栈 · 登录状态桥接</h1>
-    <p>此页面用于在同域名（或同浏览器）的子项目之间共享星栈登录态。它会把本地登录令牌通过 postMessage 安全地传递给父窗口（iframe 嵌入场景），无需任何账号操作。</p>
-    <div id="status" class="status no">正在读取登录状态...</div>
-  </div>
-  <script>
-    (function () {
-      var statusEl = document.getElementById('status')
-      function setStatus(ok, text) {
-        statusEl.className = 'status ' + (ok ? 'ok' : 'no')
-        statusEl.textContent = text
-      }
-      try {
-        var token = localStorage.getItem('starstack_token')
-        if (token) {
-          setStatus(true, '已检测到登录令牌，正在向父窗口发送...')
-          // 主动推送给父窗口
-          if (window.parent && window.parent !== window) {
-            window.parent.postMessage({ type: 'STARSTACK_SSO', token: token }, '*')
-          }
-          // 等待父窗口请求
-          window.addEventListener('message', function (event) {
-            if (event.data && event.data.type === 'STARSTACK_SSO_REQUEST') {
-              event.source.postMessage({ type: 'STARSTACK_SSO', token: token }, event.origin)
-            }
-          })
-          setStatus(true, '已检测到登录令牌，已发送给父窗口。')
-        } else {
-          setStatus(false, '未检测到登录令牌（未登录）。若父窗口需要，会收到未登录状态。')
-          window.addEventListener('message', function (event) {
-            if (event.data && event.data.type === 'STARSTACK_SSO_REQUEST') {
-              event.source.postMessage({ type: 'STARSTACK_SSO', token: null }, event.origin)
-            }
-          })
-        }
-      } catch (e) {
-        setStatus(false, '读取登录状态失败：' + e.message)
-      }
-    })()
-  </script>
+  <main>
+    <h1>旧登录桥接已停用</h1>
+    <p>星栈不再通过网页、跨窗口消息或 URL 共享登录凭据。请返回目标应用，并选择“使用星栈账号”通过安全的 OpenID Connect 流程登录。</p>
+  </main>
 </body>
 </html>

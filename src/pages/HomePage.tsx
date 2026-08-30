@@ -46,8 +46,11 @@ function ProjectCard({ project, desktopHint, onToggleDesktopHint, onOpen }: {
           ))}
         </div>
       )}
+      {project.accountHint && <p className="portal-card-account-hint">{project.accountHint}</p>}
       <span className="portal-card-action">
-        {isDesktop ? (desktopHint ? '收起' : '查看启动方式') : project.kind === 'external' ? '打开 →' : '进入 →'}
+        {isDesktop
+          ? (desktopHint ? '收起' : '查看启动方式')
+          : `${project.actionLabel || (project.kind === 'external' ? '打开' : '进入')} →`}
       </span>
       {isDesktop && desktopHint && project.launchHint && (
         <div className="portal-card-hint">
@@ -64,7 +67,8 @@ function ProjectCard({ project, desktopHint, onToggleDesktopHint, onOpen }: {
         className={`portal-card ${project.featured ? 'featured' : ''}`}
         href={project.href}
         target="_blank"
-        rel="noreferrer"
+        rel="noopener noreferrer"
+        aria-label={`${project.actionLabel || '打开'}${project.name}（新窗口）`}
       >
         {body}
       </a>

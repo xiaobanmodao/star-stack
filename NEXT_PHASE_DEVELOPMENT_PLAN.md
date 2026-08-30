@@ -1141,7 +1141,7 @@ INTERNAL_ERROR
 #### 兼容阶段
 
 - 后端同时接受 HttpOnly Cookie 和旧 Bearer Token；
-- 登录、注册和 SSO 成功后设置 Cookie；
+- 主站登录、注册成功后设置主站 HttpOnly Cookie；跨应用 OIDC 登录由各应用 BFF 创建自己的 HttpOnly 会话，禁止共享主站 Token；
 - 前端请求逐步改用 `credentials: 'include'`；
 - 注销同时清理 Cookie 和旧 Token；
 - 旧 Token 设置迁移期限。
