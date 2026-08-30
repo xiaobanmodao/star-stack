@@ -2,10 +2,12 @@
 
 ## 状态
 
-- 分支：`codex/ss-auth-003-production-fixture-systemd`
-- 基线：`origin/main@e92b92d75317f6700444d22bf7135b734e55a58c`
+- 分支：`codex/ss-auth-003-fixture-lock-directory`
+- 基线：`origin/main@3f0f4e8e3e9034a44c0f4bd9bc5218495179c386`
 - R4 范围：生产/预发布配置与只读门禁；不部署、不启用、不写入真实 Secret 或真实用户 fixture。
-- 实现状态：原 SS-AUTH-003、Back-Channel 私网路由、HTTP-01 与组合预检已合并；本分支修复 Debian Nginx `sites-enabled` marker 与受审计 `sites-available` 普通文件之间的 canonical 激活证明，不授权启动、迁移、发布 DNS 或启用身份。
+- 实现状态：原 SS-AUTH-003 与后续生产预发布收口已合并；本分支只修复 Ubuntu
+  sticky `/run/lock` 与生产 fixture 私有锁目录的 P0 阻塞，不授权部署、迁移、发布
+  DNS 或启用身份。
 
 ## 已授权范围
 
@@ -31,6 +33,9 @@
   WebPush、JWT、数据库与备份配置。
 - 混合负载只允许匿名 pipe 驱动一次固定 `/api/oj/run-custom`；helper 在内存登录、
   执行 `1 + 2`、登出，禁止使用会留下提交/统计历史的正式 submission 接口。
+- 生产 fixture 接受 Ubuntu root-owned sticky `1777` 的 `/run/lock`，但所有 fixture
+  主锁与 operation guard 只能位于 helper 安全创建/复核的 root-owned `0700`
+  `/run/lock/starstack-identity` 内。
 
 ## 明确禁止
 
@@ -43,6 +48,8 @@
 - 不保存未被 active Nginx include 的完整 Back-Channel location 来伪造预检成功，也不向 Jieya server 重复 include 同名 location。
 - 不运行生产迁移、客户端注册、恢复或部署；不修改界芽仓库。
 - 不在本任务连接服务器、启用 OIDC、创建真实账号或写入真实 Secret。
+- 不 chmod 系统 `/run/lock`，不移除 sticky bit，也不以宽权限或 symlink 预建
+  `starstack-identity` 来绕过 helper 校验。
 
 ## 停止线
 
@@ -52,6 +59,8 @@
 - 任何真实 Secret 进入 Git、日志、命令输出或不安全文件时立即停止。
 - 2C2GiB 混合负载出现 OOM、持续 swap、进程重启或评测明显回退时保持身份关闭。
 - 备份不能隔离恢复、active signing `kid` 不连续、旧 Token 可重放或内部端口公网可达时保持身份关闭。
+- `/run/lock` 不是 root-owned sticky 目录，或专用锁目录不是 root-owned、真实非
+  symlink、精确 `0700` 时，必须在创建 fixture 账号前停止。
 
 ## 验收证据
 
@@ -61,6 +70,17 @@
 - 本机没有 Docker/Compose CLI，因此本地只完成 YAML 解析和静态 Compose 契约测试；服务器上的 `docker compose config --quiet` 是只读预检硬门禁，未通过前禁止启动。
 
 ## 本地完成证据
+
+### 生产 fixture 专用锁目录 P0 收口（基线 `3f0f4e8e`）
+
+- 失败测试先行：旧实现无法创建测试中的 `run-lock/starstack-identity`，3 项专项
+  精确失败；实现后 protocol + production contract 2 files / 40 tests 通过。
+- 测试覆盖 Ubuntu `/run/lock=1777`、专用目录自动创建、owner/`0700`/symlink
+  失败关闭、双 helper 并发互斥、stale lock 恢复，以及正常/异常退出后主锁与
+  operation guard 清空。生产数据库、真实账号和服务器均未接触。
+- `npm run lint`、48 files / 291 tests、`npm run build`、依赖审计与 `db:verify`
+  全部通过；Critical=0，既有依赖风险未变化。backup unit 仍使用独立
+  `/run/lock/starstack-backup.lock`，本轮未修改备份业务、timer 或健康阈值。
 
 ### 生产夹具与 systemd credentials 收口（基线 `e92b92d7`）
 

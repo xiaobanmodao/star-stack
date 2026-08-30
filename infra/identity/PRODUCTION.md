@@ -201,15 +201,33 @@ helper 只创建唯一的普通、无邮箱、无管理员权限 `jy-gate-*` 账
 于进程内存和匿名 pipe。账号创建前会写入
 `/var/lib/starstack/identity-gates/<sha256(tombstone)>.json` 的 root-only、`0600`、
 单链接 passwordless receipt。receipt 只保留清理所需的账号 ID、不可变 subject、
-阶段和时间，不保存密码、hash、Cookie 或 Token。全机锁固定为
-`/run/lock/starstack-production-fixture.lock`；重复 tombstone、并行 helper、重复
-requestId、多余字段、乱序或超大帧都失败关闭。
+阶段和时间，不保存密码、hash、Cookie 或 Token。Ubuntu 的系统目录 `/run/lock`
+保持合法的 root-owned sticky `1777`，不得 chmod 或把它误判为私有目录。helper 会在
+其中原子创建并复核 root-owned、普通非 symlink、`0700` 的专用目录
+`/run/lock/starstack-identity`；全机锁与 operation guard 分别位于该目录中的
+`starstack-production-fixture.lock` 及其 `.operation` 文件。预先占用目录名、owner/
+权限不符、缺少 sticky 防护或路径经过 symlink 时，必须在创建账号前失败关闭。
+重复 tombstone、并行 helper、重复 requestId、多余字段、乱序或超大帧同样失败关闭。
 
 首次使用前创建固定私有状态目录；它不能是 symlink，必须始终由 root 独占：
 
 ```bash
 sudo install -d -m 0700 -o root -g root /var/lib/starstack
 ```
+
+首次成功运行后只验证专用目录，不修改系统父目录；helper 结束时两个锁文件必须被
+移除，`0700` 目录本身保留供后续门禁复用：
+
+```bash
+sudo env LC_ALL=C stat -c '%U:%G %a %F' /run/lock
+sudo env LC_ALL=C stat -c '%U:%G %a %F' /run/lock/starstack-identity
+sudo find /run/lock/starstack-identity -mindepth 1 -maxdepth 1 -print
+```
+
+现场预期父目录为 `root:root 1777 directory`、子目录为 `root:root 700 directory`，
+且最后一条命令无输出。不得通过 `chmod /run/lock`、删除 sticky bit 或预建宽权限
+子目录来绕过检查。日常 SQLite 备份仍使用 backup unit 中独立的
+`/run/lock/starstack-backup.lock`，不能与身份 fixture 主锁或 operation guard 共用。
 
 父门禁必须在 `finally` 发送 cleanup。cleanup 只调用现有
 `transitionAccountStatus(..., status: 'deleted')`，保留用户 tombstone，撤销主站/
