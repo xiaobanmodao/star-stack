@@ -27,6 +27,9 @@ jobs:
       - name: Install backend dependencies
         run: npm ci --prefix server
 
+      - name: Verify judge sandbox inside the production systemd hardening
+        run: sudo env STARSTACK_SYSTEMD_CONTRACT=ephemeral-github-runner GITHUB_ACTIONS=true bash scripts/judge/systemd-sandbox-contract.sh
+
       - name: Lint
         run: npm run lint
 

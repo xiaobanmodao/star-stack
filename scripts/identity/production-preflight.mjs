@@ -19,6 +19,10 @@ import {
   identityHookBridgeName,
   identityLoopbackPorts,
 } from './productionNetworkContract.mjs'
+import {
+  assertJudgeKernelPrerequisites,
+  assertJudgeSystemdUnit,
+} from '../judge/systemdSandboxContract.mjs'
 
 const fail = (message) => { throw new Error(message) }
 let configuration = process.env
@@ -105,6 +109,14 @@ if (String(configuration.OIDC_ENABLED || 'false').toLowerCase() !== 'false') {
   fail('OIDC_ENABLED must remain false during pre-release')
 }
 if (configuration.NODE_ENV !== 'production') fail('NODE_ENV must be production')
+const starstackApiUnit = await assertPrivateFile(
+  '/etc/systemd/system/starstack-api.service',
+  { allowPublicRead: true },
+)
+assertJudgeSystemdUnit(await readFile(starstackApiUnit, 'utf8'))
+assertJudgeKernelPrerequisites({
+  dmesgRestrict: await readFile('/proc/sys/kernel/dmesg_restrict', 'utf8'),
+})
 if (requireValue('OIDC_ISSUER') !== 'https://auth.xingzhan.cc') fail('OIDC_ISSUER is not the frozen production issuer')
 const hydraPublic = assertLoopbackOrigin(requireValue('OIDC_HYDRA_PUBLIC_URL'), 'OIDC_HYDRA_PUBLIC_URL')
 const hydraAdmin = assertLoopbackOrigin(requireValue('OIDC_HYDRA_ADMIN_URL'), 'OIDC_HYDRA_ADMIN_URL')
