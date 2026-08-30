@@ -212,11 +212,15 @@ export const createHydraPublicProxy = ({
       const body = req.method === 'GET' || req.method === 'HEAD'
         ? undefined
         : await readBoundedBody(req, maxRequestBodyBytes)
+      const issuer = new URL(config.issuer)
+      const upstreamHeaders = copyRequestHeaders(req, cookieConfig)
+      upstreamHeaders['x-forwarded-proto'] = issuer.protocol.slice(0, -1)
+      upstreamHeaders['x-forwarded-host'] = issuer.host
       let upstream
       try {
         upstream = await fetchImpl(target.toString(), {
           method: req.method,
-          headers: copyRequestHeaders(req, cookieConfig),
+          headers: upstreamHeaders,
           body,
           redirect: 'manual',
           signal: AbortSignal.timeout(10000),

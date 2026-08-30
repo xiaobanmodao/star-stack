@@ -1,4 +1,8 @@
-# StarStack 本地 Hydra 身份运行时
+# StarStack Hydra 身份运行时
+
+本文件以下内容仅描述 SS-AUTH-002 本地开发运行时。SS-AUTH-003 的 production/staging 文件、只读预检、资源预算、备份和隔离恢复流程见 [PRODUCTION.md](./PRODUCTION.md)。生产不得复用本文件的开发 Compose 或 Secret。
+
+# 本地开发运行时
 
 这里是 SS-AUTH-002 的隔离开发运行时，不是生产部署文件。OIDC 默认关闭。下载的 Hydra 二进制和一次性协议日志位于当前 checkout 中被 Git 忽略的 `.identity-runtime/`；共享 DSN 的 Secret、fixture SQLite 与运行锁不属于任何 checkout，统一位于当前操作系统用户的机器状态目录：
 

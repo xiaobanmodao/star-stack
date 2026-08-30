@@ -1,0 +1,156 @@
+name: starstack-identity-production
+
+x-json-logging: &json-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+x-hydra-environment: &hydra-environment
+  DSN: "postgres://hydra:${HYDRA_POSTGRES_PASSWORD:?set HYDRA_POSTGRES_PASSWORD}@postgres:5432/hydra?sslmode=verify-full&sslrootcert=/run/postgres-ca/ca.crt"
+  SECRETS_SYSTEM: ${HYDRA_SYSTEM_SECRET:?set HYDRA_SYSTEM_SECRET}
+  SECRETS_COOKIE: ${HYDRA_COOKIE_SECRET:?set HYDRA_COOKIE_SECRET}
+  SERVE_TLS_ALLOW_TERMINATION_FROM: ${IDENTITY_PROXY_CIDR:?set exact proxy CIDR}
+  OAUTH2_TOKEN_HOOK_URL: ${OIDC_TOKEN_HOOK_URL:?set private bridge token hook URL}
+  OAUTH2_TOKEN_HOOK_AUTH_TYPE: api_key
+  OAUTH2_TOKEN_HOOK_AUTH_CONFIG_IN: header
+  OAUTH2_TOKEN_HOOK_AUTH_CONFIG_NAME: X-StarStack-Hydra-Hook
+  OAUTH2_TOKEN_HOOK_AUTH_CONFIG_VALUE: ${OIDC_TOKEN_HOOK_SECRET:?set OIDC_TOKEN_HOOK_SECRET}
+  OAUTH2_GRANT_REFRESH_TOKEN_ROTATION_GRACE_PERIOD: 0s
+  OAUTH2_GRANT_REFRESH_TOKEN_ROTATION_GRACE_REUSE_COUNT: "0"
+  OAUTH2_GRANT_JWT_IAT_OPTIONAL: "false"
+  SERVE_COOKIES_NAMES_LOGIN_CSRF: starstack_hydra_login_csrf
+  SERVE_COOKIES_NAMES_CONSENT_CSRF: starstack_hydra_consent_csrf
+  SERVE_COOKIES_NAMES_SESSION: starstack_hydra_session
+  SERVE_COOKIES_NAMES_DEVICE_CSRF: starstack_hydra_device_csrf
+  SERVE_COOKIES_PATHS_SESSION: /oauth2
+  LOG_LEAK_SENSITIVE_VALUES: "false"
+
+services:
+  postgres:
+    image: postgres:16.15-alpine3.24@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
+    environment:
+      POSTGRES_DB: hydra
+      POSTGRES_USER: hydra
+      POSTGRES_PASSWORD: ${HYDRA_POSTGRES_PASSWORD:?set HYDRA_POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --auth-local=scram-sha-256
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_min_protocol_version=TLSv1.2
+      - -c
+      - ssl_cert_file=/run/postgres-tls/server.crt
+      - -c
+      - ssl_key_file=/run/postgres-tls/server.key
+      - -c
+      - ssl_ca_file=/run/postgres-tls/ca.crt
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_connections=30
+    volumes:
+      - hydra-postgres-production:/var/lib/postgresql/data
+      - ./postgres.production.pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ${POSTGRES_TLS_CERT_FILE:?set certificate file}:/run/postgres-tls/server.crt:ro
+      - ${POSTGRES_TLS_KEY_FILE:?set private key file}:/run/postgres-tls/server.key:ro
+      - ${POSTGRES_TLS_CA_FILE:?set CA file}:/run/postgres-tls/ca.crt:ro
+    networks:
+      - identity-database
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hydra -d hydra"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    stop_grace_period: 30s
+    shm_size: 64m
+    mem_limit: 384m
+    cpus: 0.75
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    logging: *json-logging
+
+  hydra-migrate:
+    image: oryd/hydra:v26.2.0-distroless@sha256:ad53a123ddf869fc23ea74f3d76b47e2966dc52f559e93ab31f81440f4d60c5e
+    command: migrate sql up -e --yes --config /etc/hydra/hydra.yaml
+    environment: *hydra-environment
+    volumes:
+      - ./hydra.production.yaml:/etc/hydra/hydra.yaml:ro
+      - ${POSTGRES_TLS_CA_FILE:?set CA file}:/run/postgres-ca/ca.crt:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - identity-database
+    restart: "no"
+    mem_limit: 256m
+    cpus: 0.75
+    pids_limit: 96
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    logging: *json-logging
+
+  hydra:
+    image: oryd/hydra:v26.2.0-distroless@sha256:ad53a123ddf869fc23ea74f3d76b47e2966dc52f559e93ab31f81440f4d60c5e
+    command: serve all --config /etc/hydra/hydra.yaml --sqa-opt-out
+    environment: *hydra-environment
+    volumes:
+      - ./hydra.production.yaml:/etc/hydra/hydra.yaml:ro
+      - ${POSTGRES_TLS_CA_FILE:?set CA file}:/run/postgres-ca/ca.crt:ro
+    ports:
+      - "127.0.0.1:${HYDRA_PUBLIC_PORT:-4444}:4444"
+      - "127.0.0.1:${HYDRA_ADMIN_PORT:-4445}:4445"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      hydra-migrate:
+        condition: service_completed_successfully
+    networks:
+      - identity-database
+      - identity-hook
+    healthcheck:
+      test: ["CMD", "hydra", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    stop_grace_period: 20s
+    mem_limit: 256m
+    cpus: 0.75
+    pids_limit: 128
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    logging: *json-logging
+
+volumes:
+  hydra-postgres-production:
+    name: starstack-hydra-postgres-production
+
+networks:
+  identity-database:
+    name: starstack-identity-database-production
+    internal: true
+  identity-hook:
+    name: starstack-identity-hook-production
+    internal: true
+    ipam:
+      config:
+        - subnet: ${IDENTITY_HOOK_SUBNET:?set non-conflicting private subnet}
