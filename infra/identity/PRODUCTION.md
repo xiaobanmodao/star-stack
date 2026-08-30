@@ -17,9 +17,12 @@ Hydra container -> internal hook bridge -> Nginx bridge-IP:5175
 
 Hydra -> identity-database (internal) -> PostgreSQL 16.15 (no host port)
 Hydra Admin -> host 127.0.0.1:4445 only
+Jieya BFF (same host) -> 127.0.0.1:5174/internal/oidc/logout-transactions
 ```
 
 禁止把 Node 改为 `0.0.0.0`，禁止 `network_mode: host`，禁止公开 Admin、PostgreSQL、Token Hook 或 Logout Broker。Hydra Public/Admin 的 Compose 发布地址必须保留 `127.0.0.1`。专用 hook 网络保持 `internal: true`；只有确认目标 Docker 版本能从该 bridge 到达其 host-gateway 后才能继续。
+
+生产 Jieya BFF 与 StarStack 同机。Logout Broker 的唯一合法地址固定为 `http://127.0.0.1:5174/internal/oidc/logout-transactions`，只能由 Jieya 服务端携带独立私网凭据调用；不经过 `auth.xingzhan.cc`、Cloudflare、Public Hydra proxy 或 Token Hook bridge。公网身份 Nginx 对 `/internal/oidc/*` 始终返回 404，不为 Broker 新建 bridge 或公网入口。
 
 ## 文件与版本
 
@@ -71,6 +74,13 @@ npm run identity:production:preflight
 
 运行时已由另行审批启动后，可加 `IDENTITY_PREFLIGHT_RUNTIME=1`，只读校验 Hydra Admin ready、Public Discovery 与 JWKS。预检成功仍不代表可把 `OIDC_ENABLED` 改为 true。
 
+### 公网日志、HSTS 与客户端地址边界
+
+- 身份域 HSTS 只设置当前 host 的 `max-age=31536000`，不包含 `includeSubDomains`。只有全部相关子域持续 HTTPS 的独立审计通过后才能另行评估扩大范围。
+- 身份 server 关闭 Nginx access log，因为默认 `$request` 会记录完整查询串，其中包含 login/consent challenge、state、nonce 和 PKCE 元数据。应用与 Hydra 日志仍必须保持敏感值脱敏；排障使用状态码、计数与 request ID，不能临时恢复完整 URI 日志。
+- 模板用 `X-Forwarded-For $remote_addr` 覆盖客户端提供的整条链，不使用 `$proxy_add_x_forwarded_for`。StarStack 保持 `TRUST_PROXY_HOPS=1`，只信任直接相邻的本机 Nginx。
+- 若 Cloudflare 位于源站前，Nginx `real_ip` 只能信任 Cloudflare 官方当前 CIDR，并从其受保护头恢复 `$remote_addr`；源站防火墙还应限制 443 只接受 Cloudflare 与运维来源。在这些现场事实未验证时，`$remote_addr` 可能只是 Cloudflare edge，限流会保守地合并到 edge IP；这会降低可用性但不会信任浏览器伪造链，身份必须继续关闭。
+
 ## 2C2GiB 资源预算与停止线
 
 | 项目 | 门禁预算 |
@@ -106,9 +116,10 @@ npm run identity:production:verify-backup
 ## 启用前仍需确认
 
 - `auth.xingzhan.cc` DNS、Cloudflare TLS 模式、源站证书路径与真实 Nginx include 归属。
+- Cloudflare 源站 ACL、Nginx `real_ip` 可信 CIDR及实测 `$remote_addr`；未确认时不得按用户 IP 放宽限流。
 - Docker bridge 的空闲 RFC1918 `/29`、host-gateway IP、Hydra 实际代理源 `/32`，并证明 internal bridge 可达 5175。
 - 1Panel 是否会重写手工 Nginx include，以及 bridge listener 的防火墙/SELinux/AppArmor 状态。
-- Jieya BFF 到私有 Logout Broker 的网络与双向认证边界；公网模板不会开放它。
+- Jieya BFF 必须继续与 StarStack 同机，并保持固定 loopback Broker URL；任何跨主机迁移都要重新设计私网与认证边界，不能改用公网身份域。
 - PostgreSQL TLS 私钥对应的固定容器 UID、备份目录/保留期/离机复制、监控与告警渠道。
 - 首次客户端创建、Client Secret 轮换、Hydra migration 和 `OIDC_ENABLED=true` 各自的审批窗口。
 

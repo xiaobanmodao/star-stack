@@ -15,6 +15,8 @@
 - Hydra Token Hook 经专用 bridge、host-gateway 和受限 Nginx 精确路径回调；StarStack Node 继续只监听 loopback。
 - PM2 默认 `OIDC_ENABLED=false`，生产 issuer/客户端元数据保持冻结值。
 - `auth.xingzhan.cc` 公网模板必须拒绝 `/internal/oidc/`；bridge 模板只允许固定 subnet 的精确 Token Hook POST。
+- Jieya BFF 与 StarStack 同机，Logout Broker 唯一固定为 `http://127.0.0.1:5174/internal/oidc/logout-transactions`；不增加公网或 bridge 入口。
+- 身份域 HSTS 不扩散到未审计子域；关闭含查询串的 access log，并覆盖客户端传入的 X-Forwarded-For 链。
 - PostgreSQL/SQLite 备份集、隔离恢复说明和不改变服务器状态的预发布检查。
 
 ## 明确禁止
@@ -58,4 +60,4 @@
 - 1Panel/Nginx 实际 include、证书路径、Cloudflare 模式及 `auth.xingzhan.cc` DNS 状态。
 - 空闲 RFC1918 `/29`、`host-gateway` 解析地址、Public 代理进入 Hydra 的实际源 `/32`，以及 internal hook bridge 到 5175 的连通性。
 - 固定 PostgreSQL 镜像内 `postgres` UID、TLS 文件现状、备份目录/保留/离机目标。
-- Jieya BFF 私网出口和 Logout Broker 的服务端专用网络边界。
+- Cloudflare 源站 ACL、Nginx real_ip 可信 CIDR和身份请求的实测 `$remote_addr`。
