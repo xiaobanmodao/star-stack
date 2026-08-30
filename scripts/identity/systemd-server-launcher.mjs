@@ -16,7 +16,7 @@ const isExpectedOwner = (stat) => currentUid === undefined
 
 const assertCredentialStat = (stat, name) => {
   if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1
-    || !isExpectedOwner(stat) || ![0o400, 0o600].includes(stat.mode & 0o777)) {
+    || !isExpectedOwner(stat) || ![0o400, 0o440, 0o600].includes(stat.mode & 0o777)) {
     throw new Error(`Systemd credential metadata is unsafe: ${name}`)
   }
 }
