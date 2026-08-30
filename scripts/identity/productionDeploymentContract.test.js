@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   chmod,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
@@ -155,6 +156,19 @@ const nginxTopLevelLines = (block) => {
 }
 
 describe('SS-AUTH-003 production deployment contract', () => {
+  it('ships both production gate helpers as executable non-writable files', async () => {
+    for (const relativePath of [
+      'scripts/identity/production-protocol-fixture.mjs',
+      'scripts/identity/production-judge-fixture.mjs',
+    ]) {
+      const metadata = await lstat(path.join(projectRoot, relativePath))
+      expect(metadata.isFile()).toBe(true)
+      expect(metadata.isSymbolicLink()).toBe(false)
+      expect(metadata.mode & 0o022).toBe(0)
+      expect(metadata.mode & 0o111).not.toBe(0)
+    }
+  })
+
   for (const environment of ['production', 'staging']) {
     it(`${environment} compose is isolated, pinned and private by construction`, async () => {
       const compose = await readProjectFile(`infra/identity/compose.${environment}.yaml`)
