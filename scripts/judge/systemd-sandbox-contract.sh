@@ -18,6 +18,8 @@ UNIT_FILE="$PROJECT_ROOT/infra/identity/systemd/starstack-api.service"
 TEST_USER="starstack-sandbox-contract"
 FIXTURE_ROOT="$(mktemp -d /opt/starstack-sandbox-contract.XXXXXX)"
 CREATED_USER=0
+ORIGINAL_USERNS_CLONE=''
+ORIGINAL_APPARMOR_USERNS=''
 
 cleanup() {
   if [[ -f "$FIXTURE_ROOT/.starstack-systemd-contract" ]]; then
@@ -26,10 +28,29 @@ cleanup() {
   if [[ "$CREATED_USER" == "1" ]]; then
     userdel "$TEST_USER" >/dev/null 2>&1 || true
   fi
+  if [[ -n "$ORIGINAL_APPARMOR_USERNS" ]]; then
+    sysctl -q -w "kernel.apparmor_restrict_unprivileged_userns=$ORIGINAL_APPARMOR_USERNS" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$ORIGINAL_USERNS_CLONE" ]]; then
+    sysctl -q -w "kernel.unprivileged_userns_clone=$ORIGINAL_USERNS_CLONE" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT HUP INT TERM
 touch "$FIXTURE_ROOT/.starstack-systemd-contract"
 chmod 0755 "$FIXTURE_ROOT"
+
+# Ubuntu GitHub runners may globally disable unprivileged user namespaces with
+# AppArmor even though the production host baseline explicitly supports them.
+# Normalize only this disposable VM, before creating any test process, and
+# restore both sysctls in the trap. No user-supplied code runs in this job.
+if [[ -f /proc/sys/kernel/unprivileged_userns_clone ]]; then
+  ORIGINAL_USERNS_CLONE="$(cat /proc/sys/kernel/unprivileged_userns_clone)"
+  sysctl -q -w kernel.unprivileged_userns_clone=1
+fi
+if [[ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+  ORIGINAL_APPARMOR_USERNS="$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)"
+  sysctl -q -w kernel.apparmor_restrict_unprivileged_userns=0
+fi
 
 if getent passwd "$TEST_USER" >/dev/null; then
   echo 'contract error: reserved fixture user already exists' >&2

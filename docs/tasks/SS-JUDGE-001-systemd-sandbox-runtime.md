@@ -27,6 +27,7 @@
 - 不删除 namespace/mount/chroot 沙箱，不允许 `NODE_ENV=production` 无沙箱运行。
 - 不使用 `--privileged` 容器、`network_mode=host`、root 判题或真实账号/Secret。
 - transient-unit 测试只允许在 GitHub Actions 的临时 VM 中显式启用，不允许对已有 `/opt/star-stack` 做覆盖或清理。
+- GitHub Ubuntu 若用全局 AppArmor sysctl 禁止普通 user namespace，测试只在一次性 VM 内临时对齐生产已证明可用的 userns 基线，并在 trap 中恢复原值；期间只运行 `/bin/true`。
 - 生产只允许在明确确认变量下运行无用户代码的 installed-unit probe；它不能重启服务或写数据库。
 
 ## 验收
