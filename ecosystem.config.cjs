@@ -32,13 +32,14 @@ module.exports = {
         MAIL_FROM: process.env.MAIL_FROM || '',
         JUDGE_MEMORY_LIMIT_KB: process.env.JUDGE_MEMORY_LIMIT_KB || '262144',
         JUDGE_CONCURRENCY: process.env.JUDGE_CONCURRENCY || '1',
-        // 身份能力必须在服务器预发布门禁通过后显式打开。
-        OIDC_ENABLED: process.env.OIDC_ENABLED || 'false',
+        // PM2 是身份切换前的旧运行器，必须永久保持关闭。OIDC 只允许由
+        // root 管理的 systemd credentials 启动，避免 Secret 落入 PM2 dump。
+        OIDC_ENABLED: 'false',
         OIDC_ISSUER: process.env.OIDC_ISSUER || 'https://auth.xingzhan.cc',
         OIDC_HYDRA_PUBLIC_URL: process.env.OIDC_HYDRA_PUBLIC_URL || 'http://127.0.0.1:4444',
         OIDC_HYDRA_ADMIN_URL: process.env.OIDC_HYDRA_ADMIN_URL || 'http://127.0.0.1:4445',
-        OIDC_TOKEN_HOOK_SECRET: process.env.OIDC_TOKEN_HOOK_SECRET || '',
-        OIDC_LOGOUT_BROKER_SECRET: process.env.OIDC_LOGOUT_BROKER_SECRET || ''
+        OIDC_TOKEN_HOOK_SECRET: '',
+        OIDC_LOGOUT_BROKER_SECRET: ''
       },
       error_file: './logs/api-error.log',
       out_file: './logs/api-out.log',

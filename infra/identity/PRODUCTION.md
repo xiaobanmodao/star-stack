@@ -56,6 +56,127 @@ Hydra 客户端注册中的 Back-Channel Logout URI 仍固定为 canonical `http
 
 从 `production.env.example` 或 `staging.env.example` 复制名称到仓库外文件。文件必须为普通单链接文件、`0600`（或受控身份运维组的 `0640`），不能经 symlink 到达。Secret 不得出现在 Git、PM2/Nginx 日志、Shell history、工单或聊天中。Hydra system/cookie Secret 与 PostgreSQL 数据库是同一恢复单元，不能只轮换文件后挂回旧库。
 
+### StarStack API 的 systemd credentials 切换
+
+OIDC 启用后的 StarStack API 不再由 PM2 保存环境变量。仓库提供
+`infra/identity/systemd/starstack-api.service` 和无 Secret 启动器
+`scripts/identity/systemd-server-launcher.mjs`：systemd 从
+`/etc/starstack/server/` 加载三个 root 管理的 credential，启动器用
+`O_NOFOLLOW`、单链接、权限、realpath 与 inode 复核读取它们，然后以
+`process.execve` 原地替换为 `/usr/bin/node /opt/star-stack/server/index.js`。
+它只在失败时输出固定错误，不输出配置值。
+
+- `/etc/starstack/server/starstack-environment`：严格 JSON 对象，保存现有 Node 应用配置，包括 Turnstile、SMTP、判题、
+  数据库/备份、VAPID/WebPush、JWT 与 OIDC 非 Secret 配置；默认必须包含
+  `OIDC_ENABLED=false`。
+- `oidc-token-hook-secret`：只含一行 Token Hook Secret。
+- `oidc-logout-broker-secret`：只含一行 Logout Broker Secret，且必须与前者不同。
+
+切换前先确认服务器 Node 提供 `process.execve`；缺失时停止，不能退回会把
+Secret 保存到 PM2 的做法。首次迁移只从正在运行且 cwd 精确为
+`/opt/star-stack`、入口为 `server/index.js` 的 PID 读取 `/proc/<pid>/environ`，
+不调用会把整份环境打印到终端的 PM2 子命令。迁移器按白名单保留当前应用
+变量，把两个身份 Secret 分离后，以一个目录 rename 原子提交；目标已存在、
+Secret 缺失/相同/过短、路径或权限异常时全部失败关闭，不覆盖旧文件。
+
+```bash
+install -d -m 0700 -o root -g root /etc/starstack
+/usr/bin/node -e "if (typeof process.execve !== 'function') process.exit(1)"
+STARSTACK_API_PID="$(pm2 pid star-stack-api)"
+test "$STARSTACK_API_PID" -gt 1
+sudo /usr/bin/node /opt/star-stack/scripts/identity/migrate-pm2-to-systemd-credentials.mjs \
+  --pid "$STARSTACK_API_PID"
+sudo install -m 0644 -o root -g root \
+  /opt/star-stack/infra/identity/systemd/starstack-api.service \
+  /etc/systemd/system/starstack-api.service
+sudo systemd-analyze verify /etc/systemd/system/starstack-api.service
+```
+
+如果旧 PM2 进程没有两个身份 Secret，迁移器会停止。此时须通过已批准的
+root-only Secret 生成流程直接创建两个独立 credential，不能把值放进命令行、
+聊天或仓库。`infra/identity/systemd/starstack-environment.example` 只用于核对变量
+名称，不能覆盖现场配置。必须逐项比较迁移前后的功能：Turnstile、注册邮件、
+管理员初始化、判题编译器/并发、SQLite/备份路径、WebPush/VAPID 和任何 JWT
+变量；缺一项就不停止 PM2。若 VAPID 不在进程环境，迁移器只接受精确
+`/opt/star-stack/server/.vapid.json` 的 `0600`、单链接、非 symlink 现有密钥对并
+迁入 JSON credential；它不会生成新密钥。文件缺失、半套密钥或元数据异常时停止，
+避免令现有浏览器推送订阅全部失效。
+
+维护窗口内先保持 `OIDC_ENABLED=false`，停止 PM2 后启动 systemd，验证主站、
+OJ 和 `/api/health`。失败时停止 systemd 并恢复原 PM2 进程；成功且完成独立
+备份后才执行 `pm2 delete star-stack-api` 与 `pm2 cleardump` 清除旧持久 dump，
+并复核 dump 不再含应用定义。若当前 PM2 版本没有 `cleardump`，立即停止并按
+该版本官方流程单独处置，不能用会再次持久化 Secret 的替代命令。OIDC 仍保持
+关闭，直到后续全部协议门禁通过。
+
+### 一次性生产协议夹具
+
+生产协议门禁只能以父子匿名 pipe 启动精确路径
+`/opt/star-stack/scripts/identity/production-protocol-fixture.mjs`。不得把 stdin/stdout
+重定向到普通文件、TTY、日志或 shell 变量。父进程生成非 Secret 随机 tombstone，
+每帧最多 16 KiB，并按以下 NDJSON 顺序交换；`requestId` 每次唯一且响应精确回显：
+
+```json
+{"protocol":"starstack-production-fixture/v1","requestId":"...","type":"prepare","tombstone":"..."}
+{"protocol":"starstack-production-fixture/v1","requestId":"...","ok":true,"type":"prepared","fixture":{"loginId":"jy-gate-...","password":"..."}}
+{"protocol":"starstack-production-fixture/v1","requestId":"...","type":"cleanup","tombstone":"..."}
+{"protocol":"starstack-production-fixture/v1","requestId":"...","ok":true,"type":"cleaned","accountDisabled":true,"sessionsRevoked":true,"outboxDrained":true}
+{"protocol":"starstack-production-fixture/v1","requestId":"...","type":"close"}
+{"protocol":"starstack-production-fixture/v1","requestId":"...","ok":true,"type":"closed"}
+```
+
+helper 只创建唯一的普通、无邮箱、无管理员权限 `jy-gate-*` 账号；明文密码只存在
+于进程内存和匿名 pipe。账号创建前会写入
+`/var/lib/starstack/identity-gates/<sha256(tombstone)>.json` 的 root-only、`0600`、
+单链接 passwordless receipt。receipt 只保留清理所需的账号 ID、不可变 subject、
+阶段和时间，不保存密码、hash、Cookie 或 Token。全机锁固定为
+`/run/lock/starstack-production-fixture.lock`；重复 tombstone、并行 helper、重复
+requestId、多余字段、乱序或超大帧都失败关闭。
+
+首次使用前创建固定私有状态目录；它不能是 symlink，必须始终由 root 独占：
+
+```bash
+sudo install -d -m 0700 -o root -g root /var/lib/starstack
+```
+
+父门禁必须在 `finally` 发送 cleanup。cleanup 只调用现有
+`transitionAccountStatus(..., status: 'deleted')`，保留用户 tombstone，撤销主站/
+账号中心/OIDC session 并有界 drain outbox；禁止物理删除 users、reset schema 或
+覆盖 Hydra client。只有三个安全布尔值都为 true 才能继续门禁。helper 被强杀后，
+运维可用 `STARSTACK_PRODUCTION_FIXTURE_MODE=cleanup-only` 启动同一程序，以 receipt
+中的 tombstone 作为第一帧执行幂等清理，再 close；不得重新 prepare 或从 receipt
+导出凭据。receipt 保留作审计，不能在门禁脚本里自动删除。
+
+### 15 分钟混合负载中的单次 OJ 评测
+
+正式提交 `/api/oj/submissions` 会永久保留提交、统计和活动记录，绝不能用它做
+生产负载 fixture，也不能事后物理删除历史来伪装无痕。当前唯一允许的单评测
+路径是 `/api/oj/run-custom`：它只读取已认证账号、进入 sandbox 队列并返回结果，
+不创建 submission、解题、Rating、热力图或题目记录。
+
+父门禁在持有上述 `jy-gate-*` 的 pipe-only 凭据时，使用匿名 stdin/stdout 直接
+启动 `/usr/bin/node /opt/star-stack/scripts/identity/production-judge-fixture.mjs`；
+不能通过 npm（npm 会向协议 stdout 写启动信息）、环境变量、命令行参数或临时文件
+传递凭据。它只接受一个 NDJSON frame：
+
+```json
+{"protocol":"starstack-production-judge/v1","requestId":"...","type":"judge","loginId":"jy-gate-...","password":"..."}
+```
+
+helper 在内存中调用 loopback `/api/login`，固定以 C++ 执行 `1 + 2` 的自定义输入，
+验证输出为 `3`，再调用 `/api/logout`。登录 Token 不离开进程内存；只有登出返回
+204 后才输出一帧安全结果：
+
+```json
+{"protocol":"starstack-production-judge/v1","requestId":"...","ok":true,"type":"judged","status":"Accepted","timeMs":7}
+```
+
+Jieya 的 15 分钟 identity-only 负载先独立运行；15 分钟混合负载期间只在约定时点
+触发上述 helper 一次，随后仍由生产协议 helper 的 `finally cleanup` tombstone
+账号。sandbox 不可用、登录触发 Turnstile、评测/登出失败、出现额外 stdout，或
+代码审查发现 `/run-custom` 新增持久化写入时立即停止；不得改用真实账号、真实
+题目提交、放宽沙箱或删除历史数据。
+
 PostgreSQL TLS 证书的 SAN 必须包含容器 DNS 名 `postgres`。固定 Alpine 镜像中的 `postgres` UID 必须在服务器只读检查后记录；私钥设为该 UID 所有、`0600`，证书与 CA 可为 root 所有、`0644`。不得为了让容器读取私钥而改成全局可读。
 
 ## 预发布顺序（保持关闭）
@@ -159,9 +280,9 @@ npm run identity:production:verify-backchannel
 
 | 项目 | 门禁预算 |
 | --- | ---: |
-| 操作系统、Docker、Nginx、PM2 基础 | 350～500 MiB |
-| StarStack Node（PM2 上限） | 500 MiB |
-| 单个判题任务 | 最多 256 MiB，`JUDGE_CONCURRENCY=1` |
+| 操作系统、Docker、Nginx、systemd 基础 | 350～500 MiB |
+| StarStack Node（systemd cgroup 上限） | 768 MiB |
+| 单个判题任务 | 最多 256 MiB，`JUDGE_CONCURRENCY=1`，计入上述 cgroup |
 | PostgreSQL 容器 | 384 MiB，30 connections，64 MiB shared buffers |
 | Hydra 容器 | 256 MiB |
 | 峰值余量 | 至少 250 MiB，且不能持续 swap |
