@@ -112,12 +112,9 @@ services:
     volumes:
       - ./hydra.staging.yaml:/etc/hydra/hydra.yaml:ro
       - ${POSTGRES_TLS_CA_FILE:?set CA file}:/run/postgres-ca/ca.crt:ro
-    ports:
-      - "127.0.0.1:${HYDRA_PUBLIC_PORT:-4544}:4444"
-      - "127.0.0.1:${HYDRA_ADMIN_PORT:-4545}:4445"
     extra_hosts:
-      - host.docker.internal:host-gateway
-      - jieya.xingzhan.cc:host-gateway
+      - "host.docker.internal:${IDENTITY_HOOK_GATEWAY_IP:?set exact hook bridge gateway IP}"
+      - "jieya.xingzhan.cc:${IDENTITY_HOOK_GATEWAY_IP:?set exact hook bridge gateway IP}"
     depends_on:
       hydra-migrate:
         condition: service_completed_successfully
@@ -152,7 +149,11 @@ networks:
     internal: true
   identity-hook:
     name: starstack-identity-hook-staging
+    driver: bridge
     internal: true
+    driver_opts:
+      com.docker.network.bridge.name: br-ss-hook-stg
     ipam:
       config:
         - subnet: ${IDENTITY_HOOK_SUBNET:?set non-conflicting private subnet}
+          gateway: ${IDENTITY_HOOK_GATEWAY_IP:?set exact hook bridge gateway IP}

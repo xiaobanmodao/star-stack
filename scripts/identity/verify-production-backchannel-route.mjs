@@ -1,21 +1,19 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process'
 import { lstat, readFile, realpath } from 'node:fs/promises'
-import { isIP } from 'node:net'
 import path from 'node:path'
+import {
+  assertIdentityEnvironment,
+  assertIdentityHookNetwork,
+  identityHookBridgeName,
+} from './productionNetworkContract.mjs'
 
 const fail = (message) => { throw new Error(message) }
+const tokenHookRouteHeader = 'X-StarStack-Hook-Route'
 const requireValue = (name) => {
   const value = process.env[name]
   if (typeof value !== 'string' || !value.trim()) fail(`${name} is required`)
   return value.trim()
-}
-const privateIpv4 = (value, name) => {
-  if (isIP(value) !== 4) fail(`${name} must be an IPv4 address`)
-  const octets = value.split('.').map(Number)
-  if (!(octets[0] === 10 || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
-    || (octets[0] === 192 && octets[1] === 168))) fail(`${name} must use RFC1918 private space`)
-  return value
 }
 const safeFile = async (value, name, { allowPublicRead = false } = {}) => {
   const resolved = path.resolve(value)
@@ -41,17 +39,19 @@ const run = (command, args, options = {}) => execFileSync(command, args, {
   ...options,
 })
 
-const environment = requireValue('IDENTITY_ENVIRONMENT')
-if (!['production', 'staging'].includes(environment)) {
-  fail('IDENTITY_ENVIRONMENT must be production or staging')
-}
+const environment = assertIdentityEnvironment(requireValue('IDENTITY_ENVIRONMENT'))
 const composeFile = await safeFile(requireValue('IDENTITY_COMPOSE_FILE'), 'IDENTITY_COMPOSE_FILE', { allowPublicRead: true })
 if (path.basename(composeFile) !== `compose.${environment}.yaml`) {
   fail('IDENTITY_COMPOSE_FILE does not match IDENTITY_ENVIRONMENT')
 }
 const envFile = await safeFile(requireValue('IDENTITY_ENV_FILE'), 'IDENTITY_ENV_FILE')
-const hostGateway = privateIpv4(requireValue('IDENTITY_HOST_GATEWAY_IP'), 'IDENTITY_HOST_GATEWAY_IP')
-const expectedHydraIp = privateIpv4(requireValue('IDENTITY_HYDRA_HOOK_IP'), 'IDENTITY_HYDRA_HOOK_IP')
+const hookGateway = requireValue('IDENTITY_HOOK_GATEWAY_IP')
+const expectedHydraIp = requireValue('IDENTITY_HYDRA_HOOK_IP')
+assertIdentityHookNetwork({
+  subnet: requireValue('IDENTITY_HOOK_SUBNET'),
+  gatewayIp: hookGateway,
+  hydraIp: expectedHydraIp,
+})
 const caBundle = await safeFile(
   process.env.IDENTITY_TLS_CA_BUNDLE || '/etc/ssl/certs/ca-certificates.crt',
   'IDENTITY_TLS_CA_BUNDLE',
@@ -67,28 +67,76 @@ const container = inspected[0]
 if (container?.State?.Running !== true || !Number.isSafeInteger(container?.State?.Pid) || container.State.Pid <= 1) {
   fail('Hydra container is not running with a usable network namespace')
 }
-const expectedHostEntry = 'jieya.xingzhan.cc:host-gateway'
-if (!container?.HostConfig?.ExtraHosts?.includes(expectedHostEntry)) {
-  fail('Hydra container lacks the exact canonical host-gateway mapping')
+const expectedHostEntries = [
+  `host.docker.internal:${hookGateway}`,
+  `jieya.xingzhan.cc:${hookGateway}`,
+]
+if (container?.HostConfig?.ExtraHosts?.length !== expectedHostEntries.length
+  || !expectedHostEntries.every((entry) => container.HostConfig.ExtraHosts.includes(entry))) {
+  fail('Hydra container lacks the exact internal hook gateway mappings')
+}
+if (Object.keys(container?.HostConfig?.PortBindings || {}).length > 0
+  || Object.values(container?.NetworkSettings?.Ports || {}).some((bindings) => bindings !== null)) {
+  fail('Hydra container must not publish Docker host ports')
 }
 if (typeof container?.HostsPath !== 'string' || !path.isAbsolute(container.HostsPath)) {
   fail('Hydra container hosts file cannot be inspected')
 }
 const hostsText = await readFile(container.HostsPath, 'utf8')
-const canonicalHostPattern = new RegExp(`^${hostGateway.replaceAll('.', '\\.')}[\\t ]+jieya\\.xingzhan\\.cc(?:[\\t ]|$)`, 'm')
+const canonicalHostPattern = new RegExp(`^${hookGateway.replaceAll('.', '\\.')}[\\t ]+jieya\\.xingzhan\\.cc(?:[\\t ]|$)`, 'm')
 if (!canonicalHostPattern.test(hostsText)) {
-  fail('Canonical Jieya hostname does not resolve to the expected host-gateway inside Hydra')
+  fail('Canonical Jieya hostname does not resolve to the internal hook gateway inside Hydra')
 }
 const hookNetworkName = `starstack-identity-hook-${environment}`
+const databaseNetworkName = `starstack-identity-database-${environment}`
+const attachedNetworks = Object.keys(container?.NetworkSettings?.Networks || {}).sort()
+if (attachedNetworks.join(',') !== [databaseNetworkName, hookNetworkName].sort().join(',')) {
+  fail('Hydra must attach only to the two frozen internal networks')
+}
 if (container?.NetworkSettings?.Networks?.[hookNetworkName]?.IPAddress !== expectedHydraIp) {
   fail('Hydra is not using the expected fixed hook network source IP')
 }
+const networkDetails = JSON.parse(run('docker', ['network', 'inspect', databaseNetworkName, hookNetworkName]))
+if (!Array.isArray(networkDetails) || networkDetails.length !== 2) {
+  fail('Hydra internal networks cannot be inspected')
+}
+const databaseNetwork = networkDetails.find((network) => network?.Name === databaseNetworkName)
+const hookNetwork = networkDetails.find((network) => network?.Name === hookNetworkName)
+const hookIpam = hookNetwork?.IPAM?.Config?.find((entry) => entry?.Subnet === requireValue('IDENTITY_HOOK_SUBNET'))
+if (databaseNetwork?.Internal !== true || hookNetwork?.Internal !== true
+  || hookNetwork?.Options?.['com.docker.network.bridge.name'] !== identityHookBridgeName(environment)
+  || hookIpam?.Gateway !== hookGateway
+  || Object.keys(hookNetwork?.Containers || {}).length !== 1
+  || !Object.keys(hookNetwork?.Containers || {}).some((id) => container.Id?.startsWith(id) || id.startsWith(container.Id))) {
+  fail('Hydra internal network topology is not exact')
+}
 
 const pid = String(container.State.Pid)
-const route = run('nsenter', ['-t', pid, '-n', '--', 'ip', '-4', 'route', 'get', hostGateway])
+const route = run('nsenter', ['-t', pid, '-n', '--', 'ip', '-4', 'route', 'get', hookGateway])
 const routeSource = /(?:^|\s)src\s+(\d{1,3}(?:\.\d{1,3}){3})(?:\s|$)/.exec(route)?.[1]
 if (routeSource !== expectedHydraIp) {
-  fail(`Hydra route to host-gateway does not use the expected source IP (${routeSource || 'missing'})`)
+  fail(`Hydra route to the hook gateway does not use the expected source IP (${routeSource || 'missing'})`)
+}
+
+const hookProbeScript = `
+const http = require('node:http')
+const request = http.request({
+  host: process.argv[1], port: 5175, path: '/internal/oidc/token-hook', method: 'POST',
+  headers: { Host: 'auth.xingzhan.cc', 'Content-Type': 'application/json', 'Content-Length': '2' },
+  timeout: 3000,
+}, (response) => {
+  process.stdout.write(JSON.stringify({ status: response.statusCode, marker: response.headers[${JSON.stringify(tokenHookRouteHeader.toLowerCase())}] }))
+  response.resume()
+})
+request.on('timeout', () => request.destroy(new Error('timeout')))
+request.on('error', () => process.exit(2))
+request.end('{}')
+`
+const hookProbe = JSON.parse(run('nsenter', [
+  '-t', pid, '-n', '--', process.execPath, '-e', hookProbeScript, hookGateway,
+]))
+if (![400, 401, 422].includes(hookProbe.status) || hookProbe.marker !== 'private') {
+  fail('Token Hook probe did not traverse the frozen internal gateway route')
 }
 
 const request = [
@@ -103,7 +151,7 @@ const request = [
 const tlsResponse = run('nsenter', [
   '-t', pid, '-n', '--',
   'openssl', 's_client',
-  '-connect', `${hostGateway}:443`,
+  '-connect', `${hookGateway}:443`,
   '-CAfile', caBundle,
   '-verify_hostname', 'jieya.xingzhan.cc',
   '-verify_return_error',
@@ -125,5 +173,6 @@ console.log(JSON.stringify({
   canonicalHost: 'jieya.xingzhan.cc',
   tlsVerified: true,
   hydraSourceIp: expectedHydraIp,
+  tokenHookStatus: hookProbe.status,
   httpStatus: status,
 }, null, 2))

@@ -8,29 +8,32 @@
 Internet -> Cloudflare/1Panel Nginx :443 -> StarStack Node 127.0.0.1:5174
                                             | public protocol proxy
                                             v
-                                    Hydra 127.0.0.1:4444
+                                    Nginx 127.0.0.1:4444
+                                             | host -> internal bridge
+                                             v
+                                    Hydra hook-IP:4444
 
-Hydra container -> internal hook bridge -> Nginx bridge-IP:5175
+Hydra container -> internal hook bridge -> Nginx hook-gateway:5175
                                            | exact POST + CIDR allowlist
                                            v
                                     StarStack Node 127.0.0.1:5174
 
-Hydra container -> jieya.xingzhan.cc:host-gateway:443
+Hydra container -> jieya.xingzhan.cc:hook-gateway:443
                    | canonical HTTPS + SNI/certificate verification
-                   | exact Hydra source /32 only
+                   | UFW + Nginx: exact Hydra source /32 only
                    v
               existing Jieya TLS Nginx -> Jieya BFF 127.0.0.1:4180
 
 Hydra -> identity-database (internal) -> PostgreSQL 16.15 (no host port)
-Hydra Admin -> host 127.0.0.1:4445 only
+Hydra Admin -> Nginx 127.0.0.1:4445 -> Hydra hook-IP:4445
 Jieya BFF (same host) -> 127.0.0.1:5174/internal/oidc/logout-transactions
 ```
 
-禁止把 Node 改为 `0.0.0.0`，禁止 `network_mode: host`，禁止公开 Admin、PostgreSQL、Token Hook 或 Logout Broker。Hydra Public/Admin 的 Compose 发布地址必须保留 `127.0.0.1`。专用 hook 网络保持 `internal: true`；只有确认目标 Docker 版本能从该 bridge 到达其 host-gateway 后才能继续。
+禁止把 Node 改为 `0.0.0.0`，禁止 `network_mode: host`，禁止公开 Admin、PostgreSQL、Token Hook 或 Logout Broker。production/staging Compose 不声明 Hydra `ports`：Docker 在容器只连接 internal 网络时会静默取消发布。Public/Admin 改由宿主 Nginx 只监听 IPv4 loopback，再反代到 Hydra 的固定 internal hook IP；数据库与 hook 网络仍均为 `internal: true`，不新增任何带外部默认路由的第三网络。
 
 生产 Jieya BFF 与 StarStack 同机。Logout Broker 的唯一合法地址固定为 `http://127.0.0.1:5174/internal/oidc/logout-transactions`，只能由 Jieya 服务端携带独立私网凭据调用；不经过 `auth.xingzhan.cc`、Cloudflare、Public Hydra proxy 或 Token Hook bridge。公网身份 Nginx 对 `/internal/oidc/*` 始终返回 404，不为 Broker 新建 bridge 或公网入口。
 
-Hydra 客户端注册中的 Back-Channel Logout URI 仍固定为 canonical `https://jieya.xingzhan.cc/auth/backchannel-logout`。Compose 只在 Hydra 容器内把该精确主机名解析到 `host-gateway`，请求仍使用原主机名完成 TLS SNI 与证书主机名校验；不得改成 IP、HTTP、公网绕行或关闭证书校验。该精确 location 只能合并到现有 `jieya.xingzhan.cc` TLS server，并仅允许 Hydra 在 `identity-hook` 网络中的固定源地址 `/32`，其他来源一律拒绝。它不新增 `listen`，也不把 BFF 的 4180 端口暴露给容器或公网。
+Hydra 客户端注册中的 Back-Channel Logout URI 仍固定为 canonical `https://jieya.xingzhan.cc/auth/backchannel-logout`。Compose 在 Hydra 容器内把 `host.docker.internal` 与该 canonical 主机名都精确解析到 identity-hook 自身显式 gateway，请求仍使用原主机名完成 TLS SNI 与证书主机名校验；不得使用 Docker 特殊 `host-gateway`、IP、HTTP、公网绕行或关闭证书校验。该精确 location 只能合并到现有 `jieya.xingzhan.cc` TLS server，并仅允许 Hydra 的固定 hook `/32`，其他来源一律拒绝。宿主 UFW 同样只允许该 `/32` 经固定 bridge 到 gateway 的 TCP 443/5175，随后对该 bridge 执行 catch-all deny；不得放行整个 `/29`、其他接口或其他端口。
 
 ## 文件与版本
 
@@ -59,46 +62,68 @@ PostgreSQL TLS 证书的 SAN 必须包含容器 DNS 名 `postgres`。固定 Alpi
 
 1. 只读确认 Docker/Compose、Nginx/1Panel 布局、Cloudflare 模式、空闲端口、bridge CIDR、磁盘、内存、swap、当前 SQLite/备份状态。
 2. 创建独立 Secret、PostgreSQL TLS 材料和 production/staging env 文件；此时 `OIDC_ENABLED=false`。
-3. 用 `identity:production:render-hook-nginx` 输出 bridge Nginx 配置到标准输出，由管理员审查后安装。监听地址是服务器实测的 Docker `host-gateway` RFC1918 地址；allowlist 是独立 hook bridge 的 RFC1918 `/28`～`/30` 小网段，两者通常不是同一网段。
-4. 保留 Jieya 已启用站点中的唯一精确 Back-Channel location，用 `identity:production:render-backchannel-nginx` 只生成该 location 已 include 的 access snippet。`IDENTITY_HYDRA_HOOK_IP` 必须是 hook bridge 内为 Hydra 保留的固定可用地址；snippet 只允许这个 `/32`，并固定 POST-only 与私有路由标记，不能包含第二个 location、proxy 或额外 allow。
-5. 创建 root 所有、普通用户不可写的 `/var/lib/acme/.well-known/acme-challenge` webroot；`auth.xingzhan.cc.conf` 的 80 server 只从该目录读取精确 HTTP-01 token，其他 HTTP 请求才执行 308。不得让 ACME challenge 进入 StarStack/Hydra，也不得让 Certbot 自动改写已审计模板。
-6. 将 `auth.xingzhan.cc.conf` 合并进现有 TLS 配置；不得覆盖 1Panel/Certbot 的证书配置。公网模板明确拒绝 `/internal/oidc/`。
-7. 运行下面的只读预检。它只读文件、资源、Compose 渲染及可选 HTTP 健康状态，不执行 pull/up/migrate/reload/写库。
-8. 另行审批后才允许在 staging 执行镜像拉取、migration、客户端创建与真实协议测试。SS-AUTH-003 不执行这一步。
+3. 为 identity-hook `/28`～`/30` 固定第一可用地址作为 gateway、另一地址作为 Hydra `/32`，并使用 Compose 中冻结的 bridge interface 名。若同名 hook network 已由旧 Compose 创建，先证明它没有任何 attached container；只能在独立授权下删除这个空 hook network，再由新 Compose 重建。不得删除/重建 `identity-database`、PostgreSQL volume 或正在运行的 PostgreSQL。
+4. 用 `identity:production:render-hook-nginx`、`identity:production:render-hydra-loopback-nginx` 和 `identity:production:render-hook-firewall` 分别生成 Token Hook、Public/Admin loopback bridge 与 UFW 候选；渲染器只输出，不安装。UFW 必须保持 default-deny incoming，并仅允许 Hydra `/32` 到 gateway 的 TCP 443/5175，随后拒绝该 bridge 的其他 INPUT。
+5. 保留 Jieya 已启用站点中的唯一精确 Back-Channel location，用 `identity:production:render-backchannel-nginx` 只生成该 location 已 include 的 access snippet。`IDENTITY_HYDRA_HOOK_IP` 必须是 hook bridge 内为 Hydra 保留的固定可用地址；snippet 只允许这个 `/32`，并固定 POST-only 与私有路由标记，不能包含第二个 location、proxy 或额外 allow。
+6. 创建 root 所有、普通用户不可写的 `/var/lib/acme/.well-known/acme-challenge` webroot；`auth.xingzhan.cc.conf` 的 80 server 只从该目录读取精确 HTTP-01 token，其他 HTTP 请求才执行 308。不得让 ACME challenge 进入 StarStack/Hydra，也不得让 Certbot 自动改写已审计模板。
+7. 将 `auth.xingzhan.cc.conf` 合并进现有 TLS 配置；不得覆盖 1Panel/Certbot 的证书配置。公网模板明确拒绝 `/internal/oidc/`。
+8. 运行下面的只读预检。它只读文件、资源、Compose 渲染及可选 HTTP 健康状态，不执行 pull/up/migrate/reload/写库。
+9. 另行审批后才允许在 staging 执行镜像拉取、migration、客户端创建与真实协议测试。SS-AUTH-003 不执行这一步。
 
-两个渲染器只向标准输出写配置，不直接修改 Nginx。先将输出放入仓库外的候选文件；Back-Channel 输出目标固定为 Jieya 站点实际 include 的 `/etc/nginx/snippets/jieya-backchannel-access.conf`，不能另存一个未 include 的完整 location 冒充生效配置。审查无占位符、执行 `nginx -t`，再由独立变更审批决定是否安装/reload：
+所有渲染器只向标准输出写候选内容，不修改 Nginx/UFW。四个输出目标固定如下：
+
+- `identity:production:render-hook-nginx` → `/etc/nginx/conf.d/starstack-token-hook.conf`
+- `identity:production:render-backchannel-nginx` → Jieya 站点已 include 的 `/etc/nginx/snippets/jieya-backchannel-access.conf`
+- `identity:production:render-hydra-loopback-nginx` → `/etc/nginx/conf.d/starstack-hydra-loopback.conf`，且不能 include 到公网 server
+- `identity:production:render-hook-firewall` → 仅供人工核对并经独立审批执行的 UFW 命令流，不对应可重定向安装的配置文件；不得直接编辑 `/etc/ufw/user.rules`
+
+Back-Channel 不能另存一个未 include 的完整 location 冒充生效配置。审查无占位符、确认 UFW 当前编号、执行 `nginx -t`，再由独立变更审批决定是否安装/reload或添加持久规则：
 
 ```bash
-IDENTITY_HOST_GATEWAY_IP=172.17.0.1 IDENTITY_HOOK_SUBNET=172.30.40.0/29 \
-  npm run identity:production:render-hook-nginx
-IDENTITY_HOST_GATEWAY_IP=172.17.0.1 IDENTITY_HOOK_SUBNET=172.30.40.0/29 \
-  IDENTITY_HYDRA_HOOK_IP=172.30.40.2 npm run identity:production:render-backchannel-nginx
+export IDENTITY_ENVIRONMENT=production
+export IDENTITY_HOOK_SUBNET=172.30.40.0/29
+export IDENTITY_HOOK_GATEWAY_IP=172.30.40.1
+export IDENTITY_HYDRA_HOOK_IP=172.30.40.2
+export HYDRA_PUBLIC_PORT=4444 HYDRA_ADMIN_PORT=4445
+npm run identity:production:render-hook-nginx
+npm run identity:production:render-backchannel-nginx
+npm run identity:production:render-hydra-loopback-nginx
+npm run identity:production:render-hook-firewall
 ```
 
 ```bash
 export NODE_ENV=production OIDC_ENABLED=false
+export IDENTITY_ENVIRONMENT=production
 export OIDC_ISSUER=https://auth.xingzhan.cc
 export OIDC_HYDRA_PUBLIC_URL=http://127.0.0.1:4444
 export OIDC_HYDRA_ADMIN_URL=http://127.0.0.1:4445
 export OIDC_TOKEN_HOOK_URL=http://host.docker.internal:5175/internal/oidc/token-hook
 export IDENTITY_COMPOSE_FILE=/opt/star-stack/infra/identity/compose.production.yaml
 export IDENTITY_ENV_FILE=/etc/starstack/identity/production.env
-export IDENTITY_NGINX_AUTH_CONFIG=/etc/nginx/sites-enabled/auth.xingzhan.cc
+# 这里必须填写受审计的真实普通文件，不能填写 sites-enabled symlink。
+export IDENTITY_NGINX_AUTH_CONFIG=/etc/nginx/sites-available/auth.xingzhan.cc
 export IDENTITY_NGINX_HOOK_CONFIG=/etc/nginx/conf.d/starstack-token-hook.conf
-export IDENTITY_NGINX_BCL_SITE_CONFIG=/etc/nginx/sites-enabled/jieya.xingzhan.cc
+export IDENTITY_NGINX_HYDRA_LOOPBACK_CONFIG=/etc/nginx/conf.d/starstack-hydra-loopback.conf
+export IDENTITY_NGINX_BCL_SITE_CONFIG=/etc/nginx/sites-available/jieya.xingzhan.cc
 export IDENTITY_NGINX_BCL_ACCESS_CONFIG=/etc/nginx/snippets/jieya-backchannel-access.conf
 # 1Panel/OpenResty 使用其他二进制时必须填写现场验证过的命令路径。
 export IDENTITY_NGINX_BIN=nginx
-export IDENTITY_HOST_GATEWAY_IP=172.17.0.1
+export IDENTITY_SS_BIN=ss IDENTITY_UFW_BIN=ufw
 export IDENTITY_HOOK_SUBNET=172.30.40.0/29
+export IDENTITY_HOOK_GATEWAY_IP=172.30.40.1
 export IDENTITY_HYDRA_HOOK_IP=172.30.40.2
+export HYDRA_PUBLIC_PORT=4444 HYDRA_ADMIN_PORT=4445
+# 只可在真实请求证明宿主 Nginx 的 bridge source 后设置，必须精确等于 gateway /32。
+export IDENTITY_PROXY_CIDR=172.30.40.1/32
 export POSTGRES_TLS_CERT_FILE=/etc/starstack/identity/postgres/server.crt
 export POSTGRES_TLS_KEY_FILE=/etc/starstack/identity/postgres/server.key
 export POSTGRES_TLS_CA_FILE=/etc/starstack/identity/postgres/ca.crt
 npm run identity:production:preflight
 ```
 
-静态预检会以 `nginx -T` 在内存中核对：Jieya 站点与 access snippet 都进入当前 active config、精确 location 全局只出现一次、site 确实 include 该 snippet，且动态 ACL/POST 限制/marker 与静态 proxy/header 组合完整。配置 dump 不写日志。运行时已由另行审批启动后，才可加 `IDENTITY_PREFLIGHT_RUNTIME=1` 校验 Hydra Admin ready、Public Discovery 与 JWKS。预检成功仍不代表可把 `OIDC_ENABLED` 改为 true。
+静态预检的配置输入始终是 `sites-available` 等位置中的真实普通单链接文件。它会解析内存中的 `nginx -T` marker，并把 marker 的 `realpath` 与受审计文件的 `realpath` 精确比较：标准 `sites-enabled -> ../sites-available` 一跳直接 symlink 可以证明站点已加载；断链、目录 symlink、多跳 symlink、指向另一普通文件、重复 marker 或未加载文件都会失败。access snippet 必须由 active config 以受审计普通文件路径直接加载，不能改成 symlink。
+
+同一静态预检还会证明 auth、Jieya 站点、access snippet 与 Hydra loopback bridge 均进入当前 active config，精确 Back-Channel location 全局只出现一次，loopback Public/Admin 端口由 `ss` 证明仅监听 `127.0.0.1`，UFW 为 active/default-deny 且只有精确 443/5175 allow + bridge catch-all deny。配置 dump 与防火墙输出不写日志。运行时已由另行审批启动后，才可加 `IDENTITY_PREFLIGHT_RUNTIME=1` 校验通过 loopback Nginx 到达的 Hydra Admin、Public Discovery 与 JWKS。预检成功仍不代表可把 `OIDC_ENABLED` 改为 true。
 
 ### HTTP-01 自动续期边界
 
@@ -108,19 +133,20 @@ npm run identity:production:preflight
 
 ### Back-Channel TLS 现场硬门禁
 
-Hydra 已由另行审批启动、Jieya BFF 仍只监听 loopback 后，必须在启用 OIDC 前执行只读链路证明。验证器不重启容器、不迁移数据库、不读取客户端 Secret；它进入 Hydra 容器的网络 namespace，确认到 `host-gateway:443` 的路由源地址精确等于 `IDENTITY_HYDRA_HOOK_IP`，再用 canonical SNI 和系统 CA 校验证书，发送一个不含凭据的无效 Back-Channel POST。只有得到 BFF 的预期拒绝状态（400/401/422）和私有 location 标记才通过；Nginx allowlist 的 403、错误 server 的 404、上游失败或证书失败都必须停止。
+Hydra 已由另行审批启动、Jieya BFF 仍只监听 loopback 后，必须在启用 OIDC 前执行只读链路证明。验证器不重启容器、不迁移数据库、不读取客户端 Secret；它进入 Hydra 容器的 network namespace，确认 hook gateway 路由源地址精确等于 `IDENTITY_HYDRA_HOOK_IP`。随后分别向 gateway:5175 发送无凭据 Token Hook POST，以及向 gateway:443 使用 canonical SNI/系统 CA 发送无效 Back-Channel POST；两条链都必须得到预期拒绝状态与私有 route marker。403、错误 server、上游失败、证书失败或源地址变化都必须停止。
 
 ```bash
 export IDENTITY_ENVIRONMENT=production
 export IDENTITY_COMPOSE_FILE=/opt/star-stack/infra/identity/compose.production.yaml
 export IDENTITY_ENV_FILE=/etc/starstack/identity/production.env
-export IDENTITY_HOST_GATEWAY_IP=172.17.0.1
+export IDENTITY_HOOK_SUBNET=172.30.40.0/29
+export IDENTITY_HOOK_GATEWAY_IP=172.30.40.1
 export IDENTITY_HYDRA_HOOK_IP=172.30.40.2
 export IDENTITY_TLS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 npm run identity:production:verify-backchannel
 ```
 
-服务器必须先实测 Docker Engine 对 `internal: true` 的 `identity-hook` bridge 支持到 host-gateway:443 的这条路由。若 route 不存在、源地址不是固定 `/32`、证书链/主机名校验失败、1Panel 无法安全合并精确 location，或 Nginx 只能放宽到子网/公网，立即停止；不得移除 `internal`、改用 `network_mode: host`、开放 4180、关闭 TLS 验证或改写 canonical URI。
+服务器必须证明：宿主 Nginx 能访问 Hydra 固定 internal IP:4444/4445；Hydra 能经自身 hook gateway 访问 5175/443；UFW 只放行固定 Hydra `/32` 到 gateway 的两个端口；Public/Admin 只在 loopback 监听。任一路由不存在、源地址不是固定 `/32`、证书校验失败、Nginx/UFW 只能放宽到 `/29`/公网，立即停止；不得移除 `internal`、恢复 Docker `ports`、新增带 egress 的 bridge、使用 `network_mode: host`、开放 4180 或关闭 TLS 验证。
 
 ### 公网日志、HSTS 与客户端地址边界
 
@@ -165,7 +191,7 @@ npm run identity:production:verify-backup
 
 - `auth.xingzhan.cc` DNS、Cloudflare TLS 模式、源站证书路径与真实 Nginx include 归属。
 - Cloudflare 源站 ACL、Nginx `real_ip` 可信 CIDR及实测 `$remote_addr`；未确认时不得按用户 IP 放宽限流。
-- Docker bridge 的空闲 RFC1918 `/29`、host-gateway IP、Hydra 固定 hook 源 `/32`，并证明 internal bridge 可达 5175 以及 host-gateway:443；后者必须通过 canonical SNI/CA 校验和 Jieya 私有 location 精确 allowlist。
+- Docker bridge 的空闲 RFC1918 `/29`、显式第一可用 gateway、Hydra 固定 hook `/32`，并证明 host→Hydra 4444/4445、Hydra→gateway 5175/443、loopback listeners、UFW exact INPUT 与 canonical SNI/CA 全部成立。
 - 1Panel 是否会重写手工 Nginx include，以及 bridge listener 的防火墙/SELinux/AppArmor 状态。
 - Jieya BFF 必须继续与 StarStack 同机，并保持固定 loopback Broker URL；任何跨主机迁移都要重新设计私网与认证边界，不能改用公网身份域。
 - PostgreSQL TLS 私钥对应的固定容器 UID、备份目录/保留期/离机复制、监控与告警渠道。
