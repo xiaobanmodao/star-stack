@@ -21,24 +21,59 @@ const assertOwnedByCurrentUser = (stat, description) => {
   }
 }
 
-const assertSecureDirectory = async (directory, description) => {
+const assertSecureDirectory = async (directory, description, expectedUid = currentUid) => {
   const resolved = path.resolve(directory)
   const stat = await lstat(resolved)
   if (!stat.isDirectory() || stat.isSymbolicLink()) {
     throw new Error(`${description} must be a real directory`)
   }
-  assertOwnedByCurrentUser(stat, description)
+  if (expectedUid !== undefined && stat.uid !== expectedUid) {
+    throw new Error(`${description} has an unexpected owner`)
+  }
   if (modeBits(stat) !== 0o700) throw new Error(`${description} permissions must be 0700`)
   if (await realpath(resolved) !== resolved) throw new Error(`${description} contains a symbolic link`)
   return resolved
 }
 
-const assertTrustedLockDirectory = async (directory) => {
+const assertTrustedSharedLockDirectory = async (directory) => {
   const resolved = path.resolve(directory)
   const stat = await lstat(resolved)
-  if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== 0
-    || (modeBits(stat) & 0o002) !== 0 || await realpath(resolved) !== resolved) {
-    throw new Error('Production fixture lock directory is not trusted')
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error('Production fixture shared lock directory must be a real directory')
+  }
+  assertOwnedByCurrentUser(stat, 'Production fixture shared lock directory')
+  const permissions = stat.mode & 0o1777
+  if ((permissions & 0o022) !== 0 && (permissions & 0o1000) === 0) {
+    throw new Error('Production fixture shared lock directory must use sticky write protection')
+  }
+  if (await realpath(resolved) !== resolved) {
+    throw new Error('Production fixture shared lock directory contains a symbolic link')
+  }
+  return Object.freeze({ resolved, stat })
+}
+
+export const ensureProductionFixtureLockDirectory = async (
+  sharedDirectory,
+  expectedUid = currentUid,
+) => {
+  if (expectedUid !== undefined && (!Number.isSafeInteger(expectedUid) || expectedUid < 0)) {
+    throw new Error('Production fixture lock directory owner is invalid')
+  }
+  const parentBefore = await assertTrustedSharedLockDirectory(sharedDirectory)
+  const directory = path.join(parentBefore.resolved, 'starstack-identity')
+  try {
+    await mkdir(directory, { mode: 0o700 })
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error
+  }
+  const resolved = await assertSecureDirectory(
+    directory,
+    'Production fixture private lock directory',
+    expectedUid,
+  )
+  const parentAfter = await assertTrustedSharedLockDirectory(sharedDirectory)
+  if (!sameInode(parentBefore.stat, parentAfter.stat)) {
+    throw new Error('Production fixture shared lock directory changed during setup')
   }
   return resolved
 }
@@ -246,7 +281,8 @@ export const resolveProductionFixturePaths = async (env = process.env) => {
     )
     databasePath = path.join(root, 'fixture.sqlite')
     receiptsDirectory = path.join(root, 'receipts')
-    lockPath = path.join(root, 'runtime.lock')
+    const lockDirectory = await ensureProductionFixtureLockDirectory(path.join(root, 'run-lock'))
+    lockPath = path.join(lockDirectory, 'starstack-production-fixture.lock')
   } else {
     if (env.NODE_ENV !== 'production' || currentUid !== 0) {
       throw new Error('Production fixture helper must run as root in NODE_ENV=production')
@@ -254,8 +290,8 @@ export const resolveProductionFixturePaths = async (env = process.env) => {
     databasePath = '/opt/star-stack/server/data/starstack.sqlite'
     await assertSecureDirectory('/var/lib/starstack', 'StarStack private state directory')
     receiptsDirectory = '/var/lib/starstack/identity-gates'
-    lockPath = '/run/lock/starstack-production-fixture.lock'
-    await assertTrustedLockDirectory(path.dirname(lockPath))
+    const lockDirectory = await ensureProductionFixtureLockDirectory('/run/lock', 0)
+    lockPath = path.join(lockDirectory, 'starstack-production-fixture.lock')
   }
   await ensureReceiptDirectory(receiptsDirectory)
   const databaseStat = await lstat(databasePath)

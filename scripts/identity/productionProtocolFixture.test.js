@@ -1,6 +1,16 @@
 import { spawn } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { chmod, lstat, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  symlink,
+} from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -57,7 +67,11 @@ const createRuntime = async () => {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'starstack-production-fixture-')))
   resources.push(root)
   const filename = await createDatabase(root)
-  return { root, filename }
+  const sharedLockDirectory = path.join(root, 'run-lock')
+  const lockDirectory = path.join(sharedLockDirectory, 'starstack-identity')
+  await mkdir(sharedLockDirectory, { mode: 0o700 })
+  await chmod(sharedLockDirectory, 0o1777)
+  return { root, filename, sharedLockDirectory, lockDirectory }
 }
 
 const startHelper = ({ root, mode = 'normal' }) => {
@@ -184,6 +198,13 @@ describe('production protocol fixture helper', () => {
     expect((await helper.exit).code).toBe(0)
     expect(helper.stderr()).toBe('')
 
+    const sharedLockStat = await lstat(runtime.sharedLockDirectory)
+    const lockDirectoryStat = await lstat(runtime.lockDirectory)
+    expect(sharedLockStat.mode & 0o1777).toBe(0o1777)
+    expect(lockDirectoryStat.mode & 0o777).toBe(0o700)
+    expect(lockDirectoryStat.uid).toBe(process.getuid())
+    expect(await readdir(runtime.lockDirectory)).toEqual([])
+
     const verify = await open({ filename: runtime.filename, driver: sqlite3.Database })
     expect(await verify.get('SELECT account_status, email, is_admin, is_banned FROM users WHERE id = ?', active.id))
       .toEqual({ account_status: 'deleted', email: null, is_admin: 0, is_banned: 1 })
@@ -262,6 +283,7 @@ describe('production protocol fixture helper', () => {
     const first = startHelper(runtime)
     const tombstone = randomBytes(24).toString('base64url')
     await first.send(frame('prepare', tombstone, 'prepare-lock'))
+    expect(await readdir(runtime.lockDirectory)).toEqual(['starstack-production-fixture.lock'])
 
     const second = startHelper(runtime)
     second.child.stdin.write(`${JSON.stringify(frame('prepare', randomBytes(24).toString('base64url'), 'other'))}\n`)
@@ -270,5 +292,41 @@ describe('production protocol fixture helper', () => {
     await first.send(frame('cleanup', tombstone, 'cleanup-lock'))
     await first.send(frame('close', null, 'close-lock'))
     expect((await first.exit).code).toBe(0)
+    expect(await readdir(runtime.lockDirectory)).toEqual([])
+  }, 30_000)
+
+  it('rejects unsafe shared or dedicated lock directories before creating an account', async () => {
+    const safety = await import('./productionFixtureSafety.mjs')
+    expect(typeof safety.ensureProductionFixtureLockDirectory).toBe('function')
+
+    const wrongOwner = await createRuntime()
+    await expect(safety.ensureProductionFixtureLockDirectory(
+      wrongOwner.sharedLockDirectory,
+      process.getuid() + 1,
+    )).rejects.toThrow(/owner/i)
+
+    const unsafeParent = await createRuntime()
+    await chmod(unsafeParent.sharedLockDirectory, 0o777)
+    const parentHelper = startHelper(unsafeParent)
+    expect((await parentHelper.exit).code).not.toBe(0)
+
+    const unsafeMode = await createRuntime()
+    await mkdir(unsafeMode.lockDirectory, { mode: 0o700 })
+    await chmod(unsafeMode.lockDirectory, 0o755)
+    const modeHelper = startHelper(unsafeMode)
+    expect((await modeHelper.exit).code).not.toBe(0)
+
+    const unsafeLink = await createRuntime()
+    const linkTarget = path.join(unsafeLink.root, 'lock-target')
+    await mkdir(linkTarget, { mode: 0o700 })
+    await symlink(linkTarget, unsafeLink.lockDirectory)
+    const linkHelper = startHelper(unsafeLink)
+    expect((await linkHelper.exit).code).not.toBe(0)
+
+    for (const runtime of [unsafeParent, unsafeMode, unsafeLink]) {
+      const db = await open({ filename: runtime.filename, driver: sqlite3.Database })
+      expect(await db.get('SELECT COUNT(*) AS count FROM users')).toEqual({ count: 0 })
+      await db.close()
+    }
   }, 30_000)
 })

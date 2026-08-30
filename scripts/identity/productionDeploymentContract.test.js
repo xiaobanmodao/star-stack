@@ -169,6 +169,22 @@ describe('SS-AUTH-003 production deployment contract', () => {
     }
   })
 
+  it('keeps fixture locks below a private directory without changing the sticky system lock root', async () => {
+    const [safety, productionGuide, backupService] = await Promise.all([
+      readProjectFile('scripts/identity/productionFixtureSafety.mjs'),
+      readProjectFile('infra/identity/PRODUCTION.md'),
+      readProjectFile('infra/identity/systemd/starstack-backup.service'),
+    ])
+
+    expect(safety).toContain("path.join(parentBefore.resolved, 'starstack-identity')")
+    expect(safety).toContain("ensureProductionFixtureLockDirectory('/run/lock', 0)")
+    expect(safety).not.toContain("lockPath = '/run/lock/starstack-production-fixture.lock'")
+    expect(productionGuide).toContain('/run/lock/starstack-identity')
+    expect(productionGuide).toContain('不得通过 `chmod /run/lock`')
+    expect(backupService).toContain('/run/lock/starstack-backup.lock')
+    expect(backupService).not.toContain('starstack-production-fixture.lock')
+  })
+
   it('schedules the installed root-owned backup copy through a sandboxed UTC systemd timer', async () => {
     const [service, timer, productionGuide] = await Promise.all([
       readProjectFile('infra/identity/systemd/starstack-backup.service'),
