@@ -1,0 +1,71 @@
+serve:
+  public:
+    port: 4444
+    cors:
+      enabled: false
+    request_log:
+      disable_for_health: false
+  admin:
+    port: 4445
+    cors:
+      enabled: false
+    request_log:
+      disable_for_health: false
+  tls:
+    allow_termination_from:
+      - 127.0.0.1/32
+  cookies:
+    same_site_mode: Lax
+    same_site_legacy_workaround: false
+
+urls:
+  self:
+    issuer: https://auth.xingzhan.cc
+    public: https://auth.xingzhan.cc
+  login: https://auth.xingzhan.cc/account/login
+  consent: https://auth.xingzhan.cc/account/consent
+  logout: https://auth.xingzhan.cc/account/error
+  error: https://auth.xingzhan.cc/account/error
+
+webfinger:
+  oidc_discovery:
+    supported_claims:
+      - name
+      - preferred_username
+      - picture
+    supported_scope:
+      - profile
+    userinfo_url: https://auth.xingzhan.cc/oauth2/userinfo
+
+oidc:
+  subject_identifiers:
+    supported_types:
+      - public
+  dynamic_client_registration:
+    enabled: false
+
+strategies:
+  access_token: opaque
+
+ttl:
+  login_consent_request: 10m
+  auth_code: 1m
+  id_token: 5m
+  access_token: 10m
+  refresh_token: 720h
+
+oauth2:
+  expose_internal_errors: false
+  pkce:
+    enforced: true
+    enforced_for_public_clients: true
+  grant:
+    refresh_token:
+      rotation_grace_period: 0s
+      rotation_grace_reuse_count: 0
+  session:
+    encrypt_at_rest: true
+
+log:
+  level: warn
+  format: json

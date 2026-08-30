@@ -19,6 +19,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 5174,
+        HOST: process.env.HOST || '127.0.0.1',
         TRUST_PROXY_HOPS: process.env.TRUST_PROXY_HOPS || '1',
         ALLOWED_ORIGINS: 'https://xingzhan.cc,https://www.xingzhan.cc',
         TURNSTILE_HOSTNAMES: 'xingzhan.cc,www.xingzhan.cc',
@@ -29,7 +30,15 @@ module.exports = {
         SMTP_USER: process.env.SMTP_USER || '',
         SMTP_PASS: process.env.SMTP_PASS || '',
         MAIL_FROM: process.env.MAIL_FROM || '',
-        JUDGE_MEMORY_LIMIT_KB: process.env.JUDGE_MEMORY_LIMIT_KB || '262144'
+        JUDGE_MEMORY_LIMIT_KB: process.env.JUDGE_MEMORY_LIMIT_KB || '262144',
+        JUDGE_CONCURRENCY: process.env.JUDGE_CONCURRENCY || '1',
+        // 身份能力必须在服务器预发布门禁通过后显式打开。
+        OIDC_ENABLED: process.env.OIDC_ENABLED || 'false',
+        OIDC_ISSUER: process.env.OIDC_ISSUER || 'https://auth.xingzhan.cc',
+        OIDC_HYDRA_PUBLIC_URL: process.env.OIDC_HYDRA_PUBLIC_URL || 'http://127.0.0.1:4444',
+        OIDC_HYDRA_ADMIN_URL: process.env.OIDC_HYDRA_ADMIN_URL || 'http://127.0.0.1:4445',
+        OIDC_TOKEN_HOOK_SECRET: process.env.OIDC_TOKEN_HOOK_SECRET || '',
+        OIDC_LOGOUT_BROKER_SECRET: process.env.OIDC_LOGOUT_BROKER_SECRET || ''
       },
       error_file: './logs/api-error.log',
       out_file: './logs/api-out.log',

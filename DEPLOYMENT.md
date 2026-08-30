@@ -16,6 +16,10 @@
 
 生产服务由 Nginx 提供前端静态文件和 HTTPS，由 Nginx 将 `/api/` 转发到 PM2 管理的 Express 服务。生产模式下 Express 默认只监听 `127.0.0.1:5174`，不能绕过 Nginx 直接公网访问。判题依赖 C++17、Python 3 和 Java 17。
 
+### 身份服务预发布状态
+
+Hydra/OIDC 当前仍默认关闭，`ecosystem.config.cjs` 明确设置 `OIDC_ENABLED=false`。SS-AUTH-003 只提供独立 production/staging 配置和只读门禁，不授权在日常更新流程中启动 Hydra、执行其迁移或注册客户端。身份拓扑、Secret、2C2GiB 资源预算、Nginx bridge、联合备份与隔离恢复说明见 [`infra/identity/PRODUCTION.md`](./infra/identity/PRODUCTION.md)。禁止复用 `infra/identity/compose.yaml` 的开发配置，禁止 `network_mode: host`，禁止将 Node、Hydra Admin、PostgreSQL 或内部 Hook 暴露公网。
+
 ### Cloudflare Turnstile
 
 异常登录使用 Cloudflare Turnstile。`Site Key` 是前端公开配置，`Secret Key` 只能保存到后端运行环境，不能提交到 Git。

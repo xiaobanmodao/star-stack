@@ -20,9 +20,9 @@ const config = {
   client: { redirectUri: 'http://jieya.localhost:4180/auth/callback' },
 }
 
-const start = async (fetchImpl) => {
+const start = async (fetchImpl, proxyConfig = config) => {
   const app = express()
-  app.use(createHydraPublicProxy({ config, fetchImpl }))
+  app.use(createHydraPublicProxy({ config: proxyConfig, fetchImpl }))
   const server = await new Promise((resolve) => {
     const listening = app.listen(0, '127.0.0.1', () => resolve(listening))
   })
@@ -67,6 +67,38 @@ describe('Hydra fixed public proxy', () => {
     const unknown = await fetch(`${baseUrl}/admin/clients`)
     expect(unknown.status).toBe(404)
     expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('sets trusted forwarding metadata from the frozen issuer instead of browser headers', async () => {
+    const productionConfig = {
+      ...config,
+      issuer: 'https://auth.xingzhan.cc',
+      production: true,
+      accountCookieName: '__Host-starstack_auth',
+      hydraCookies: {
+        ...config.hydraCookies,
+        names: [
+          'starstack_hydra_login_csrf_681216528',
+          'starstack_hydra_consent_csrf_681216528',
+          'starstack_hydra_session',
+          'starstack_hydra_device_csrf',
+        ],
+      },
+      client: { redirectUri: 'https://jieya.xingzhan.cc/auth/callback' },
+    }
+    const fetchImpl = vi.fn(async () => new Response('{}', {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }))
+    const baseUrl = await start(fetchImpl, productionConfig)
+    const response = await fetch(`${baseUrl}/.well-known/openid-configuration`, {
+      headers: { 'x-forwarded-proto': 'http', 'x-forwarded-host': 'attacker.example' },
+    })
+
+    expect(response.status).toBe(200)
+    const headers = fetchImpl.mock.calls[0][1].headers
+    expect(headers['x-forwarded-proto']).toBe('https')
+    expect(headers['x-forwarded-host']).toBe('auth.xingzhan.cc')
   })
 
   it('rejects an upstream redirect outside the issuer and exact client callback', async () => {
