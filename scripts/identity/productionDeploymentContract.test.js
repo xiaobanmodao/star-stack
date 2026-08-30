@@ -13,12 +13,54 @@ import { spawnSync } from 'node:child_process'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  assertActiveBackchannelNginx,
+  assertBackchannelNginxComposition,
+} from './productionNginxContract.mjs'
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const readProjectFile = (relativePath) => readFile(path.join(projectRoot, relativePath), 'utf8')
 
 const HYDRA_IMAGE = 'oryd/hydra:v26.2.0-distroless@sha256:ad53a123ddf869fc23ea74f3d76b47e2966dc52f559e93ab31f81440f4d60c5e'
 const POSTGRES_IMAGE = 'postgres:16.15-alpine3.24@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685'
+const BCL_SITE_PATH = '/etc/nginx/sites-enabled/jieya.xingzhan.cc'
+const BCL_ACCESS_PATH = '/etc/nginx/snippets/jieya-backchannel-access.conf'
+
+const validBackchannelSite = ({ accessPath = BCL_ACCESS_PATH } = {}) => `
+server {
+  listen 443 ssl;
+  server_name jieya.xingzhan.cc;
+  location = /auth/backchannel-logout {
+    access_log off;
+    include ${accessPath};
+    proxy_pass http://127.0.0.1:4180;
+    proxy_set_header Host jieya.xingzhan.cc;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header Authorization "";
+  }
+}
+`
+
+const validBackchannelAccess = ({ hydraIp = '172.30.40.2' } = {}) => `
+allow ${hydraIp}/32;
+deny all;
+limit_except POST { deny all; }
+add_header X-StarStack-BCL-Route private always;
+`
+
+const activeNginxDump = ({
+  sitePath = BCL_SITE_PATH,
+  accessPath = BCL_ACCESS_PATH,
+  siteText = validBackchannelSite({ accessPath }),
+  accessText = validBackchannelAccess(),
+} = {}) => `
+# configuration file ${sitePath}:
+${siteText}
+# configuration file ${accessPath}:
+${accessText}
+`
 
 const composeService = (compose, service, nextService) => {
   const start = compose.indexOf(`\n  ${service}:`)
@@ -97,7 +139,7 @@ describe('SS-AUTH-003 production deployment contract', () => {
   it('public and bridge Nginx templates expose only their frozen trust surfaces', async () => {
     const publicConfig = await readProjectFile('infra/identity/nginx/auth.xingzhan.cc.conf')
     const hookTemplate = await readProjectFile('infra/identity/nginx/token-hook.bridge.conf.template')
-    const backchannelTemplate = await readProjectFile('infra/identity/nginx/jieya-backchannel.private-location.conf.template')
+    const backchannelTemplate = await readProjectFile('infra/identity/nginx/jieya-backchannel.access.conf.template')
     const productionGuide = await readProjectFile('infra/identity/PRODUCTION.md')
     expect(publicConfig).toContain('server_name auth.xingzhan.cc;')
     expect(publicConfig).toContain('access_log off;')
@@ -116,11 +158,82 @@ describe('SS-AUTH-003 production deployment contract', () => {
     expect(hookTemplate).toMatch(/limit_except POST/)
     expect(hookTemplate).toContain('proxy_pass http://127.0.0.1:5174;')
     expect(hookTemplate).not.toContain('logout-transactions')
-    expect(backchannelTemplate).toContain('location = /auth/backchannel-logout')
     expect(backchannelTemplate).toContain('allow __IDENTITY_HYDRA_HOOK_IP__/32;')
     expect(backchannelTemplate).toContain('deny all;')
-    expect(backchannelTemplate).toContain('proxy_pass http://127.0.0.1:4180;')
+    expect(backchannelTemplate).toMatch(/limit_except POST\s*\{\s*deny all;\s*\}/)
+    expect(backchannelTemplate).toContain('add_header X-StarStack-BCL-Route private always;')
+    expect(backchannelTemplate).not.toMatch(/\blocation\b|\blisten\b|proxy_pass/)
     expect(backchannelTemplate).not.toContain('listen ')
+  })
+
+  it('accepts only the enabled Jieya site plus its exact Back-Channel access snippet', () => {
+    expect(() => assertBackchannelNginxComposition({
+      siteText: validBackchannelSite(),
+      accessText: validBackchannelAccess(),
+      accessPath: BCL_ACCESS_PATH,
+      hydraHookIp: '172.30.40.2',
+    })).not.toThrow()
+    expect(() => assertActiveBackchannelNginx({
+      dump: activeNginxDump(),
+      sitePath: BCL_SITE_PATH,
+      accessPath: BCL_ACCESS_PATH,
+    })).not.toThrow()
+  })
+
+  it('rejects an unreferenced fake Back-Channel file and duplicate exact locations', () => {
+    expect(() => assertBackchannelNginxComposition({
+      siteText: validBackchannelSite({ accessPath: '/etc/nginx/snippets/unrelated.conf' }),
+      accessText: validBackchannelAccess(),
+      accessPath: BCL_ACCESS_PATH,
+      hydraHookIp: '172.30.40.2',
+    })).toThrow(/include/i)
+    expect(() => assertActiveBackchannelNginx({
+      dump: activeNginxDump().replace(`# configuration file ${BCL_ACCESS_PATH}:`, '# omitted access file:'),
+      sitePath: BCL_SITE_PATH,
+      accessPath: BCL_ACCESS_PATH,
+    })).toThrow(/active/i)
+    const duplicated = `${validBackchannelSite()}\n${validBackchannelSite()}`
+    expect(() => assertBackchannelNginxComposition({
+      siteText: duplicated,
+      accessText: validBackchannelAccess(),
+      accessPath: BCL_ACCESS_PATH,
+      hydraHookIp: '172.30.40.2',
+    })).toThrow(/exactly one/i)
+    expect(() => assertActiveBackchannelNginx({
+      dump: activeNginxDump({ siteText: duplicated }),
+      sitePath: BCL_SITE_PATH,
+      accessPath: BCL_ACCESS_PATH,
+    })).toThrow(/exactly one/i)
+  })
+
+  it.each([
+    ['an extra allow', `${validBackchannelAccess()}allow 172.30.40.3/32;`, /allow/i],
+    ['a loopback allow', `${validBackchannelAccess()}allow 127.0.0.1;`, /allow/i],
+    ['a missing POST restriction', validBackchannelAccess().replace('limit_except POST { deny all; }', ''), /POST/i],
+    ['a missing private marker', validBackchannelAccess().replace('add_header X-StarStack-BCL-Route private always;', ''), /marker/i],
+  ])('rejects Back-Channel access snippets with %s', (_label, accessText, expected) => {
+    expect(() => assertBackchannelNginxComposition({
+      siteText: validBackchannelSite(),
+      accessText,
+      accessPath: BCL_ACCESS_PATH,
+      hydraHookIp: '172.30.40.2',
+    })).toThrow(expected)
+  })
+
+  it.each([
+    ['proxy_pass http://127.0.0.1:4180;', /proxy/i],
+    ['proxy_set_header Host jieya.xingzhan.cc;', /header/i],
+    ['proxy_set_header X-Real-IP $remote_addr;', /header/i],
+    ['proxy_set_header X-Forwarded-For $remote_addr;', /header/i],
+    ['proxy_set_header X-Forwarded-Proto https;', /header/i],
+    ['proxy_set_header Authorization "";', /header/i],
+  ])('rejects the Jieya Back-Channel location without %s', (required, expected) => {
+    expect(() => assertBackchannelNginxComposition({
+      siteText: validBackchannelSite().replace(required, ''),
+      accessText: validBackchannelAccess(),
+      accessPath: BCL_ACCESS_PATH,
+      hydraHookIp: '172.30.40.2',
+    })).toThrow(expected)
   })
 
   it('serves only exact HTTP-01 files before redirecting other auth HTTP traffic', async () => {
@@ -176,6 +289,11 @@ describe('SS-AUTH-003 production deployment contract', () => {
     expect(packageJson.scripts['identity:production:backup']).toBe('node scripts/identity/production-backup.mjs')
     const preflight = await readProjectFile('scripts/identity/production-preflight.mjs')
     expect(preflight).toContain('OIDC_ENABLED must remain false during pre-release')
+    expect(preflight).toContain("requireValue('IDENTITY_NGINX_BCL_SITE_CONFIG')")
+    expect(preflight).toContain("requireValue('IDENTITY_NGINX_BCL_ACCESS_CONFIG')")
+    expect(preflight).toContain('assertBackchannelNginxComposition({')
+    expect(preflight).toContain('assertActiveBackchannelNginx({')
+    expect(preflight).toContain("['-T']")
     expect(preflight).not.toMatch(/\b(?:writeFile|rm|unlink|rename|mkdir|chmod|chown)\b/)
     const backup = await readProjectFile('scripts/identity/production-backup.mjs')
     expect(backup).toContain('pg_dump')
@@ -223,7 +341,7 @@ describe('SS-AUTH-003 production deployment contract', () => {
     }
   })
 
-  it('renders only the fixed Hydra /32 into the Jieya Back-Channel location', () => {
+  it('renders only the fixed Hydra /32 policy for the Jieya Back-Channel include', () => {
     const script = path.join(projectRoot, 'scripts/identity/render-backchannel-nginx.mjs')
     const valid = spawnSync(process.execPath, [script], {
       encoding: 'utf8',
@@ -236,7 +354,9 @@ describe('SS-AUTH-003 production deployment contract', () => {
     })
     expect(valid.status).toBe(0)
     expect(valid.stdout).toContain('allow 172.30.40.2/32;')
-    expect(valid.stdout).toContain('proxy_pass http://127.0.0.1:4180;')
+    expect(valid.stdout).toMatch(/limit_except POST\s*\{\s*deny all;\s*\}/)
+    expect(valid.stdout).toContain('add_header X-StarStack-BCL-Route private always;')
+    expect(valid.stdout).not.toMatch(/\blocation\b|\blisten\b|proxy_pass/)
     expect(valid.stdout).not.toContain('__IDENTITY_')
     for (const hydraIp of ['8.8.8.8', '172.30.40.0', '172.30.40.7', '172.30.41.2', '172.17.0.1']) {
       const rejected = spawnSync(process.execPath, [script], {

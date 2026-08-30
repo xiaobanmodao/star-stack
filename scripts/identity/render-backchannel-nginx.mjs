@@ -38,7 +38,7 @@ if (((hydra & mask) >>> 0) !== network || hydra === network || hydra === broadca
 if (hydra === gateway) throw new Error('Hydra hook IP and host-gateway IP must be different')
 
 const template = await readFile(
-  path.join(root, 'infra/identity/nginx/jieya-backchannel.private-location.conf.template'),
+  path.join(root, 'infra/identity/nginx/jieya-backchannel.access.conf.template'),
   'utf8',
 )
 process.stdout.write(template.replaceAll('__IDENTITY_HYDRA_HOOK_IP__', hydraAddress))

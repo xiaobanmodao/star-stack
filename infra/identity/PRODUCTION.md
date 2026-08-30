@@ -60,13 +60,13 @@ PostgreSQL TLS 证书的 SAN 必须包含容器 DNS 名 `postgres`。固定 Alpi
 1. 只读确认 Docker/Compose、Nginx/1Panel 布局、Cloudflare 模式、空闲端口、bridge CIDR、磁盘、内存、swap、当前 SQLite/备份状态。
 2. 创建独立 Secret、PostgreSQL TLS 材料和 production/staging env 文件；此时 `OIDC_ENABLED=false`。
 3. 用 `identity:production:render-hook-nginx` 输出 bridge Nginx 配置到标准输出，由管理员审查后安装。监听地址是服务器实测的 Docker `host-gateway` RFC1918 地址；allowlist 是独立 hook bridge 的 RFC1918 `/28`～`/30` 小网段，两者通常不是同一网段。
-4. 用 `identity:production:render-backchannel-nginx` 输出 Jieya Back-Channel 精确 location，只能合并进现有 `jieya.xingzhan.cc` TLS server。`IDENTITY_HYDRA_HOOK_IP` 必须是该 hook bridge 内为 Hydra 保留的固定可用地址，Nginx 只允许这个 `/32`。
+4. 保留 Jieya 已启用站点中的唯一精确 Back-Channel location，用 `identity:production:render-backchannel-nginx` 只生成该 location 已 include 的 access snippet。`IDENTITY_HYDRA_HOOK_IP` 必须是 hook bridge 内为 Hydra 保留的固定可用地址；snippet 只允许这个 `/32`，并固定 POST-only 与私有路由标记，不能包含第二个 location、proxy 或额外 allow。
 5. 创建 root 所有、普通用户不可写的 `/var/lib/acme/.well-known/acme-challenge` webroot；`auth.xingzhan.cc.conf` 的 80 server 只从该目录读取精确 HTTP-01 token，其他 HTTP 请求才执行 308。不得让 ACME challenge 进入 StarStack/Hydra，也不得让 Certbot 自动改写已审计模板。
 6. 将 `auth.xingzhan.cc.conf` 合并进现有 TLS 配置；不得覆盖 1Panel/Certbot 的证书配置。公网模板明确拒绝 `/internal/oidc/`。
 7. 运行下面的只读预检。它只读文件、资源、Compose 渲染及可选 HTTP 健康状态，不执行 pull/up/migrate/reload/写库。
 8. 另行审批后才允许在 staging 执行镜像拉取、migration、客户端创建与真实协议测试。SS-AUTH-003 不执行这一步。
 
-两个渲染器只向标准输出写配置，不直接修改 Nginx。先将输出放入仓库外的候选文件，审查无占位符、执行 `nginx -t`，再由独立变更审批决定是否安装/reload：
+两个渲染器只向标准输出写配置，不直接修改 Nginx。先将输出放入仓库外的候选文件；Back-Channel 输出目标固定为 Jieya 站点实际 include 的 `/etc/nginx/snippets/jieya-backchannel-access.conf`，不能另存一个未 include 的完整 location 冒充生效配置。审查无占位符、执行 `nginx -t`，再由独立变更审批决定是否安装/reload：
 
 ```bash
 IDENTITY_HOST_GATEWAY_IP=172.17.0.1 IDENTITY_HOOK_SUBNET=172.30.40.0/29 \
@@ -85,7 +85,10 @@ export IDENTITY_COMPOSE_FILE=/opt/star-stack/infra/identity/compose.production.y
 export IDENTITY_ENV_FILE=/etc/starstack/identity/production.env
 export IDENTITY_NGINX_AUTH_CONFIG=/etc/nginx/sites-enabled/auth.xingzhan.cc
 export IDENTITY_NGINX_HOOK_CONFIG=/etc/nginx/conf.d/starstack-token-hook.conf
-export IDENTITY_NGINX_BCL_CONFIG=/etc/nginx/snippets/starstack-jieya-backchannel.conf
+export IDENTITY_NGINX_BCL_SITE_CONFIG=/etc/nginx/sites-enabled/jieya.xingzhan.cc
+export IDENTITY_NGINX_BCL_ACCESS_CONFIG=/etc/nginx/snippets/jieya-backchannel-access.conf
+# 1Panel/OpenResty 使用其他二进制时必须填写现场验证过的命令路径。
+export IDENTITY_NGINX_BIN=nginx
 export IDENTITY_HOST_GATEWAY_IP=172.17.0.1
 export IDENTITY_HOOK_SUBNET=172.30.40.0/29
 export IDENTITY_HYDRA_HOOK_IP=172.30.40.2
@@ -95,7 +98,7 @@ export POSTGRES_TLS_CA_FILE=/etc/starstack/identity/postgres/ca.crt
 npm run identity:production:preflight
 ```
 
-运行时已由另行审批启动后，可加 `IDENTITY_PREFLIGHT_RUNTIME=1`，只读校验 Hydra Admin ready、Public Discovery 与 JWKS。预检成功仍不代表可把 `OIDC_ENABLED` 改为 true。
+静态预检会以 `nginx -T` 在内存中核对：Jieya 站点与 access snippet 都进入当前 active config、精确 location 全局只出现一次、site 确实 include 该 snippet，且动态 ACL/POST 限制/marker 与静态 proxy/header 组合完整。配置 dump 不写日志。运行时已由另行审批启动后，才可加 `IDENTITY_PREFLIGHT_RUNTIME=1` 校验 Hydra Admin ready、Public Discovery 与 JWKS。预检成功仍不代表可把 `OIDC_ENABLED` 改为 true。
 
 ### HTTP-01 自动续期边界
 
