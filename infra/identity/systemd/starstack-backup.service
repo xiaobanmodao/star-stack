@@ -1,0 +1,34 @@
+[Unit]
+Description=StarStack SQLite daily backup
+After=local-fs.target
+ConditionPathIsRegular=/usr/local/sbin/starstack-backup
+ConditionPathIsDirectory=/opt/star-stack/server/data
+ConditionPathIsDirectory=/www/backup/starstack
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=BACKUP_DIR=/www/backup/starstack
+Environment=BACKUP_GROUP=starstack
+Environment=DB_PATH=/opt/star-stack/server/data/starstack.sqlite
+Environment=KEEP_DAYS=7
+ExecStart=/usr/bin/flock --exclusive --nonblock /run/lock/starstack-backup.lock /usr/local/sbin/starstack-backup
+UMask=0077
+TimeoutStartSec=20min
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/opt/star-stack/server/data
+ReadWritePaths=/www/backup/starstack /run/lock
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true

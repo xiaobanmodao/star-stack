@@ -109,6 +109,78 @@ OJ 和 `/api/health`。失败时停止 systemd 并恢复原 PM2 进程；成功�
 该版本官方流程单独处置，不能用会再次持久化 Secret 的替代命令。OIDC 仍保持
 关闭，直到后续全部协议门禁通过。
 
+### 生产 SQLite 日常备份 timer
+
+`/api/health` 的 `backup` 状态依赖 `/www/backup/starstack` 中存在最近一次成功
+备份。生产环境使用仓库提供的 `starstack-backup.service` 与
+`starstack-backup.timer`，每天 `02:00 UTC` 执行一次并启用 `Persistent`。这只负责
+StarStack SQLite 的日常恢复点，不替代身份发布前包含 Hydra PostgreSQL 的联合备份。
+
+root timer 禁止直接执行可由应用账号更新的 `/opt/star-stack/backup.sh`。每次发布只从
+已经通过 CI 且人工确认的固定 SHA，把审核后的脚本复制为 root 管理的普通单链接文件
+`/usr/local/sbin/starstack-backup`；不能使用 symlink，也不能把仓库目录加入 service 的
+可写路径。安装前先确认服务器具备固定的 `flock` 与 `sqlite3`：
+
+```bash
+cd /opt/star-stack
+test ! -L backup.sh
+test -f backup.sh
+test -x /usr/bin/flock
+test -x /usr/bin/sqlite3
+sudo install -d -o root -g starstack -m 0750 /www/backup/starstack
+sudo install -o root -g root -m 0755 backup.sh /usr/local/sbin/starstack-backup
+sudo install -o root -g root -m 0644 \
+  infra/identity/systemd/starstack-backup.service \
+  /etc/systemd/system/starstack-backup.service
+sudo install -o root -g root -m 0644 \
+  infra/identity/systemd/starstack-backup.timer \
+  /etc/systemd/system/starstack-backup.timer
+sudo cmp --silent backup.sh /usr/local/sbin/starstack-backup
+sudo env LC_ALL=C stat -c '%U:%G %a %h %F' /usr/local/sbin/starstack-backup
+sudo systemd-analyze verify \
+  /etc/systemd/system/starstack-backup.service \
+  /etc/systemd/system/starstack-backup.timer
+```
+
+目标脚本必须显示 `root:root 755 1 regular file`；两个 unit 必须为 root 所有、普通
+单链接 `0644` 文件。oneshot 固定 `BACKUP_DIR=/www/backup/starstack`、
+`BACKUP_GROUP=starstack`、`DB_PATH=/opt/star-stack/server/data/starstack.sqlite` 和
+`KEEP_DAYS=7`，通过 `/usr/bin/flock` 的固定锁防止并行执行。`ProtectSystem=strict`
+下只读数据库目录，只允许写备份目录与 `/run/lock`。任何现场路径、用户、权限或
+二进制不一致都应停止，不能放宽 sandbox 或改回 root cron 执行仓库脚本。
+
+先手动运行并验证一份备份，再启用 timer；不要同时使用 `backup.sh --install-cron`：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl start starstack-backup.service
+sudo systemctl show starstack-backup.service -p Result -p ExecMainStatus
+sudo journalctl -u starstack-backup.service --since today --no-pager
+sudo systemctl enable --now starstack-backup.timer
+sudo systemctl show starstack-backup.timer -p Persistent -p NextElapseUSecRealtime
+sudo systemctl list-timers starstack-backup.timer --all
+sudo systemctl cat starstack-backup.service | grep -F '/usr/local/sbin/starstack-backup'
+! sudo systemctl cat starstack-backup.service | grep -F '/opt/star-stack/backup.sh'
+```
+
+把刚生成的文件路径显式填入 `LATEST_BACKUP`，使用应用账号完成隔离解压和 SQLite
+完整性检查，然后确认健康接口的 `backup.healthy` 已恢复：
+
+```bash
+cd /opt/star-stack
+LATEST_BACKUP=/www/backup/starstack/starstack_YYYYMMDD_HHMMSS.db.gz
+test -f "$LATEST_BACKUP"
+sudo -u starstack env BACKUP_FILE="$LATEST_BACKUP" npm run db:verify-backup
+curl -fsS http://127.0.0.1:5174/api/health
+```
+
+恢复演练或真实恢复前先停止 timer，验证目标备份并对当前数据库再做一次独立备份；
+不得在 API/评测仍写入时覆盖 live SQLite。只允许按 `DEPLOYMENT.md` 在隔离路径完成
+解压、`integrity_check` 与外键检查后进入维护窗口。恢复结束并验证主站、OJ、数据库
+和 `/api/health` 后，执行 `sudo systemctl enable --now starstack-backup.timer`。若
+oneshot、备份验证或健康状态任一失败，保留现有数据库并检查 journal，不得删除旧
+恢复点来制造绿色状态。
+
 ### 一次性生产协议夹具
 
 生产协议门禁只能以父子匿名 pipe 启动精确路径
