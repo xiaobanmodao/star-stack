@@ -19,16 +19,24 @@ TimeoutStopSec=10s
 KillSignal=SIGTERM
 UMask=0077
 NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
 PrivateDevices=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=full
 ReadOnlyPaths=/opt/star-stack
 ReadWritePaths=/opt/star-stack/server/data
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectKernelLogs=true
+# The judge creates a less-privileged user/mount/PID/network namespace and a
+# minimal chroot for every execution. These three systemd mount protections
+# lock inherited /proc and /usr mounts, which makes that nested sandbox fail.
+# The service remains non-root with no host capabilities; production preflight
+# additionally requires kernel.dmesg_restrict=1.
+ProtectKernelTunables=false
+ProtectKernelModules=false
+ProtectKernelLogs=false
 ProtectControlGroups=true
+SystemCallFilter=~@module syslog
 RestrictRealtime=true
 RestrictSUIDSGID=true
 LockPersonality=true

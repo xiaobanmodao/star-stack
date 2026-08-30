@@ -92,6 +92,71 @@ sudo install -m 0644 -o root -g root \
 sudo systemd-analyze verify /etc/systemd/system/starstack-api.service
 ```
 
+#### OJ 沙箱与 systemd 挂载保护
+
+评测器会为每次执行创建更低权限的 user/mount/PID/network namespace，并在其中
+挂载最小 chroot。`ProtectKernelTunables=true`、`ProtectKernelLogs=true` 和
+`ProtectKernelModules=true` 会在 API service 的外层 mount namespace 锁定
+`/proc` 与 `/usr` 的继承挂载，导致内层 `unshare --mount-proc`、只读 bind mount
+失败。它们只在 `starstack-api.service` 中显式设为 `false`；备份 unit 不运行用户
+代码，继续保留三项保护。
+
+这不是无沙箱回退。API 仍以固定非 root 用户运行，并保留 `NoNewPrivileges=true`、
+`PrivateDevices=true`、`PrivateTmp=true`、`ProtectSystem=full`、`ProtectHome=true`、
+`ProtectControlGroups=true`、`RestrictSUIDSGID=true`、`RestrictRealtime=true`、
+`LockPersonality=true`、`MemoryMax` 和 `TasksMax`。此外 `CapabilityBoundingSet=` 与
+`AmbientCapabilities=` 必须为空，宿主必须满足 `kernel.dmesg_restrict=1`。评测脚本
+只在新 user namespace 内获得挂载最小 chroot 所需的 namespace-local 能力；宿主
+capability 不会授予 Node 或用户代码。`SystemCallFilter=~@module syslog` 继续从
+宿主层拒绝模块加载/卸载系统调用和内核日志 syscall，不过滤评测必需的 mount/unshare。
+
+部署前先保留唯一回滚副本，再安装候选 unit。禁止覆盖既有回滚文件：
+
+```bash
+BACKUP_UNIT=/etc/systemd/system/starstack-api.service.pre-ss-judge-001
+sudo test ! -e "$BACKUP_UNIT"
+sudo cp --preserve=mode,ownership,timestamps -- \
+  /etc/systemd/system/starstack-api.service "$BACKUP_UNIT"
+sudo install -m 0644 -o root -g root \
+  /opt/star-stack/infra/identity/systemd/starstack-api.service \
+  /etc/systemd/system/starstack-api.service
+sudo systemd-analyze verify /etc/systemd/system/starstack-api.service
+test "$(cat /proc/sys/kernel/dmesg_restrict)" = 1
+sudo env STARSTACK_JUDGE_SANDBOX_CONFIRM=VERIFY_ONLY \
+  /bin/bash /opt/star-stack/scripts/judge/verify-installed-systemd-sandbox.sh
+```
+
+最后一条只启动一次无 Secret、无用户代码的 transient unit，在完整候选硬化属性下
+执行 `/bin/true`。它不重启 API、不写数据库；任一步失败都停止，不能删除更多
+systemd 保护项。门禁通过后才允许在维护窗口重载：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart starstack-api.service
+sudo systemctl is-active --quiet starstack-api.service
+sudo journalctl -u starstack-api.service --since '-2 minutes' --no-pager \
+  | grep -F 'Sandbox enabled: Linux namespaces and resource limits are available'
+curl --fail --silent --show-error http://127.0.0.1:5174/api/health
+```
+
+随后只用既有 pipe-only `production-judge-fixture.mjs` 做一次 `run-custom`，不得用
+真实账号或正式提交接口。若 API、健康检查或评测失败，立即停止负载与身份开放，
+按下面命令恢复原 unit：
+
+```bash
+sudo test -f /etc/systemd/system/starstack-api.service.pre-ss-judge-001
+sudo test ! -L /etc/systemd/system/starstack-api.service.pre-ss-judge-001
+sudo install -m 0644 -o root -g root \
+  /etc/systemd/system/starstack-api.service.pre-ss-judge-001 \
+  /etc/systemd/system/starstack-api.service
+sudo systemctl daemon-reload
+sudo systemctl restart starstack-api.service
+sudo systemctl is-active --quiet starstack-api.service
+```
+
+旧 unit 会继续让评测失败关闭，因此回滚后必须保持评测流量和身份关闭，不能临时
+绕过 `sandboxAvailable`；待重新修复后再开放。
+
 如果旧 PM2 进程没有两个身份 Secret，迁移器会停止。此时须通过已批准的
 root-only Secret 生成流程直接创建两个独立 credential，不能把值放进命令行、
 聊天或仓库。`infra/identity/systemd/starstack-environment.example` 只用于核对变量
@@ -278,8 +343,9 @@ PostgreSQL TLS 证书的 SAN 必须包含容器 DNS 名 `postgres`。固定 Alpi
 5. 保留 Jieya 已启用站点中的唯一精确 Back-Channel location，用 `identity:production:render-backchannel-nginx` 只生成该 location 已 include 的 access snippet。`IDENTITY_HYDRA_HOOK_IP` 必须是 hook bridge 内为 Hydra 保留的固定可用地址；snippet 只允许这个 `/32`，并固定 POST-only 与私有路由标记，不能包含第二个 location、proxy 或额外 allow。
 6. 创建 root 所有、普通用户不可写的 `/var/lib/acme/.well-known/acme-challenge` webroot；`auth.xingzhan.cc.conf` 的 80 server 只从该目录读取精确 HTTP-01 token，其他 HTTP 请求才执行 308。不得让 ACME challenge 进入 StarStack/Hydra，也不得让 Certbot 自动改写已审计模板。
 7. 将 `auth.xingzhan.cc.conf` 合并进现有 TLS 配置；不得覆盖 1Panel/Certbot 的证书配置。公网模板明确拒绝 `/internal/oidc/`。
-8. 运行下面的只读预检。它只读文件、资源、Compose 渲染及可选 HTTP 健康状态，不执行 pull/up/migrate/reload/写库。
-9. 另行审批后才允许在 staging 执行镜像拉取、migration、客户端创建与真实协议测试。SS-AUTH-003 不执行这一步。
+8. 安装并验证 `starstack-api.service` 候选，确认空 capability、`kernel.dmesg_restrict=1`，再运行无用户代码的 transient judge sandbox probe。
+9. 运行下面的只读预检。它只读 systemd unit、内核门禁、文件、资源、Compose 渲染及可选 HTTP 健康状态，不执行 pull/up/migrate/reload/写库。
+10. 另行审批后才允许在 staging 执行镜像拉取、migration、客户端创建与真实协议测试。SS-AUTH-003 不执行这一步。
 
 所有渲染器只向标准输出写候选内容，不修改 Nginx/UFW。四个输出目标固定如下：
 
