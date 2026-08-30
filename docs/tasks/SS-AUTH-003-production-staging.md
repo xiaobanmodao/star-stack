@@ -2,10 +2,10 @@
 
 ## 状态
 
-- 分支：`codex/ss-auth-003-backchannel-route`
-- 基线：`origin/main@8b8042305f3bd698ad7544266f6210b28069a75e`
+- 分支：`codex/ss-auth-003-http01-renewal`
+- 基线：`origin/main@13ee04f38636edfe727184f300a529e0bd305fbb`
 - R4 范围：生产/预发布配置与只读门禁；不部署、不启用、不写入真实 Secret 或真实用户 fixture。
-- 实现状态：原 SS-AUTH-003 已合并；Back-Channel 私网路由跟进在本分支收口，待服务器预发布只读复核；身份仍关闭。
+- 实现状态：原 SS-AUTH-003 与 Back-Channel 私网路由已合并；HTTP-01 自动续期模板跟进在本分支收口，不授权部署、发布 DNS 或启用身份。
 
 ## 已授权范围
 
@@ -17,6 +17,7 @@
 - `auth.xingzhan.cc` 公网模板必须拒绝 `/internal/oidc/`；bridge 模板只允许固定 subnet 的精确 Token Hook POST。
 - Jieya BFF 与 StarStack 同机，Logout Broker 唯一固定为 `http://127.0.0.1:5174/internal/oidc/logout-transactions`；不增加公网或 bridge 入口。
 - production/staging Hydra 只在容器内把 canonical `jieya.xingzhan.cc` 映射到 host-gateway；Back-Channel Logout 始终使用 HTTPS/SNI/CA 校验，并只允许 Hydra 固定 hook 源地址 `/32` 进入 Jieya 的精确 location。
+- `auth.xingzhan.cc` 的 HTTP-01 只读取 `/var/lib/acme` 下的精确 challenge 文件；其他 HTTP 请求才重定向 HTTPS，challenge 不进入 StarStack/Hydra。
 - 身份域 HSTS 不扩散到未审计子域；关闭含查询串的 access log，并覆盖客户端传入的 X-Forwarded-For 链。
 - PostgreSQL/SQLite 备份集、隔离恢复说明和不改变服务器状态的预发布检查。
 
@@ -27,6 +28,7 @@
 - 不把 StarStack Node 或 Hydra 宿主端口绑定到 `0.0.0.0`。
 - 不公开 Hydra Admin、PostgreSQL、Token Hook 或 Logout Broker。
 - 不把 Back-Channel URI 改成 IP/HTTP，不关闭 TLS 验证，不向公网或整个 bridge 子网开放 Jieya Back-Channel location。
+- 不允许 Certbot/acme.sh 自动改写仓库管理的 Nginx 模板，也不把手工 DNS-01 证书误记为已自动续期。
 - 不运行生产迁移、客户端注册、恢复或部署；不修改界芽仓库。
 
 ## 停止线
@@ -46,16 +48,18 @@
 
 ## 本地完成证据
 
-- 原阶段失败测试初始 7/7 失败；Back-Channel 跟进先新增 4 个失败断言，实现后 production contract 15/15 通过。
+- 原阶段失败测试初始 7/7 失败；Back-Channel 跟进先新增 4 个失败断言。HTTP-01 跟进先新增真实失败契约（缺少独立 `listen 80` server），实现后 production contract 16/16 通过。
 - `npm run lint`：通过。
-- `npm test -- --run`：45 files / 256 tests 通过。
+- `npm test -- --run`：45 files / 257 tests 通过。
 - `npm run build`：通过。
 - `npm run audit:deps`：Critical=0；前端 Moderate=2，后端 High=3/Moderate=1/Low=2 为既有依赖风险，未由本任务新增。
 - `npm run db:verify`：SQLite integrity/foreign keys/身份 schema 通过，只读。
 - 临时无真实用户 API：`SMOKE_BASE_URL=http://127.0.0.1:5180 npm run test:smoke` 通过，临时数据库已删除。
+- 统一 `RELEASE_BASE_URL=http://127.0.0.1:5180 npm run test:release` 通过；本地健康接口 100 请求、并发 10，成功率 100%，p95 7ms，测试进程退出后 5180 无监听。
 - `identity:hydra:protocol`：7/7 通过；授权码+PKCE、Refresh 重放、全局退出、Back-Channel、重启与 active signing kid 连续性均通过。
 - `identity:production:verify-config`：production/staging Discovery、JWKS、S256、RS256 与 signing key 连续性通过。
 - 本机无 Docker/Compose，未把静态契约冒充现场链路成功；`identity:production:verify-backchannel` 必须在服务器以真实 Hydra network namespace、host-gateway:443 和 Jieya TLS/BFF 执行，通过前保持身份关闭。
+- 本机没有 Nginx 可执行文件，未把模板契约测试冒充 `nginx -t`；服务器安装前必须先用临时 challenge 与 `--resolve` 验证 HTTP-01，再执行配置测试，未经明确变更不得 reload。
 - 结束时 `4444/4445/5174/4180/5180` 均无监听。
 
 ## 服务器只读信息缺口

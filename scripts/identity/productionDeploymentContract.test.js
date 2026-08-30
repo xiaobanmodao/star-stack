@@ -27,6 +27,37 @@ const composeService = (compose, service, nextService) => {
   return compose.slice(start, end)
 }
 
+const nginxBlocks = (source, directive) => {
+  const blocks = []
+  const pattern = new RegExp(`(^|\\n)\\s*${directive}\\s*\\{`, 'g')
+  let match
+  while ((match = pattern.exec(source)) !== null) {
+    const start = source.indexOf('{', match.index)
+    let depth = 0
+    for (let index = start; index < source.length; index += 1) {
+      if (source[index] === '{') depth += 1
+      if (source[index] === '}') depth -= 1
+      if (depth === 0) {
+        blocks.push(source.slice(match.index + match[1].length, index + 1).trim())
+        pattern.lastIndex = index + 1
+        break
+      }
+    }
+  }
+  return blocks
+}
+
+const nginxTopLevelLines = (block) => {
+  let depth = 0
+  const lines = []
+  for (const line of block.split('\n')) {
+    if (depth === 1) lines.push(line.trim())
+    depth += [...line].filter((character) => character === '{').length
+    depth -= [...line].filter((character) => character === '}').length
+  }
+  return lines
+}
+
 describe('SS-AUTH-003 production deployment contract', () => {
   for (const environment of ['production', 'staging']) {
     it(`${environment} compose is isolated, pinned and private by construction`, async () => {
@@ -90,6 +121,29 @@ describe('SS-AUTH-003 production deployment contract', () => {
     expect(backchannelTemplate).toContain('deny all;')
     expect(backchannelTemplate).toContain('proxy_pass http://127.0.0.1:4180;')
     expect(backchannelTemplate).not.toContain('listen ')
+  })
+
+  it('serves only exact HTTP-01 files before redirecting other auth HTTP traffic', async () => {
+    const publicConfig = await readProjectFile('infra/identity/nginx/auth.xingzhan.cc.conf')
+    const httpServer = nginxBlocks(publicConfig, 'server')
+      .find((block) => block.includes('listen 80;'))
+    expect(httpServer).toBeTruthy()
+    expect(httpServer).toContain('listen [::]:80;')
+    expect(httpServer).toContain('server_name auth.xingzhan.cc;')
+    expect(httpServer).toContain('access_log off;')
+
+    const challenge = nginxBlocks(httpServer, 'location \\^~ /\\.well-known/acme-challenge/')
+    expect(challenge).toHaveLength(1)
+    expect(challenge[0]).toContain('root /var/lib/acme;')
+    expect(challenge[0]).toContain('default_type text/plain;')
+    expect(challenge[0]).toContain('try_files $uri =404;')
+    expect(challenge[0]).toMatch(/limit_except GET\s*\{\s*deny all;\s*\}/)
+    expect(challenge[0]).not.toMatch(/proxy_pass|fastcgi_pass|uwsgi_pass|scgi_pass|grpc_pass|rewrite|alias/)
+
+    const fallback = nginxBlocks(httpServer, 'location /')
+    expect(fallback).toHaveLength(1)
+    expect(fallback[0]).toContain('return 308 https://auth.xingzhan.cc$request_uri;')
+    expect(nginxTopLevelLines(httpServer)).not.toContain('return 308 https://auth.xingzhan.cc$request_uri;')
   })
 
   it('ships a fail-closed Back-Channel TLS route verifier', async () => {
