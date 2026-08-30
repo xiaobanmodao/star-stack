@@ -1,0 +1,5 @@
+# Review `ufw status numbered` before applying. These commands are a candidate,
+# not an installer, and must not be run twice without removing the old rules.
+ufw insert 1 allow in on __IDENTITY_HOOK_BRIDGE__ proto tcp from __IDENTITY_HYDRA_HOOK_IP__ to __IDENTITY_HOOK_GATEWAY_IP__ port 443 comment 'StarStack Hydra BCL'
+ufw insert 2 allow in on __IDENTITY_HOOK_BRIDGE__ proto tcp from __IDENTITY_HYDRA_HOOK_IP__ to __IDENTITY_HOOK_GATEWAY_IP__ port 5175 comment 'StarStack Hydra token hook'
+ufw insert 3 deny in on __IDENTITY_HOOK_BRIDGE__ from any to any comment 'StarStack identity hook default deny'

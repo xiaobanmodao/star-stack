@@ -1,13 +1,13 @@
-# Render both placeholders from read-only server discovery. The listener must
-# be a Docker host-gateway address, never 0.0.0.0 or a public interface.
+# Render all placeholders from read-only server discovery. The listener is the
+# explicit internal identity-hook gateway, never 0.0.0.0 or a public interface.
 server {
-    listen __IDENTITY_HOST_GATEWAY_IP__:5175;
+    listen __IDENTITY_HOOK_GATEWAY_IP__:5175;
     server_name _;
     access_log off;
     server_tokens off;
     client_max_body_size 16k;
 
-    allow __IDENTITY_HOOK_SUBNET__;
+    allow __IDENTITY_HYDRA_HOOK_IP__/32;
     deny all;
 
     location = /internal/oidc/token-hook {
@@ -21,6 +21,7 @@ server {
         proxy_read_timeout 5s;
         proxy_send_timeout 5s;
         proxy_buffering off;
+        add_header X-StarStack-Hook-Route private always;
     }
 
     location / {

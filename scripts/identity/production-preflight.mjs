@@ -8,7 +8,17 @@ import { parseEnv } from 'node:util'
 import {
   assertActiveBackchannelNginx,
   assertBackchannelNginxComposition,
+  assertHookFirewallStatus,
+  assertHydraLoopbackNginx,
+  assertLoopbackNginxListeners,
+  assertTokenHookNginx,
 } from './productionNginxContract.mjs'
+import {
+  assertIdentityEnvironment,
+  assertIdentityHookNetwork,
+  identityHookBridgeName,
+  identityLoopbackPorts,
+} from './productionNetworkContract.mjs'
 
 const fail = (message) => { throw new Error(message) }
 let configuration = process.env
@@ -25,8 +35,8 @@ const requirePrivateSecret = (name) => {
 const assertLoopbackOrigin = (value, name) => {
   const url = new URL(value)
   if (url.protocol !== 'http:' || url.username || url.password || url.pathname !== '/'
-    || url.search || url.hash || !['127.0.0.1', '::1', 'localhost'].includes(url.hostname)) {
-    fail(`${name} must be an HTTP loopback origin`)
+    || url.search || url.hash || url.hostname !== '127.0.0.1') {
+    fail(`${name} must be an exact IPv4 loopback origin`)
   }
   return url.origin
 }
@@ -36,31 +46,6 @@ const assertPrivateHostCidr = (value, name) => {
   const octets = match[1].split('.').map(Number)
   if (!(octets[0] === 10 || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
     || (octets[0] === 192 && octets[1] === 168))) fail(`${name} must be RFC1918 private space`)
-  return value
-}
-const privateIpv4 = (value, name) => {
-  if (isIP(value) !== 4) fail(`${name} must be an IPv4 address`)
-  const octets = value.split('.').map(Number)
-  if (!(octets[0] === 10 || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
-    || (octets[0] === 192 && octets[1] === 168))) fail(`${name} must be RFC1918 private space`)
-  return octets.reduce((result, part) => ((result << 8) | part) >>> 0, 0)
-}
-const assertHookNetwork = (address, subnet) => {
-  const match = /^(\d{1,3}(?:\.\d{1,3}){3})\/(2[89]|30)$/.exec(subnet)
-  if (!match) fail('IDENTITY_HOOK_SUBNET must be a narrow /28 to /30 IPv4 CIDR')
-  privateIpv4(address, 'IDENTITY_HOST_GATEWAY_IP')
-  const subnetAddress = privateIpv4(match[1], 'IDENTITY_HOOK_SUBNET')
-  const prefix = Number(match[2])
-  const mask = (0xffffffff << (32 - prefix)) >>> 0
-  if (((subnetAddress & mask) >>> 0) !== subnetAddress) fail('IDENTITY_HOOK_SUBNET must use its network address')
-  return { subnetAddress, prefix, mask, broadcast: (subnetAddress | (~mask >>> 0)) >>> 0 }
-}
-const assertHydraHookAddress = (value, network) => {
-  const address = privateIpv4(value, 'IDENTITY_HYDRA_HOOK_IP')
-  if (((address & network.mask) >>> 0) !== network.subnetAddress
-    || address === network.subnetAddress || address === network.broadcast) {
-    fail('IDENTITY_HYDRA_HOOK_IP must be one usable address inside IDENTITY_HOOK_SUBNET')
-  }
   return value
 }
 const assertPrivateFile = async (file, { allowPublicRead = false, allowedUids = [] } = {}) => {
@@ -98,6 +83,16 @@ const readActiveNginxConfig = () => {
   if (result.error || result.status !== 0) fail('nginx -T failed; active configuration cannot be verified')
   return `${result.stdout || ''}\n${result.stderr || ''}`
 }
+const readCommand = (command, args, label) => {
+  const result = spawnSync(command, args, {
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, LC_ALL: 'C', LANG: 'C' },
+  })
+  if (result.error || result.status !== 0) fail(`${label} failed; runtime boundary cannot be verified`)
+  return result.stdout || ''
+}
 
 if (String(process.env.OIDC_ENABLED || 'false').toLowerCase() !== 'false') {
   fail('OIDC_ENABLED must remain false during pre-release')
@@ -113,18 +108,29 @@ if (configuration.NODE_ENV !== 'production') fail('NODE_ENV must be production')
 if (requireValue('OIDC_ISSUER') !== 'https://auth.xingzhan.cc') fail('OIDC_ISSUER is not the frozen production issuer')
 const hydraPublic = assertLoopbackOrigin(requireValue('OIDC_HYDRA_PUBLIC_URL'), 'OIDC_HYDRA_PUBLIC_URL')
 const hydraAdmin = assertLoopbackOrigin(requireValue('OIDC_HYDRA_ADMIN_URL'), 'OIDC_HYDRA_ADMIN_URL')
+const identityEnvironment = assertIdentityEnvironment(requireValue('IDENTITY_ENVIRONMENT'))
+const { publicPort, adminPort } = identityLoopbackPorts(
+  identityEnvironment,
+  requireValue('HYDRA_PUBLIC_PORT'),
+  requireValue('HYDRA_ADMIN_PORT'),
+)
+if (Number(new URL(hydraPublic).port) !== publicPort || Number(new URL(hydraAdmin).port) !== adminPort) {
+  fail('Hydra loopback origins must use the frozen environment ports')
+}
 const hookUrl = new URL(requireValue('OIDC_TOKEN_HOOK_URL'))
 if (hookUrl.origin !== 'http://host.docker.internal:5175'
   || hookUrl.pathname !== '/internal/oidc/token-hook'
   || hookUrl.username || hookUrl.password || hookUrl.search || hookUrl.hash) {
   fail('OIDC_TOKEN_HOOK_URL must be the exact private bridge Token Hook URL')
 }
-assertPrivateHostCidr(requireValue('IDENTITY_PROXY_CIDR'), 'IDENTITY_PROXY_CIDR')
-const hookGateway = requireValue('IDENTITY_HOST_GATEWAY_IP')
+const hookGateway = requireValue('IDENTITY_HOOK_GATEWAY_IP')
 const hookSubnet = requireValue('IDENTITY_HOOK_SUBNET')
-const hookNetwork = assertHookNetwork(hookGateway, hookSubnet)
-const hydraHookIp = assertHydraHookAddress(requireValue('IDENTITY_HYDRA_HOOK_IP'), hookNetwork)
-if (hydraHookIp === hookGateway) fail('Hydra hook IP and host-gateway IP must be different')
+const hydraHookIp = requireValue('IDENTITY_HYDRA_HOOK_IP')
+assertIdentityHookNetwork({ subnet: hookSubnet, gatewayIp: hookGateway, hydraIp: hydraHookIp })
+const proxyCidr = assertPrivateHostCidr(requireValue('IDENTITY_PROXY_CIDR'), 'IDENTITY_PROXY_CIDR')
+if (proxyCidr !== `${hookGateway}/32`) {
+  fail('IDENTITY_PROXY_CIDR must be the exact internal hook gateway /32')
+}
 
 const sensitiveValues = [
   requirePrivateSecret('HYDRA_POSTGRES_PASSWORD'),
@@ -143,6 +149,10 @@ await assertPrivateFile(requireValue('POSTGRES_TLS_CERT_FILE'), { allowPublicRea
 await assertPrivateFile(requireValue('POSTGRES_TLS_CA_FILE'), { allowPublicRead: true })
 const authNginx = await assertPrivateFile(requireValue('IDENTITY_NGINX_AUTH_CONFIG'), { allowPublicRead: true })
 const hookNginx = await assertPrivateFile(requireValue('IDENTITY_NGINX_HOOK_CONFIG'), { allowPublicRead: true })
+const hydraLoopbackNginx = await assertPrivateFile(
+  requireValue('IDENTITY_NGINX_HYDRA_LOOPBACK_CONFIG'),
+  { allowPublicRead: true },
+)
 if (configuration.IDENTITY_NGINX_BCL_CONFIG) {
   fail('IDENTITY_NGINX_BCL_CONFIG is obsolete; provide the active Jieya site and access snippet separately')
 }
@@ -156,24 +166,40 @@ const backchannelAccess = await assertPrivateFile(
 )
 const authText = await readFile(authNginx, 'utf8')
 const hookText = await readFile(hookNginx, 'utf8')
+const hydraLoopbackText = await readFile(hydraLoopbackNginx, 'utf8')
 const backchannelSiteText = await readFile(backchannelSite, 'utf8')
 const backchannelAccessText = await readFile(backchannelAccess, 'utf8')
 if (!authText.includes('server_name auth.xingzhan.cc;')
   || !/location \^~ \/internal\/oidc\/[\s\S]*?return 404;/.test(authText)) fail('Public identity Nginx trust surface is invalid')
-if (hookText.includes('__IDENTITY_') || !hookText.includes(`listen ${hookGateway}:5175;`)
-  || !hookText.includes(`allow ${hookSubnet};`) || /listen\s+(?:0\.0\.0\.0|\[::\])/.test(hookText)
-  || !hookText.includes('location = /internal/oidc/token-hook')
-  || !hookText.includes('allow ') || !hookText.includes('deny all;')) fail('Bridge Token Hook Nginx trust surface is invalid')
+assertTokenHookNginx({ text: hookText, gatewayIp: hookGateway, hydraIp: hydraHookIp })
+assertHydraLoopbackNginx({
+  text: hydraLoopbackText,
+  hydraHookIp,
+  publicPort,
+  adminPort,
+})
 assertBackchannelNginxComposition({
   siteText: backchannelSiteText,
   accessText: backchannelAccessText,
   accessPath: backchannelAccess,
   hydraHookIp,
 })
-assertActiveBackchannelNginx({
+await assertActiveBackchannelNginx({
   dump: readActiveNginxConfig(),
   sitePath: backchannelSite,
   accessPath: backchannelAccess,
+  authPath: authNginx,
+  hydraLoopbackPath: hydraLoopbackNginx,
+})
+const ssOutput = readCommand(configuration.IDENTITY_SS_BIN?.trim() || 'ss', ['-H', '-ltn'], 'ss listener inspection')
+assertLoopbackNginxListeners({ output: ssOutput, publicPort, adminPort })
+const ufwCommand = configuration.IDENTITY_UFW_BIN?.trim() || 'ufw'
+assertHookFirewallStatus({
+  verbose: readCommand(ufwCommand, ['status', 'verbose'], 'UFW verbose inspection'),
+  numbered: readCommand(ufwCommand, ['status', 'numbered'], 'UFW numbered inspection'),
+  bridge: identityHookBridgeName(identityEnvironment),
+  gatewayIp: hookGateway,
+  hydraIp: hydraHookIp,
 })
 
 if (os.availableParallelism() < 2) fail('Pre-release host must provide at least two CPU cores')

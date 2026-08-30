@@ -25,6 +25,8 @@
     "identity:production:verify-backup": "node scripts/identity/production-backup-verify.mjs",
     "identity:production:render-hook-nginx": "node scripts/identity/render-token-hook-nginx.mjs",
     "identity:production:render-backchannel-nginx": "node scripts/identity/render-backchannel-nginx.mjs",
+    "identity:production:render-hydra-loopback-nginx": "node scripts/identity/render-hydra-loopback-nginx.mjs",
+    "identity:production:render-hook-firewall": "node scripts/identity/render-hook-firewall.mjs",
     "identity:production:verify-backchannel": "node scripts/identity/verify-production-backchannel-route.mjs",
     "identity:production:verify-config": "node scripts/identity/verify-production-hydra-config.mjs",
     "db:verify": "node server/verify-database.js",
