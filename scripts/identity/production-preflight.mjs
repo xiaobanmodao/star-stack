@@ -1,10 +1,14 @@
 #!/usr/bin/env node
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { lstat, readFile, realpath, statfs } from 'node:fs/promises'
 import { isIP } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { parseEnv } from 'node:util'
+import {
+  assertActiveBackchannelNginx,
+  assertBackchannelNginxComposition,
+} from './productionNginxContract.mjs'
 
 const fail = (message) => { throw new Error(message) }
 let configuration = process.env
@@ -84,6 +88,16 @@ const fetchJson = async (url, { forwardedHttps = false } = {}) => {
   if (!response.ok) fail(`${url} returned HTTP ${response.status}`)
   return response.json()
 }
+const readActiveNginxConfig = () => {
+  const command = configuration.IDENTITY_NGINX_BIN?.trim() || 'nginx'
+  const result = spawnSync(command, ['-T'], {
+    encoding: 'utf8',
+    maxBuffer: 8 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  if (result.error || result.status !== 0) fail('nginx -T failed; active configuration cannot be verified')
+  return `${result.stdout || ''}\n${result.stderr || ''}`
+}
 
 if (String(process.env.OIDC_ENABLED || 'false').toLowerCase() !== 'false') {
   fail('OIDC_ENABLED must remain false during pre-release')
@@ -129,23 +143,38 @@ await assertPrivateFile(requireValue('POSTGRES_TLS_CERT_FILE'), { allowPublicRea
 await assertPrivateFile(requireValue('POSTGRES_TLS_CA_FILE'), { allowPublicRead: true })
 const authNginx = await assertPrivateFile(requireValue('IDENTITY_NGINX_AUTH_CONFIG'), { allowPublicRead: true })
 const hookNginx = await assertPrivateFile(requireValue('IDENTITY_NGINX_HOOK_CONFIG'), { allowPublicRead: true })
-const backchannelNginx = await assertPrivateFile(requireValue('IDENTITY_NGINX_BCL_CONFIG'), { allowPublicRead: true })
+if (configuration.IDENTITY_NGINX_BCL_CONFIG) {
+  fail('IDENTITY_NGINX_BCL_CONFIG is obsolete; provide the active Jieya site and access snippet separately')
+}
+const backchannelSite = await assertPrivateFile(
+  requireValue('IDENTITY_NGINX_BCL_SITE_CONFIG'),
+  { allowPublicRead: true },
+)
+const backchannelAccess = await assertPrivateFile(
+  requireValue('IDENTITY_NGINX_BCL_ACCESS_CONFIG'),
+  { allowPublicRead: true },
+)
 const authText = await readFile(authNginx, 'utf8')
 const hookText = await readFile(hookNginx, 'utf8')
-const backchannelText = await readFile(backchannelNginx, 'utf8')
+const backchannelSiteText = await readFile(backchannelSite, 'utf8')
+const backchannelAccessText = await readFile(backchannelAccess, 'utf8')
 if (!authText.includes('server_name auth.xingzhan.cc;')
   || !/location \^~ \/internal\/oidc\/[\s\S]*?return 404;/.test(authText)) fail('Public identity Nginx trust surface is invalid')
 if (hookText.includes('__IDENTITY_') || !hookText.includes(`listen ${hookGateway}:5175;`)
   || !hookText.includes(`allow ${hookSubnet};`) || /listen\s+(?:0\.0\.0\.0|\[::\])/.test(hookText)
   || !hookText.includes('location = /internal/oidc/token-hook')
   || !hookText.includes('allow ') || !hookText.includes('deny all;')) fail('Bridge Token Hook Nginx trust surface is invalid')
-if (backchannelText.includes('__IDENTITY_')
-  || !backchannelText.includes('location = /auth/backchannel-logout')
-  || !backchannelText.includes(`allow ${hydraHookIp}/32;`)
-  || !backchannelText.includes('deny all;')
-  || !/limit_except\s+POST\s*\{\s*deny all;\s*\}/.test(backchannelText)
-  || !backchannelText.includes('proxy_pass http://127.0.0.1:4180;')
-  || /(^|\s)listen\s/m.test(backchannelText)) fail('Jieya Back-Channel Nginx trust surface is invalid')
+assertBackchannelNginxComposition({
+  siteText: backchannelSiteText,
+  accessText: backchannelAccessText,
+  accessPath: backchannelAccess,
+  hydraHookIp,
+})
+assertActiveBackchannelNginx({
+  dump: readActiveNginxConfig(),
+  sitePath: backchannelSite,
+  accessPath: backchannelAccess,
+})
 
 if (os.availableParallelism() < 2) fail('Pre-release host must provide at least two CPU cores')
 const totalMemory = os.totalmem()
@@ -182,5 +211,6 @@ console.log(JSON.stringify({
   cpuCores: os.availableParallelism(),
   memoryMiB: Math.floor(totalMemory / 1024 / 1024),
   diskAvailableMiB: Math.floor(availableDisk / 1024 / 1024),
+  activeNginxChecked: true,
   runtimeChecked: configuration.IDENTITY_PREFLIGHT_RUNTIME === '1',
 }, null, 2))

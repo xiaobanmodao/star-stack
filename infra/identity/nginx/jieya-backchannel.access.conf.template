@@ -1,0 +1,6 @@
+# Included inside Jieya's existing exact Back-Channel block. Route ownership and
+# the BFF upstream remain in the Jieya site configuration.
+allow __IDENTITY_HYDRA_HOOK_IP__/32;
+deny all;
+limit_except POST { deny all; }
+add_header X-StarStack-BCL-Route private always;
