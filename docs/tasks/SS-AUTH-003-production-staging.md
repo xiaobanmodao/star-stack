@@ -2,10 +2,10 @@
 
 ## 状态
 
-- 分支：`codex/ss-auth-003-production-staging`
-- 基线：`origin/main@f3f5e9aa28570165b04935f528584210cbf5e192`
+- 分支：`codex/ss-auth-003-backchannel-route`
+- 基线：`origin/main@8b8042305f3bd698ad7544266f6210b28069a75e`
 - R4 范围：生产/预发布配置与只读门禁；不部署、不启用、不写入真实 Secret 或真实用户 fixture。
-- 实现状态：本地完成，待服务器预发布只读复核；身份仍关闭。
+- 实现状态：原 SS-AUTH-003 已合并；Back-Channel 私网路由跟进在本分支收口，待服务器预发布只读复核；身份仍关闭。
 
 ## 已授权范围
 
@@ -16,6 +16,7 @@
 - PM2 默认 `OIDC_ENABLED=false`，生产 issuer/客户端元数据保持冻结值。
 - `auth.xingzhan.cc` 公网模板必须拒绝 `/internal/oidc/`；bridge 模板只允许固定 subnet 的精确 Token Hook POST。
 - Jieya BFF 与 StarStack 同机，Logout Broker 唯一固定为 `http://127.0.0.1:5174/internal/oidc/logout-transactions`；不增加公网或 bridge 入口。
+- production/staging Hydra 只在容器内把 canonical `jieya.xingzhan.cc` 映射到 host-gateway；Back-Channel Logout 始终使用 HTTPS/SNI/CA 校验，并只允许 Hydra 固定 hook 源地址 `/32` 进入 Jieya 的精确 location。
 - 身份域 HSTS 不扩散到未审计子域；关闭含查询串的 access log，并覆盖客户端传入的 X-Forwarded-For 链。
 - PostgreSQL/SQLite 备份集、隔离恢复说明和不改变服务器状态的预发布检查。
 
@@ -25,11 +26,13 @@
 - 不使用 `--dev`、`sslmode=disable`、`network_mode: host`。
 - 不把 StarStack Node 或 Hydra 宿主端口绑定到 `0.0.0.0`。
 - 不公开 Hydra Admin、PostgreSQL、Token Hook 或 Logout Broker。
+- 不把 Back-Channel URI 改成 IP/HTTP，不关闭 TLS 验证，不向公网或整个 bridge 子网开放 Jieya Back-Channel location。
 - 不运行生产迁移、客户端注册、恢复或部署；不修改界芽仓库。
 
 ## 停止线
 
 - 主机 bridge/CIDR、Nginx/1Panel 文件归属、Jieya BFF 私网位置或 TLS/备份目标未确认时不得部署。
+- `identity-hook` internal bridge 无法到达 host-gateway:443、实际源不等于冻结 `/32`、canonical 证书校验失败或 BCL 精确 allowlist 无法安装时立即停止，不得放宽网络。
 - 任何真实 Secret 进入 Git、日志、命令输出或不安全文件时立即停止。
 - 2C2GiB 混合负载出现 OOM、持续 swap、进程重启或评测明显回退时保持身份关闭。
 - 备份不能隔离恢复、active signing `kid` 不连续、旧 Token 可重放或内部端口公网可达时保持身份关闭。
@@ -43,15 +46,16 @@
 
 ## 本地完成证据
 
-- 失败测试初始 7/7 失败；实现后 production contract 11/11 通过。
+- 原阶段失败测试初始 7/7 失败；Back-Channel 跟进先新增 4 个失败断言，实现后 production contract 15/15 通过。
 - `npm run lint`：通过。
-- `npm test -- --run`：45 files / 253 tests 通过。
+- `npm test -- --run`：45 files / 256 tests 通过。
 - `npm run build`：通过。
 - `npm run audit:deps`：Critical=0；前端 Moderate=2，后端 High=3/Moderate=1/Low=2 为既有依赖风险，未由本任务新增。
 - `npm run db:verify`：SQLite integrity/foreign keys/身份 schema 通过，只读。
 - 临时无真实用户 API：`SMOKE_BASE_URL=http://127.0.0.1:5180 npm run test:smoke` 通过，临时数据库已删除。
 - `identity:hydra:protocol`：7/7 通过；授权码+PKCE、Refresh 重放、全局退出、Back-Channel、重启与 active signing kid 连续性均通过。
 - `identity:production:verify-config`：production/staging Discovery、JWKS、S256、RS256 与 signing key 连续性通过。
+- 本机无 Docker/Compose，未把静态契约冒充现场链路成功；`identity:production:verify-backchannel` 必须在服务器以真实 Hydra network namespace、host-gateway:443 和 Jieya TLS/BFF 执行，通过前保持身份关闭。
 - 结束时 `4444/4445/5174/4180/5180` 均无监听。
 
 ## 服务器只读信息缺口
@@ -59,5 +63,6 @@
 - Docker Engine/Compose 精确版本、CPU/内存/swap/磁盘和现有容器资源占用。
 - 1Panel/Nginx 实际 include、证书路径、Cloudflare 模式及 `auth.xingzhan.cc` DNS 状态。
 - 空闲 RFC1918 `/29`、`host-gateway` 解析地址、Public 代理进入 Hydra 的实际源 `/32`，以及 internal hook bridge 到 5175 的连通性。
+- Hydra 固定 hook 源 `/32` 到 host-gateway:443 的实测路由、canonical `jieya.xingzhan.cc` TLS/SNI 验证结果，以及 Jieya BCL Nginx 精确 allow/deny 的现场证据。
 - 固定 PostgreSQL 镜像内 `postgres` UID、TLS 文件现状、备份目录/保留/离机目标。
 - Cloudflare 源站 ACL、Nginx real_ip 可信 CIDR和身份请求的实测 `$remote_addr`。

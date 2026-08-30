@@ -117,12 +117,14 @@ services:
       - "127.0.0.1:${HYDRA_ADMIN_PORT:-4545}:4445"
     extra_hosts:
       - host.docker.internal:host-gateway
+      - jieya.xingzhan.cc:host-gateway
     depends_on:
       hydra-migrate:
         condition: service_completed_successfully
     networks:
-      - identity-database
-      - identity-hook
+      identity-database:
+      identity-hook:
+        ipv4_address: ${IDENTITY_HYDRA_HOOK_IP:?set exact Hydra hook source IP}
     healthcheck:
       test: ["CMD", "hydra", "version"]
       interval: 30s
