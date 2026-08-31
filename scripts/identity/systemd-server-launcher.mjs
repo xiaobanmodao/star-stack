@@ -65,20 +65,25 @@ export const loadSystemdServerEnvironment = async (env = process.env) => {
     || await realpath(credentialsDirectory) !== path.resolve(credentialsDirectory)) {
     throw new Error('CREDENTIALS_DIRECTORY must be a real directory')
   }
-  const [applicationText, tokenHookText, logoutBrokerText] = await Promise.all([
+  const [applicationText, tokenHookText, logoutBrokerText, lifecycleText] = await Promise.all([
     readCredential(credentialsDirectory, 'starstack-environment', 128 * 1024),
     readCredential(credentialsDirectory, 'oidc-token-hook-secret', 4096),
     readCredential(credentialsDirectory, 'oidc-logout-broker-secret', 4096),
+    readCredential(credentialsDirectory, 'jieya-account-lifecycle-secret', 4096),
   ])
   const application = parseCredentialEnvironment(applicationText)
   const tokenHookSecret = assertSecret(tokenHookText, 'Token hook')
   const logoutBrokerSecret = assertSecret(logoutBrokerText, 'Logout broker')
-  if (tokenHookSecret === logoutBrokerSecret) throw new Error('Identity credentials must be distinct')
+  const lifecycleSecret = assertSecret(lifecycleText, 'Jieya account lifecycle')
+  if (new Set([tokenHookSecret, logoutBrokerSecret, lifecycleSecret]).size !== 3) {
+    throw new Error('Identity credentials must be distinct')
+  }
   return Object.freeze({
     ...application,
     PATH: application.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
     OIDC_TOKEN_HOOK_SECRET: tokenHookSecret,
     OIDC_LOGOUT_BROKER_SECRET: logoutBrokerSecret,
+    JIEYA_ACCOUNT_LIFECYCLE_SECRET: lifecycleSecret,
   })
 }
 

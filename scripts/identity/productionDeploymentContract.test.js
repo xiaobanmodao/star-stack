@@ -578,6 +578,8 @@ describe('SS-AUTH-003 production deployment contract', () => {
     expect(ecosystem).toContain("OIDC_ENABLED: 'false'")
     expect(ecosystem).toContain("OIDC_TOKEN_HOOK_SECRET: ''")
     expect(ecosystem).toContain("OIDC_LOGOUT_BROKER_SECRET: ''")
+    expect(ecosystem).toContain("JIEYA_ACCOUNT_LIFECYCLE_ENABLED: 'false'")
+    expect(ecosystem).toContain("JIEYA_ACCOUNT_LIFECYCLE_SECRET: ''")
     expect(ecosystem).toContain("OIDC_ISSUER: process.env.OIDC_ISSUER || 'https://auth.xingzhan.cc'")
     expect(ecosystem).toContain("HOST: process.env.HOST || '127.0.0.1'")
     expect(ecosystem).not.toContain("HOST: '0.0.0.0'")

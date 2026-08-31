@@ -27,11 +27,54 @@ Hydra container -> jieya.xingzhan.cc:hook-gateway:443
 Hydra -> identity-database (internal) -> PostgreSQL 16.15 (no host port)
 Hydra Admin -> Nginx 127.0.0.1:4445 -> Hydra hook-IP:4445
 Jieya BFF (same host) -> 127.0.0.1:5174/internal/oidc/logout-transactions
+StarStack lifecycle outbox -> 127.0.0.1:4180/internal/starstack/account-lifecycle
 ```
 
 禁止把 Node 改为 `0.0.0.0`，禁止 `network_mode: host`，禁止公开 Admin、PostgreSQL、Token Hook 或 Logout Broker。production/staging Compose 不声明 Hydra `ports`：Docker 在容器只连接 internal 网络时会静默取消发布。Public/Admin 改由宿主 Nginx 只监听 IPv4 loopback，再反代到 Hydra 的固定 internal hook IP；数据库与 hook 网络仍均为 `internal: true`，不新增任何带外部默认路由的第三网络。
 
 生产 Jieya BFF 与 StarStack 同机。Logout Broker 的唯一合法地址固定为 `http://127.0.0.1:5174/internal/oidc/logout-transactions`，只能由 Jieya 服务端携带独立私网凭据调用；不经过 `auth.xingzhan.cc`、Cloudflare、Public Hydra proxy 或 Token Hook bridge。公网身份 Nginx 对 `/internal/oidc/*` 始终返回 404，不为 Broker 新建 bridge 或公网入口。
+
+账号生命周期通知反向使用唯一 loopback 地址
+`http://127.0.0.1:4180/internal/starstack/account-lifecycle`。StarStack 只以 `POST`
+发送 `version=1` JSON，请求 `Host` 固定为 `jieya.xingzhan.cc`，并使用独立请求头
+`X-StarStack-Account-Lifecycle`。该 Secret 不得复用 Token Hook 或 Logout Broker
+Secret；回调不得进入公网 Nginx、Hydra bridge 或 Cloudflare。只有 Jieya 返回精确
+HTTP `200` 且 JSON 为 `{ "status": "applied|duplicate|stale|terminal" }` 才完成
+outbox；其他 `2xx` 或畸形 `200` 不能伪装成功。超时、网络失败、`5xx` 和畸形成功
+响应持久退避重试，其中 `503 Retry-After: 60` 至少等待 60 秒；`409` 与其他 `4xx`
+不重试并立即保留 dead 事件告警。可重试故障耗尽 20 次后同样保留 dead 事件告警，
+日志不得包含 Secret 或 subject。
+
+Node 内置 `fetch` 会把手工 `Host` 覆盖为 loopback 地址，不能用于这条链路。发送端
+固定使用 `node:http.request` 直连 `127.0.0.1:4180`，在线路上设置
+`Host: jieya.xingzhan.cc`，不跟随重定向，并把响应体限制为 4 KiB。预发布必须用
+接收端观测值证明 Host，而不能只检查 mock 的请求参数。
+正式联调前 `JIEYA_ACCOUNT_LIFECYCLE_ENABLED=false`，Jieya 云写入也必须保持关闭。
+开关关闭时 lifecycle 事件保持 `pending` 且不增加 attempts，不能被标记为 completed；
+启用后按世代补投。该积压也受现有 outbox 容量上限保护，达到上限时账号状态变更
+事务失败关闭，不能丢弃事件换取可用性。
+
+生命周期 wire 的字段集合固定如下，不接受可配置 issuer、回调地址或额外字段：
+
+```json
+{
+  "version": 1,
+  "eventId": "canonical lowercase UUIDv4",
+  "issuer": "https://auth.xingzhan.cc",
+  "sub": "immutable lowercase account_subject UUIDv4",
+  "status": "active|suspended|deleted",
+  "authGeneration": 1,
+  "occurredAt": "canonical UTC ISO-8601 with .sssZ"
+}
+```
+
+投递是至少一次语义：Jieya 必须按 `eventId` 幂等，并按同一 `sub` 的
+`authGeneration` 单调处理；旧世代忽略、同世代冲突失败并告警，`deleted` 是不可逆
+终态。`suspended` 只撤销 Jieya 会话并暂停云能力，不删除云档；`active` 不复活旧
+会话，用户必须重新登录；`deleted` 撤销会话并进入持久删除流程。在线 payload
+目标 24 小时内删除，删除 tombstone 至少保留 31 天，备份 payload 最长保留 30 天。
+普通登出、断开应用、邮箱/密码变更都不得删除云档。永久注销前 UI 必须提示先导出
+界芽云档；管理员删除也走同一事务化 `account.deleted` outbox。
 
 Hydra 客户端注册中的 Back-Channel Logout URI 仍固定为 canonical `https://jieya.xingzhan.cc/auth/backchannel-logout`。Compose 在 Hydra 容器内把 `host.docker.internal` 与该 canonical 主机名都精确解析到 identity-hook 自身显式 gateway，请求仍使用原主机名完成 TLS SNI 与证书主机名校验；不得使用 Docker 特殊 `host-gateway`、IP、HTTP、公网绕行或关闭证书校验。该精确 location 只能合并到现有 `jieya.xingzhan.cc` TLS server，并仅允许 Hydra 的固定 hook `/32`，其他来源一律拒绝。宿主 UFW 同样只允许该 `/32` 经固定 bridge 到 gateway 的 TCP 443/5175，随后对该 bridge 执行 catch-all deny；不得放行整个 `/29`、其他接口或其他端口。
 
@@ -45,7 +88,7 @@ Hydra 客户端注册中的 Back-Channel Logout URI 仍固定为 canonical `http
 
 ## Secret 与文件权限
 
-生产需要六个互不相同、至少 32 字节的随机值：
+生产身份运行需要七个互不相同、至少 32 字节的随机值：
 
 - `HYDRA_POSTGRES_PASSWORD`
 - `HYDRA_SYSTEM_SECRET`
@@ -53,15 +96,21 @@ Hydra 客户端注册中的 Back-Channel Logout URI 仍固定为 canonical `http
 - `OIDC_TOKEN_HOOK_SECRET`
 - `OIDC_LOGOUT_BROKER_SECRET`
 - `JIEYA_OIDC_CLIENT_SECRET`
+- `JIEYA_ACCOUNT_LIFECYCLE_SECRET`（仅作为 StarStack/Jieya systemd credential，
+  不进入 Hydra Compose env）
 
-从 `production.env.example` 或 `staging.env.example` 复制名称到仓库外文件。文件必须为普通单链接文件、`0600`（或受控身份运维组的 `0640`），不能经 symlink 到达。Secret 不得出现在 Git、PM2/Nginx 日志、Shell history、工单或聊天中。Hydra system/cookie Secret 与 PostgreSQL 数据库是同一恢复单元，不能只轮换文件后挂回旧库。
+前六项从 `production.env.example` 或 `staging.env.example` 复制名称到仓库外文件；
+生命周期 Secret 只存在于受管 systemd credential。文件必须为普通单链接文件、
+`0600`（或受控身份运维组的 `0640`），不能经 symlink 到达。Secret 不得出现在
+Git、PM2/Nginx 日志、Shell history、工单或聊天中。Hydra system/cookie Secret 与
+PostgreSQL 数据库是同一恢复单元，不能只轮换文件后挂回旧库。
 
 ### StarStack API 的 systemd credentials 切换
 
 OIDC 启用后的 StarStack API 不再由 PM2 保存环境变量。仓库提供
 `infra/identity/systemd/starstack-api.service` 和无 Secret 启动器
 `scripts/identity/systemd-server-launcher.mjs`：systemd 从
-`/etc/starstack/server/` 加载三个 root 管理的 credential，启动器用
+`/etc/starstack/server/` 加载四个 root 管理的 credential，启动器用
 `O_NOFOLLOW`、单链接、权限、realpath 与 inode 复核读取它们，然后以
 `process.execve` 原地替换为 `/usr/bin/node /opt/star-stack/server/index.js`。
 它只在失败时输出固定错误，不输出配置值。
@@ -71,12 +120,15 @@ OIDC 启用后的 StarStack API 不再由 PM2 保存环境变量。仓库提供
   `OIDC_ENABLED=false`。
 - `oidc-token-hook-secret`：只含一行 Token Hook Secret。
 - `oidc-logout-broker-secret`：只含一行 Logout Broker Secret，且必须与前者不同。
+- `jieya-account-lifecycle-secret`：只含一行生命周期投递 Secret，必须与前两者
+  不同；Jieya BFF 应从独立 systemd credential 读取同一值，不能放入环境文件。
 
 切换前先确认服务器 Node 提供 `process.execve`；缺失时停止，不能退回会把
 Secret 保存到 PM2 的做法。首次迁移只从正在运行且 cwd 精确为
 `/opt/star-stack`、入口为 `server/index.js` 的 PID 读取 `/proc/<pid>/environ`，
 不调用会把整份环境打印到终端的 PM2 子命令。迁移器按白名单保留当前应用
-变量，把两个身份 Secret 分离后，以一个目录 rename 原子提交；目标已存在、
+变量，把三个身份 Secret 分离后，以一个目录 rename 原子提交；生命周期 Secret
+由迁移器使用系统 CSPRNG 新生成且不输出。目标已存在、
 Secret 缺失/相同/过短、路径或权限异常时全部失败关闭，不覆盖旧文件。
 
 ```bash
@@ -91,6 +143,12 @@ sudo install -m 0644 -o root -g root \
   /etc/systemd/system/starstack-api.service
 sudo systemd-analyze verify /etc/systemd/system/starstack-api.service
 ```
+
+上述迁移只适用于尚未存在 `/etc/starstack/server` 的首次切换。若服务器已完成旧版
+systemd 迁移，不得重跑或覆盖该目录；须在独立变更窗口用 root-only CSPRNG 流程只
+新增 `jieya-account-lifecycle-secret`，复核普通单链接、owner、`0400/0440/0600`
+权限，并让 StarStack 与 Jieya 两个 unit 分别通过自己的 `LoadCredential` 读取同一
+root 管理源文件。任何一步都不得把值打印到终端、命令参数、日志或任务记录。
 
 #### OJ 沙箱与 systemd 挂载保护
 
@@ -157,8 +215,8 @@ sudo systemctl is-active --quiet starstack-api.service
 旧 unit 会继续让评测失败关闭，因此回滚后必须保持评测流量和身份关闭，不能临时
 绕过 `sandboxAvailable`；待重新修复后再开放。
 
-如果旧 PM2 进程没有两个身份 Secret，迁移器会停止。此时须通过已批准的
-root-only Secret 生成流程直接创建两个独立 credential，不能把值放进命令行、
+如果旧 PM2 进程没有 Token Hook 与 Logout Broker 两个既有 Secret，迁移器会停止。
+此时须通过已批准的 root-only Secret 生成流程直接创建对应 credential，不能把值放进命令行、
 聊天或仓库。`infra/identity/systemd/starstack-environment.example` 只用于核对变量
 名称，不能覆盖现场配置。必须逐项比较迁移前后的功能：Turnstile、注册邮件、
 管理员初始化、判题编译器/并发、SQLite/备份路径、WebPush/VAPID 和任何 JWT
@@ -297,7 +355,11 @@ sudo find /run/lock/starstack-identity -mindepth 1 -maxdepth 1 -print
 父门禁必须在 `finally` 发送 cleanup。cleanup 只调用现有
 `transitionAccountStatus(..., status: 'deleted')`，保留用户 tombstone，撤销主站/
 账号中心/OIDC session 并有界 drain outbox；禁止物理删除 users、reset schema 或
-覆盖 Hydra client。只有三个安全布尔值都为 true 才能继续门禁。helper 被强杀后，
+覆盖 Hydra client。即使常驻 worker 的生命周期开关仍为关闭，helper 也会从固定
+`/etc/starstack/server/jieya-account-lifecycle-secret` 安全读取独立 credential，向
+固定 loopback Jieya 接收端真实投递本次 `account.deleted`；只有收到有效 200 回执
+才把 lifecycle outbox 标为完成。credential、接收端或回执异常时清理失败关闭，
+不得把事件手工改成 completed。只有三个安全布尔值都为 true 才能继续门禁。helper 被强杀后，
 运维可用 `STARSTACK_PRODUCTION_FIXTURE_MODE=cleanup-only` 启动同一程序，以 receipt
 中的 tombstone 作为第一帧执行幂等清理，再 close；不得重新 prepare 或从 receipt
 导出凭据。receipt 保留作审计，不能在门禁脚本里自动删除。
@@ -337,7 +399,8 @@ PostgreSQL TLS 证书的 SAN 必须包含容器 DNS 名 `postgres`。固定 Alpi
 ## 预发布顺序（保持关闭）
 
 1. 只读确认 Docker/Compose、Nginx/1Panel 布局、Cloudflare 模式、空闲端口、bridge CIDR、磁盘、内存、swap、当前 SQLite/备份状态。
-2. 创建独立 Secret、PostgreSQL TLS 材料和 production/staging env 文件；此时 `OIDC_ENABLED=false`。
+2. 创建独立 Secret、PostgreSQL TLS 材料和 production/staging env 文件；此时
+   `OIDC_ENABLED=false` 且 `JIEYA_ACCOUNT_LIFECYCLE_ENABLED=false`。
 3. 为 identity-hook `/28`～`/30` 固定第一可用地址作为 gateway、另一地址作为 Hydra `/32`，并使用 Compose 中冻结的 bridge interface 名。若同名 hook network 已由旧 Compose 创建，先证明它没有任何 attached container；只能在独立授权下删除这个空 hook network，再由新 Compose 重建。不得删除/重建 `identity-database`、PostgreSQL volume 或正在运行的 PostgreSQL。
 4. 用 `identity:production:render-hook-nginx`、`identity:production:render-hydra-loopback-nginx` 和 `identity:production:render-hook-firewall` 分别生成 Token Hook、Public/Admin loopback bridge 与 UFW 候选；渲染器只输出，不安装。UFW 必须保持 default-deny incoming，并仅允许 Hydra `/32` 到 gateway 的 TCP 443/5175，随后拒绝该 bridge 的其他 INPUT。
 5. 保留 Jieya 已启用站点中的唯一精确 Back-Channel location，用 `identity:production:render-backchannel-nginx` 只生成该 location 已 include 的 access snippet。`IDENTITY_HYDRA_HOOK_IP` 必须是 hook bridge 内为 Hydra 保留的固定可用地址；snippet 只允许这个 `/32`，并固定 POST-only 与私有路由标记，不能包含第二个 location、proxy 或额外 allow。
@@ -369,7 +432,7 @@ npm run identity:production:render-hook-firewall
 ```
 
 ```bash
-export NODE_ENV=production OIDC_ENABLED=false
+export NODE_ENV=production OIDC_ENABLED=false JIEYA_ACCOUNT_LIFECYCLE_ENABLED=false
 export IDENTITY_ENVIRONMENT=production
 export OIDC_ISSUER=https://auth.xingzhan.cc
 export OIDC_HYDRA_PUBLIC_URL=http://127.0.0.1:4444
@@ -443,7 +506,7 @@ npm run identity:production:verify-backchannel
 | Hydra 容器 | 256 MiB |
 | 峰值余量 | 至少 250 MiB，且不能持续 swap |
 
-staging 不与 production 同机常驻。出现 OOM、持续 swap、PM2/容器重启、健康检查超时、判题延迟显著回退或可用内存长期低于 250 MiB，立即保持/恢复 `OIDC_ENABLED=false` 并停止继续启用。至少保留 5 GiB 可用磁盘；PostgreSQL volume、Docker 日志与双数据库备份必须纳入磁盘告警。
+staging 不与 production 同机常驻。出现 OOM、持续 swap、PM2/容器重启、健康检查超时、判题延迟显著回退或可用内存长期低于 250 MiB，立即保持/恢复 `OIDC_ENABLED=false` 与 `JIEYA_ACCOUNT_LIFECYCLE_ENABLED=false` 并停止继续启用。至少保留 5 GiB 可用磁盘；PostgreSQL volume、Docker 日志与双数据库备份必须纳入磁盘告警。
 
 ## 备份与隔离恢复演练
 
@@ -471,7 +534,10 @@ npm run identity:production:verify-backup
 - Docker bridge 的空闲 RFC1918 `/29`、显式第一可用 gateway、Hydra 固定 hook `/32`，并证明 host→Hydra 4444/4445、Hydra→gateway 5175/443、loopback listeners、UFW exact INPUT 与 canonical SNI/CA 全部成立。
 - 1Panel 是否会重写手工 Nginx include，以及 bridge listener 的防火墙/SELinux/AppArmor 状态。
 - Jieya BFF 必须继续与 StarStack 同机，并保持固定 loopback Broker URL；任何跨主机迁移都要重新设计私网与认证边界，不能改用公网身份域。
+- Jieya BFF 必须先实现并验证固定 loopback 生命周期回调、独立 credential、事件幂等/
+  世代冲突/终态规则、持久删除任务与告警；否则生命周期投递和云写入都保持关闭。
 - PostgreSQL TLS 私钥对应的固定容器 UID、备份目录/保留期/离机复制、监控与告警渠道。
 - 首次客户端创建、Client Secret 轮换、Hydra migration 和 `OIDC_ENABLED=true` 各自的审批窗口。
 
-没有以上服务器只读证据时，本阶段唯一安全状态是 Compose 不启动、PM2 `OIDC_ENABLED=false`。
+没有以上服务器只读证据时，本阶段唯一安全状态是 Compose 不启动、PM2
+`OIDC_ENABLED=false`、生命周期投递与 Jieya 云写入均关闭。

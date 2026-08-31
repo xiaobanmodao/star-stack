@@ -30,6 +30,7 @@ import { loadIdentityConfig } from './identity/config.js'
 import { createHydraAdminClient } from './identity/hydraAdminClient.js'
 import { createIdentityRouter } from './identity/router.js'
 import { createHydraPublicProxy } from './identity/hydraPublicProxy.js'
+import { createJieyaAccountLifecycleClient } from './identity/jieyaLifecycleClient.js'
 import { processIdentityOutboxBatch } from './services/identityOutbox.js'
 import { cleanupIdentityRetention } from './services/identityRetention.js'
 
@@ -57,6 +58,9 @@ const identityAdmin = identityConfig.enabled
       baseUrl: identityConfig.hydraAdminUrl,
       issuer: identityConfig.issuer,
     })
+  : null
+const jieyaLifecycleClient = identityConfig.jieyaLifecycle.enabled
+  ? createJieyaAccountLifecycleClient({ secret: identityConfig.jieyaLifecycle.secret })
   : null
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
@@ -667,10 +671,22 @@ const processIdentityOutbox = async () => {
   identityOutboxRunning = true
   try {
     const db = await getIdentityDb()
-    const results = await processIdentityOutboxBatch(db, identityAdmin, { limit: 25 })
+    const results = await processIdentityOutboxBatch(db, identityAdmin, {
+      limit: 25,
+      lifecycleClient: jieyaLifecycleClient,
+      lifecycleIssuer: identityConfig.jieyaLifecycle.issuer,
+    })
     const completed = results.filter((result) => result.processed).length
     const failed = results.filter((result) => result.retrying || result.dead).length
     if (completed || failed) console.log(`[identity-outbox] completed=${completed} pending_or_dead=${failed}`)
+    const lifecycleRetries = results.filter((result) => result.lifecycle && result.retrying).length
+    const lifecycleDead = results.filter((result) => result.alert).length
+    if (lifecycleRetries) {
+      console.warn(`[identity-outbox] Jieya lifecycle delivery retry scheduled count=${lifecycleRetries}`)
+    }
+    if (lifecycleDead) {
+      console.error(`[identity-outbox] ALERT Jieya lifecycle delivery is dead count=${lifecycleDead}`)
+    }
   } catch (error) {
     console.error('[identity-outbox] worker failed:', error?.name || 'Error')
   } finally {
@@ -683,6 +699,9 @@ const scheduleIdentityOutbox = () => {
   void processIdentityOutbox()
   setInterval(() => { void processIdentityOutbox() }, 5000)
   console.log(`[identity] Hydra adapter enabled for issuer ${identityConfig.issuer}`)
+  if (identityConfig.jieyaLifecycle.enabled) {
+    console.log('[identity] Jieya account lifecycle delivery enabled on fixed loopback transport')
+  }
 }
 
 const scheduleOperationalCleanup = () => {

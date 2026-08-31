@@ -23,11 +23,13 @@ describe('systemd StarStack identity runtime', () => {
       'DB_PATH', 'DISK_CHECK_PATH', 'BACKUP_DIR', 'BACKUP_FILE',
       'ADMIN_ID', 'ADMIN_NAME', 'ADMIN_PASSWORD',
       'OIDC_ENABLED', 'OIDC_ISSUER', 'OIDC_HYDRA_PUBLIC_URL', 'OIDC_HYDRA_ADMIN_URL',
+      'JIEYA_ACCOUNT_LIFECYCLE_ENABLED',
       'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'WEBPUSH_PRIVATE_KEY', 'JWT_SECRET',
       'PATH', 'LANG', 'LC_ALL', 'TZ',
     ]) expect(migration.isApprovedApplicationKey(key)).toBe(true)
     expect(migration.isApprovedApplicationKey('AWS_SECRET_ACCESS_KEY')).toBe(false)
     expect(migration.isApprovedApplicationKey('OIDC_TOKEN_HOOK_SECRET')).toBe(false)
+    expect(migration.isApprovedApplicationKey('JIEYA_ACCOUNT_LIFECYCLE_SECRET')).toBe(false)
   })
 
   it('loads all runtime configuration through systemd credentials and never persists secrets in PM2', async () => {
@@ -43,6 +45,7 @@ describe('systemd StarStack identity runtime', () => {
     expect(unit).toContain('LoadCredential=starstack-environment:/etc/starstack/server/starstack-environment')
     expect(unit).toContain('LoadCredential=oidc-token-hook-secret:/etc/starstack/server/oidc-token-hook-secret')
     expect(unit).toContain('LoadCredential=oidc-logout-broker-secret:/etc/starstack/server/oidc-logout-broker-secret')
+    expect(unit).toContain('LoadCredential=jieya-account-lifecycle-secret:/etc/starstack/server/jieya-account-lifecycle-secret')
     expect(unit).toContain('ExecStart=/usr/bin/node /opt/star-stack/scripts/identity/systemd-server-launcher.mjs')
     expect(unit).toContain('NoNewPrivileges=true')
     expect(unit).toContain('CapabilityBoundingSet=\n')
@@ -60,6 +63,7 @@ describe('systemd StarStack identity runtime', () => {
     expect(launcher).not.toMatch(/console\.(log|error).*secret/i)
     expect(JSON.parse(example)).toMatchObject({
       OIDC_ENABLED: 'false',
+      JIEYA_ACCOUNT_LIFECYCLE_ENABLED: 'false',
       TURNSTILE_SECRET_KEY: '',
       SMTP_PASS: '',
       VAPID_PRIVATE_KEY: '',
@@ -68,6 +72,8 @@ describe('systemd StarStack identity runtime', () => {
     expect(ecosystem).toContain("OIDC_ENABLED: 'false'")
     expect(ecosystem).toContain("OIDC_TOKEN_HOOK_SECRET: ''")
     expect(ecosystem).toContain("OIDC_LOGOUT_BROKER_SECRET: ''")
+    expect(ecosystem).toContain("JIEYA_ACCOUNT_LIFECYCLE_ENABLED: 'false'")
+    expect(ecosystem).toContain("JIEYA_ACCOUNT_LIFECYCLE_SECRET: ''")
   })
 
   it('separates identity secrets while preserving approved PM2 application variables', async () => {
@@ -92,6 +98,8 @@ describe('systemd StarStack identity runtime', () => {
 
     expect(result.tokenHookSecret).toBe(tokenHook)
     expect(result.logoutBrokerSecret).toBe(logoutBroker)
+    expect(Buffer.byteLength(result.lifecycleSecret, 'utf8')).toBeGreaterThanOrEqual(32)
+    expect(new Set([result.tokenHookSecret, result.logoutBrokerSecret, result.lifecycleSecret]).size).toBe(3)
     expect(JSON.parse(result.environment)).toMatchObject({
       TURNSTILE_SECRET_KEY: 'turnstile-fixture',
       SMTP_PASS: 'smtp fixture with spaces',
@@ -101,6 +109,7 @@ describe('systemd StarStack identity runtime', () => {
     })
     expect(result.environment).not.toContain(tokenHook)
     expect(result.environment).not.toContain(logoutBroker)
+    expect(result.environment).not.toContain(result.lifecycleSecret)
     expect(result.environment).not.toContain('AWS_SECRET_ACCESS_KEY')
   })
 
@@ -138,6 +147,8 @@ describe('systemd StarStack identity runtime', () => {
       .toThrow(/distinct|separate/i)
     expect(() => migration.parseCredentialEnvironment('{"OIDC_TOKEN_HOOK_SECRET":"forbidden"}\n'))
       .toThrow(/identity secret/i)
+    expect(() => migration.parseCredentialEnvironment('{"JIEYA_ACCOUNT_LIFECYCLE_SECRET":"forbidden"}\n'))
+      .toThrow(/identity secret/i)
     const quoted = migration.buildSystemdCredentialPayloads({
       ...base,
       SMTP_PASS: "it's still exact",
@@ -146,7 +157,7 @@ describe('systemd StarStack identity runtime', () => {
       .toBe("it's still exact")
   })
 
-  it('loads the three runtime credentials without exposing identity secrets in the env bundle', async () => {
+  it('loads the four runtime credentials without exposing identity secrets in the env bundle', async () => {
     const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'starstack-systemd-credentials-')))
     resources.push(directory)
     await chmod(directory, 0o700)
@@ -163,6 +174,7 @@ describe('systemd StarStack identity runtime', () => {
       writeFile(path.join(directory, 'starstack-environment'), `${environment}\n`, { mode: 0o600 }),
       writeFile(path.join(directory, 'oidc-token-hook-secret'), 't'.repeat(48), { mode: 0o600 }),
       writeFile(path.join(directory, 'oidc-logout-broker-secret'), 'l'.repeat(48), { mode: 0o600 }),
+      writeFile(path.join(directory, 'jieya-account-lifecycle-secret'), 'c'.repeat(48), { mode: 0o600 }),
     ])
     const launcher = await import('./systemd-server-launcher.mjs')
     const loaded = await launcher.loadSystemdServerEnvironment({ CREDENTIALS_DIRECTORY: directory })
@@ -176,9 +188,17 @@ describe('systemd StarStack identity runtime', () => {
       VAPID_PRIVATE_KEY: 'v'.repeat(48),
       OIDC_TOKEN_HOOK_SECRET: 't'.repeat(48),
       OIDC_LOGOUT_BROKER_SECRET: 'l'.repeat(48),
+      JIEYA_ACCOUNT_LIFECYCLE_SECRET: 'c'.repeat(48),
     })
     expect(environment).not.toContain('t'.repeat(48))
     expect(environment).not.toContain('l'.repeat(48))
+    expect(environment).not.toContain('c'.repeat(48))
+
+    const lifecycleFile = path.join(directory, 'jieya-account-lifecycle-secret')
+    await writeFile(lifecycleFile, 't'.repeat(48), { mode: 0o600 })
+    await expect(launcher.loadSystemdServerEnvironment({ CREDENTIALS_DIRECTORY: directory }))
+      .rejects.toThrow(/distinct/i)
+    await writeFile(lifecycleFile, 'c'.repeat(48), { mode: 0o600 })
 
     const leakedLink = path.join(directory, 'leaked-token-hook')
     await link(path.join(directory, 'oidc-token-hook-secret'), leakedLink)
@@ -196,6 +216,7 @@ describe('systemd StarStack identity runtime', () => {
       })}\n`],
       ['oidc-token-hook-secret', 't'.repeat(48)],
       ['oidc-logout-broker-secret', 'l'.repeat(48)],
+      ['jieya-account-lifecycle-secret', 'c'.repeat(48)],
     ]
     await Promise.all(files.map(([name, value]) => writeFile(path.join(directory, name), value, { mode: 0o440 })))
     await chmod(directory, 0o550)
@@ -210,6 +231,7 @@ describe('systemd StarStack identity runtime', () => {
           OIDC_ENABLED: 'false',
           OIDC_TOKEN_HOOK_SECRET: 't'.repeat(48),
           OIDC_LOGOUT_BROKER_SECRET: 'l'.repeat(48),
+          JIEYA_ACCOUNT_LIFECYCLE_SECRET: 'c'.repeat(48),
         })
 
       const environmentFile = path.join(directory, 'starstack-environment')

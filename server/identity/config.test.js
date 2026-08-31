@@ -11,12 +11,46 @@ const enabledEnv = {
   OIDC_LOGOUT_BROKER_SECRET: 'broker-secret-with-at-least-thirty-two-bytes',
 }
 
+const lifecycleSecret = 'lifecycle-secret-with-at-least-thirty-two-bytes'
+
 describe('identity runtime config', () => {
   it('is disabled by default and contains no fallback secret', () => {
     const config = loadIdentityConfig({ NODE_ENV: 'development' })
     expect(config.enabled).toBe(false)
     expect(config.tokenHookSecret).toBeNull()
     expect(config.logoutBrokerSecret).toBeNull()
+    expect(config.jieyaLifecycle).toEqual({
+      enabled: false,
+      endpoint: 'http://127.0.0.1:4180/internal/starstack/account-lifecycle',
+      header: 'X-StarStack-Account-Lifecycle',
+      issuer: 'https://auth.xingzhan.cc',
+      secret: null,
+    })
+  })
+
+  it('loads the exact lifecycle loopback contract only with a third distinct secret', () => {
+    const config = loadIdentityConfig({
+      ...enabledEnv,
+      JIEYA_ACCOUNT_LIFECYCLE_ENABLED: 'true',
+      JIEYA_ACCOUNT_LIFECYCLE_SECRET: lifecycleSecret,
+    })
+    expect(config.jieyaLifecycle).toEqual({
+      enabled: true,
+      endpoint: 'http://127.0.0.1:4180/internal/starstack/account-lifecycle',
+      header: 'X-StarStack-Account-Lifecycle',
+      issuer: 'https://auth.xingzhan.cc',
+      secret: lifecycleSecret,
+    })
+  })
+
+  it.each([
+    [{ ...enabledEnv, OIDC_ENABLED: 'false', JIEYA_ACCOUNT_LIFECYCLE_ENABLED: 'true', JIEYA_ACCOUNT_LIFECYCLE_SECRET: lifecycleSecret }, /OIDC|identity|身份/i],
+    [{ ...enabledEnv, JIEYA_ACCOUNT_LIFECYCLE_ENABLED: 'true', JIEYA_ACCOUNT_LIFECYCLE_SECRET: 'short' }, /lifecycle.*secret|生命周期.*密钥/i],
+    [{ ...enabledEnv, JIEYA_ACCOUNT_LIFECYCLE_ENABLED: 'true', JIEYA_ACCOUNT_LIFECYCLE_SECRET: enabledEnv.OIDC_TOKEN_HOOK_SECRET }, /distinct|separate|不同|分离/i],
+    [{ ...enabledEnv, JIEYA_ACCOUNT_LIFECYCLE_ENABLED: 'true', JIEYA_ACCOUNT_LIFECYCLE_SECRET: enabledEnv.OIDC_LOGOUT_BROKER_SECRET }, /distinct|separate|不同|分离/i],
+    [{ ...enabledEnv, JIEYA_ACCOUNT_LIFECYCLE_ENABLED: 'yes', JIEYA_ACCOUNT_LIFECYCLE_SECRET: lifecycleSecret }, /true|false|boolean|布尔/i],
+  ])('fails closed for an unsafe lifecycle configuration', (env, expected) => {
+    expect(() => loadIdentityConfig(env)).toThrow(expected)
   })
 
   it('loads the exact local confidential client and host-only cookie policy', () => {

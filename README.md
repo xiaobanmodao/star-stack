@@ -158,6 +158,12 @@ OJ
 
 ## 近期变更
 
+### 2026-08-31 - 界芽账号生命周期可靠投递底座
+
+- `active`、`suspended`、`deleted` 状态继续与认证世代、StarStack 会话撤销和 Hydra 撤销 outbox 在同一 SQLite 事务写入；同一账号按世代有序处理，`deleted` 保持不可恢复终态。
+- 可选生命周期 worker 使用独立 systemd credential，经固定 loopback `POST http://127.0.0.1:4180/internal/starstack/account-lifecycle` 投递最小 v1 事件；请求固定 `Host: jieya.xingzhan.cc`，只有 Jieya 返回精确 `200` 与 `applied|duplicate|stale|terminal` JSON 回执才完成。网络/`5xx` 持久退避重试，`409` 与其他 `4xx` 失败关闭并告警。
+- 生命周期投递和 Jieya 云写入默认关闭。封禁保留云档、解封要求重新登录、永久注销触发云档删除；普通登出、断开应用和密码/邮箱变更不删除云档。管理员永久注销前会明确提示先导出界芽云档。
+
 ### 2026-08-31 - 界芽计划正式产品入口与账号连接
 
 - 项目大厅的界芽卡片固定指向 `https://jieya.xingzhan.cc`，明确游客模式保留，只有用户主动选择时才使用星栈账号登录。

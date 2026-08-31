@@ -135,6 +135,44 @@ const readSecureJson = async (filePath, description) => {
   }
 }
 
+export const readProductionLifecycleCredential = async (
+  filePath,
+  expectedUid = currentUid,
+) => {
+  const description = 'Jieya account lifecycle credential'
+  const resolved = path.resolve(filePath)
+  const assertCredentialStat = (stat) => {
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1
+      || (expectedUid !== undefined && stat.uid !== expectedUid)
+      || ![0o400, 0o440, 0o600].includes(modeBits(stat))) {
+      throw new Error(`${description} metadata is unsafe`)
+    }
+  }
+  const before = await lstat(resolved)
+  assertCredentialStat(before)
+  if (before.size < 32 || before.size > 4096 || await realpath(resolved) !== resolved) {
+    throw new Error(`${description} path or size is unsafe`)
+  }
+  const noFollow = constants.O_NOFOLLOW || 0
+  const handle = await open(resolved, constants.O_RDONLY | noFollow)
+  try {
+    const opened = await handle.stat()
+    assertCredentialStat(opened)
+    if (!sameInode(before, opened)) throw new Error(`${description} changed while opening`)
+    const value = await handle.readFile('utf8')
+    const after = await lstat(resolved)
+    assertCredentialStat(after)
+    if (!sameInode(opened, after)
+      || Buffer.byteLength(value, 'utf8') < 32
+      || value.includes('\0') || /[\r\n]/.test(value)) {
+      throw new Error(`${description} changed or is invalid`)
+    }
+    return value
+  } finally {
+    await handle.close()
+  }
+}
+
 const writeSecureJson = (filePath, value, description) => createSecureFile(
   filePath,
   `${JSON.stringify(value, null, 2)}\n`,

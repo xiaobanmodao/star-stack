@@ -52,13 +52,17 @@ const assertPrivateHostCidr = (value, name) => {
     || (octets[0] === 192 && octets[1] === 168))) fail(`${name} must be RFC1918 private space`)
   return value
 }
-const assertPrivateFile = async (file, { allowPublicRead = false, allowedUids = [] } = {}) => {
+const assertPrivateFile = async (file, {
+  allowPublicRead = false,
+  allowedUids = [],
+  privateModes = [0o600, 0o640],
+} = {}) => {
   const resolved = path.resolve(file)
   const info = await lstat(resolved, { bigint: true })
   if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1n) fail(`${resolved} must be a single-link regular file`)
   if (await realpath(resolved) !== resolved) fail(`${resolved} must not traverse symbolic links`)
   const mode = Number(info.mode & 0o777n)
-  if (allowPublicRead ? ![0o600, 0o640, 0o644].includes(mode) : ![0o600, 0o640].includes(mode)) {
+  if (allowPublicRead ? ![0o600, 0o640, 0o644].includes(mode) : !privateModes.includes(mode)) {
     fail(`${resolved} has unsafe permissions`)
   }
   const currentUid = typeof process.getuid === 'function' ? BigInt(process.getuid()) : info.uid
@@ -101,6 +105,9 @@ const readCommand = (command, args, label) => {
 if (String(process.env.OIDC_ENABLED || 'false').toLowerCase() !== 'false') {
   fail('OIDC_ENABLED must remain false during pre-release')
 }
+if (String(process.env.JIEYA_ACCOUNT_LIFECYCLE_ENABLED || 'false').toLowerCase() !== 'false') {
+  fail('JIEYA_ACCOUNT_LIFECYCLE_ENABLED must remain false during pre-release')
+}
 const rawEnvFile = process.env.IDENTITY_ENV_FILE
 if (typeof rawEnvFile !== 'string' || !rawEnvFile.trim()) fail('IDENTITY_ENV_FILE is required')
 const identityEnvFile = await assertPrivateFile(rawEnvFile.trim())
@@ -108,12 +115,19 @@ configuration = { ...parseEnv(await readFile(identityEnvFile, 'utf8')), ...proce
 if (String(configuration.OIDC_ENABLED || 'false').toLowerCase() !== 'false') {
   fail('OIDC_ENABLED must remain false during pre-release')
 }
+if (String(configuration.JIEYA_ACCOUNT_LIFECYCLE_ENABLED || 'false').toLowerCase() !== 'false') {
+  fail('JIEYA_ACCOUNT_LIFECYCLE_ENABLED must remain false during pre-release')
+}
 if (configuration.NODE_ENV !== 'production') fail('NODE_ENV must be production')
 const starstackApiUnit = await assertPrivateFile(
   '/etc/systemd/system/starstack-api.service',
   { allowPublicRead: true },
 )
-assertJudgeSystemdUnit(await readFile(starstackApiUnit, 'utf8'))
+const starstackApiUnitText = await readFile(starstackApiUnit, 'utf8')
+assertJudgeSystemdUnit(starstackApiUnitText)
+if (!starstackApiUnitText.includes(
+  'LoadCredential=jieya-account-lifecycle-secret:/etc/starstack/server/jieya-account-lifecycle-secret',
+)) fail('StarStack systemd unit is missing the dedicated Jieya lifecycle credential')
 assertJudgeKernelPrerequisites({
   dmesgRestrict: await readFile('/proc/sys/kernel/dmesg_restrict', 'utf8'),
 })
@@ -144,6 +158,15 @@ if (proxyCidr !== `${hookGateway}/32`) {
   fail('IDENTITY_PROXY_CIDR must be the exact internal hook gateway /32')
 }
 
+const lifecycleCredential = await assertPrivateFile(
+  '/etc/starstack/server/jieya-account-lifecycle-secret',
+  { privateModes: [0o400, 0o440, 0o600] },
+)
+const lifecycleSecret = await readFile(lifecycleCredential, 'utf8')
+if (Buffer.byteLength(lifecycleSecret, 'utf8') < 32
+  || lifecycleSecret.includes('\0') || /[\r\n]/.test(lifecycleSecret)) {
+  fail('Jieya account lifecycle credential is invalid')
+}
 const sensitiveValues = [
   requirePrivateSecret('HYDRA_POSTGRES_PASSWORD'),
   requirePrivateSecret('HYDRA_SYSTEM_SECRET'),
@@ -151,6 +174,7 @@ const sensitiveValues = [
   requirePrivateSecret('OIDC_TOKEN_HOOK_SECRET'),
   requirePrivateSecret('OIDC_LOGOUT_BROKER_SECRET'),
   requirePrivateSecret('JIEYA_OIDC_CLIENT_SECRET'),
+  lifecycleSecret,
 ]
 if (new Set(sensitiveValues).size !== sensitiveValues.length) fail('Identity credentials must all be distinct')
 

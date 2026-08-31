@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { randomBytes } from 'node:crypto'
 import { constants } from 'node:fs'
 import {
   lstat,
@@ -17,6 +18,7 @@ import { fileURLToPath } from 'node:url'
 const IDENTITY_SECRET_KEYS = Object.freeze([
   'OIDC_TOKEN_HOOK_SECRET',
   'OIDC_LOGOUT_BROKER_SECRET',
+  'JIEYA_ACCOUNT_LIFECYCLE_SECRET',
 ])
 const EXACT_APPLICATION_KEYS = new Set([
   'NODE_ENV', 'PORT', 'HOST', 'TRUST_PROXY_HOPS', 'ALLOWED_ORIGINS',
@@ -28,6 +30,7 @@ const EXACT_APPLICATION_KEYS = new Set([
   'DB_PATH', 'DISK_CHECK_PATH', 'BACKUP_DIR', 'BACKUP_FILE',
   'ADMIN_ID', 'ADMIN_NAME', 'ADMIN_PASSWORD',
   'OIDC_ENABLED', 'OIDC_ISSUER', 'OIDC_HYDRA_PUBLIC_URL', 'OIDC_HYDRA_ADMIN_URL',
+  'JIEYA_ACCOUNT_LIFECYCLE_ENABLED',
   'PATH', 'LANG', 'LC_ALL', 'TZ',
 ])
 const APPLICATION_KEY_PREFIXES = Object.freeze(['JWT_', 'WEBPUSH_', 'VAPID_', 'PUSH_'])
@@ -52,6 +55,13 @@ const validateApplicationEnvironment = (environment) => {
   if (environment.PORT !== '5174') throw new Error('PORT must remain 5174')
   if (!['true', 'false'].includes(environment.OIDC_ENABLED)) {
     throw new Error('OIDC_ENABLED must be an explicit true or false')
+  }
+  if (!['true', 'false'].includes(environment.JIEYA_ACCOUNT_LIFECYCLE_ENABLED || 'false')) {
+    throw new Error('JIEYA_ACCOUNT_LIFECYCLE_ENABLED must be an explicit true or false')
+  }
+  if (environment.JIEYA_ACCOUNT_LIFECYCLE_ENABLED === 'true'
+    && environment.OIDC_ENABLED !== 'true') {
+    throw new Error('Jieya account lifecycle delivery requires OIDC_ENABLED=true')
   }
   if (environment.OIDC_ENABLED === 'true') {
     if (environment.OIDC_ISSUER !== 'https://auth.xingzhan.cc'
@@ -107,6 +117,13 @@ export const buildSystemdCredentialPayloads = (sourceEnvironment) => {
   if (tokenHookSecret === logoutBrokerSecret) {
     throw new Error('Identity credentials must be distinct and separate')
   }
+  const lifecycleSecret = assertCredentialSecret(
+    randomBytes(48).toString('base64url'),
+    'Jieya account lifecycle',
+  )
+  if (new Set([tokenHookSecret, logoutBrokerSecret, lifecycleSecret]).size !== 3) {
+    throw new Error('Identity credentials must be distinct and separate')
+  }
 
   const application = {}
   for (const [key, rawValue] of Object.entries(sourceEnvironment)) {
@@ -121,6 +138,7 @@ export const buildSystemdCredentialPayloads = (sourceEnvironment) => {
   application.HOST = application.HOST || '127.0.0.1'
   application.PORT = application.PORT || '5174'
   application.OIDC_ENABLED = application.OIDC_ENABLED || 'false'
+  application.JIEYA_ACCOUNT_LIFECYCLE_ENABLED = 'false'
   validateApplicationEnvironment(application)
   const environment = `${JSON.stringify(
     Object.fromEntries(Object.keys(application).sort().map((key) => [key, application[key]])),
@@ -128,7 +146,12 @@ export const buildSystemdCredentialPayloads = (sourceEnvironment) => {
     2,
   )}\n`
   parseCredentialEnvironment(environment)
-  return Object.freeze({ environment, tokenHookSecret, logoutBrokerSecret })
+  return Object.freeze({
+    environment,
+    tokenHookSecret,
+    logoutBrokerSecret,
+    lifecycleSecret,
+  })
 }
 
 const assertRootDirectory = async (directory, { create = false } = {}) => {
@@ -267,6 +290,7 @@ export const migratePm2Environment = async ({ pid, root = '/etc/starstack' }) =>
       writeCredential(path.join(staging, 'starstack-environment'), payloads.environment),
       writeCredential(path.join(staging, 'oidc-token-hook-secret'), payloads.tokenHookSecret),
       writeCredential(path.join(staging, 'oidc-logout-broker-secret'), payloads.logoutBrokerSecret),
+      writeCredential(path.join(staging, 'jieya-account-lifecycle-secret'), payloads.lifecycleSecret),
     ])
     await rename(staging, target)
   } catch (error) {

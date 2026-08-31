@@ -39,7 +39,9 @@ module.exports = {
         OIDC_HYDRA_PUBLIC_URL: process.env.OIDC_HYDRA_PUBLIC_URL || 'http://127.0.0.1:4444',
         OIDC_HYDRA_ADMIN_URL: process.env.OIDC_HYDRA_ADMIN_URL || 'http://127.0.0.1:4445',
         OIDC_TOKEN_HOOK_SECRET: '',
-        OIDC_LOGOUT_BROKER_SECRET: ''
+        OIDC_LOGOUT_BROKER_SECRET: '',
+        JIEYA_ACCOUNT_LIFECYCLE_ENABLED: 'false',
+        JIEYA_ACCOUNT_LIFECYCLE_SECRET: ''
       },
       error_file: './logs/api-error.log',
       out_file: './logs/api-out.log',

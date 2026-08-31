@@ -6,6 +6,13 @@ const DEFAULT_RETRY_BASE_MS = 2000
 const DEFAULT_MAX_ATTEMPTS = 20
 export const MAX_IDENTITY_OUTBOX_BATCH_SIZE = 25
 export const MAX_SYNC_IDENTITY_OUTBOX_DRAIN = 8
+const LIFECYCLE_EVENT_TYPES = Object.freeze([
+  'account.active',
+  'account.suspended',
+  'account.deleted',
+])
+const lifecycleEventTypes = new Set(LIFECYCLE_EVENT_TYPES)
+const lifecycleEventSql = LIFECYCLE_EVENT_TYPES.map((value) => `'${value}'`).join(', ')
 
 const runSerialized = (db, operation) => {
   const previous = claimQueues.get(db) || Promise.resolve()
@@ -27,10 +34,49 @@ const sanitizeFailure = (error) => {
     ? error.name
     : 'Error'
   const status = Number.isInteger(error?.status) ? ` status=${error.status}` : ''
-  return `Hydra revocation failed (${name}${status})`.slice(0, 200)
+  return `Identity delivery failed (${name}${status})`.slice(0, 200)
 }
 
-const claimNext = async (db, nowDate, staleMs, { subject = null, generation = null } = {}) => {
+const parseGeneration = (event) => {
+  let payload
+  try { payload = JSON.parse(event.payload_json) } catch {
+    throw new Error('Identity outbox payload is invalid')
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)
+    || Object.keys(payload).length !== 1
+    || !Number.isSafeInteger(payload.generation) || payload.generation < 0) {
+    throw new Error('Identity outbox generation is invalid')
+  }
+  return payload.generation
+}
+
+const buildLifecycleEvent = (event, issuer) => {
+  if (!lifecycleEventTypes.has(event.event_type)
+    || event.client_id !== null || event.sid !== null
+    || typeof issuer !== 'string' || !issuer) {
+    throw new Error('Account lifecycle outbox event is invalid')
+  }
+  const occurredAt = new Date(event.created_at)
+  if (!Number.isFinite(occurredAt.getTime()) || occurredAt.toISOString() !== event.created_at) {
+    throw new Error('Account lifecycle timestamp is invalid')
+  }
+  return {
+    version: 1,
+    eventId: event.id,
+    issuer,
+    sub: event.subject,
+    status: event.event_type.slice('account.'.length),
+    authGeneration: parseGeneration(event),
+    occurredAt: event.created_at,
+  }
+}
+
+const claimNext = async (
+  db,
+  nowDate,
+  staleMs,
+  { subject = null, generation = null, includeLifecycle = false } = {},
+) => {
   await db.exec('BEGIN IMMEDIATE')
   try {
     const staleBefore = new Date(nowDate.getTime() - staleMs).toISOString()
@@ -40,6 +86,7 @@ const claimNext = async (db, nowDate, staleMs, { subject = null, generation = nu
          (event.status = 'pending' AND event.next_attempt_at <= ?)
          OR (event.status = 'processing' AND event.updated_at <= ?)
        )
+       AND (? = 1 OR event.event_type NOT IN (${lifecycleEventSql}))
        AND (? IS NULL OR event.subject = ?)
        AND (
          ? IS NULL
@@ -57,6 +104,35 @@ const claimNext = async (db, nowDate, staleMs, { subject = null, generation = nu
              AND prerequisite.status <> 'completed'
          )
        )
+       AND (
+         event.event_type NOT IN (${lifecycleEventSql})
+         OR json_valid(event.payload_json) <> 1
+         OR json_type(event.payload_json, '$.generation') IS NOT 'integer'
+         OR NOT EXISTS (
+           SELECT 1 FROM identity_outbox prerequisite
+           WHERE prerequisite.subject = event.subject
+             AND prerequisite.id <> event.id
+             AND prerequisite.event_type IN (${lifecycleEventSql})
+             AND prerequisite.status <> 'completed'
+             AND CASE
+               WHEN json_valid(prerequisite.payload_json) <> 1 THEN 1
+               WHEN json_type(prerequisite.payload_json, '$.generation') IS NOT 'integer' THEN 1
+               ELSE CAST(json_extract(prerequisite.payload_json, '$.generation') AS INTEGER)
+                 < CAST(json_extract(event.payload_json, '$.generation') AS INTEGER)
+             END
+         )
+       )
+       AND (
+         event.event_type NOT IN (${lifecycleEventSql})
+         OR NOT EXISTS (
+           SELECT 1 FROM identity_outbox prerequisite
+           WHERE prerequisite.subject = event.subject
+             AND prerequisite.event_type IN ('oidc.revoke_session', 'oidc.revoke_consent')
+             AND prerequisite.status <> 'completed'
+             AND json_extract(prerequisite.payload_json, '$.generation')
+               = json_extract(event.payload_json, '$.generation')
+         )
+       )
        ORDER BY CASE event.event_type
          WHEN 'oidc.revoke_session' THEN 0
          WHEN 'oidc.revoke_consent' THEN 1
@@ -65,6 +141,7 @@ const claimNext = async (db, nowDate, staleMs, { subject = null, generation = nu
        LIMIT 1`,
       nowDate.toISOString(),
       staleBefore,
+      includeLifecycle ? 1 : 0,
       subject,
       subject,
       generation,
@@ -98,21 +175,29 @@ const claimNext = async (db, nowDate, staleMs, { subject = null, generation = nu
   }
 }
 
-const dispatch = async (admin, event) => {
+const dispatch = async (admin, event, { lifecycleClient, lifecycleIssuer }) => {
+  if (lifecycleEventTypes.has(event.event_type)) {
+    if (!lifecycleClient) throw new Error('Account lifecycle delivery is disabled')
+    await lifecycleClient.deliver(buildLifecycleEvent(event, lifecycleIssuer))
+    return { lifecycle: true, delivered: true }
+  }
   if (event.event_type === 'oidc.revoke_session') {
     if (!event.sid) throw new Error('Revocation event is missing sid')
     await admin.revokeLoginSession(event.sid)
-    return
+    return { lifecycle: false }
   }
-  if (event.event_type === 'oidc.revoke_consent'
-    || event.event_type.startsWith('account.')) {
-    if (!event.client_id) {
-      // Account lifecycle events without a client are audit/fan-out markers. The
-      // per-session events perform the concrete Hydra revocation.
-      return
-    }
+  if (event.event_type === 'oidc.revoke_consent') {
+    if (!event.client_id) throw new Error('Consent revocation is missing client id')
     await admin.revokeConsentSessions(event.subject, event.client_id)
-    return
+    return { lifecycle: false }
+  }
+  if (event.event_type === 'account.password_changed') {
+    if (event.client_id !== null || event.sid !== null) {
+      throw new Error('Password change outbox marker is invalid')
+    }
+    // Password changes revoke sessions through their dedicated fan-out events;
+    // they never delete or suspend Jieya cloud data.
+    return { lifecycle: false }
   }
   throw new Error('Unsupported identity outbox event')
 }
@@ -128,15 +213,22 @@ export const processIdentityOutboxOnce = async (
     subject = null,
     generation = null,
     operationLocked = false,
+    lifecycleClient = null,
+    lifecycleIssuer = null,
   } = {},
 ) => {
   const process = () => runSerialized(db, async () => {
     const nowDate = asDate(now())
-    const event = await claimNext(db, nowDate, staleMs, { subject, generation })
+    const event = await claimNext(db, nowDate, staleMs, {
+      subject,
+      generation,
+      includeLifecycle: Boolean(lifecycleClient),
+    })
     if (!event) return { processed: false, idle: true }
+    const lifecycle = lifecycleEventTypes.has(event.event_type)
 
     try {
-      await dispatch(admin, event)
+      const dispatchResult = await dispatch(admin, event, { lifecycleClient, lifecycleIssuer })
       await db.exec('BEGIN IMMEDIATE')
       try {
         await db.run(
@@ -163,10 +255,24 @@ export const processIdentityOutboxOnce = async (
         await db.exec('ROLLBACK').catch(() => undefined)
         throw error
       }
-      return { processed: true, id: event.id, attempts: event.attempts }
+      return {
+        processed: true,
+        id: event.id,
+        attempts: event.attempts,
+        lifecycle: dispatchResult.lifecycle,
+        delivered: Boolean(dispatchResult.delivered),
+      }
     } catch (error) {
-      const dead = event.attempts >= maxAttempts
-      const delay = Math.min(retryBaseMs * (2 ** Math.max(0, event.attempts - 1)), 60 * 60 * 1000)
+      const retryable = error?.retryable !== false
+      const dead = !retryable || event.attempts >= maxAttempts
+      const exponentialDelay = Math.min(
+        retryBaseMs * (2 ** Math.max(0, event.attempts - 1)),
+        60 * 60 * 1000,
+      )
+      const retryAfterMs = Number.isSafeInteger(error?.retryAfterMs)
+        ? Math.min(Math.max(error.retryAfterMs, 0), 60 * 60 * 1000)
+        : 0
+      const delay = Math.max(exponentialDelay, retryAfterMs)
       await db.run(
         `UPDATE identity_outbox
          SET status = ?, next_attempt_at = ?, last_error = ?, updated_at = ?
@@ -177,7 +283,15 @@ export const processIdentityOutboxOnce = async (
         nowDate.toISOString(),
         event.id,
       )
-      return { processed: false, retrying: !dead, dead, id: event.id, attempts: event.attempts }
+      return {
+        processed: false,
+        retrying: !dead,
+        dead,
+        id: event.id,
+        attempts: event.attempts,
+        lifecycle,
+        alert: dead && lifecycle,
+      }
     }
   })
   return operationLocked ? process() : runIdentityOperation(db, process)
