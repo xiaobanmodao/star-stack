@@ -6,6 +6,13 @@ import path from 'node:path'
 import { TextDecoder } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { createHydraAdminClient } from '../../server/identity/hydraAdminClient.js'
+import {
+  JIEYA_ACCOUNT_LIFECYCLE_HEADER,
+  JIEYA_ACCOUNT_LIFECYCLE_HOST,
+  JIEYA_ACCOUNT_LIFECYCLE_ISSUER,
+  JIEYA_ACCOUNT_LIFECYCLE_URL,
+  createJieyaAccountLifecycleClient,
+} from '../../server/identity/jieyaLifecycleClient.js'
 import { processIdentityOutboxBatch } from '../../server/services/identityOutbox.js'
 import { transitionAccountStatus } from '../../server/services/accountLifecycle.js'
 import { isAccountSubject, verifyAccountIdentityData } from '../../server/utils/accountIdentityMigration.js'
@@ -14,6 +21,7 @@ import { SQLITE_OPEN_NOFOLLOW } from '../../server/utils/secureSqliteGuard.js'
 import {
   acquireProductionFixtureLock,
   createProductionFixtureReceipt,
+  readProductionLifecycleCredential,
   readProductionFixtureReceipt,
   replaceProductionFixtureReceipt,
   resolveProductionFixturePaths,
@@ -33,6 +41,8 @@ const LOGIN_ID_PATTERN = /^jy-gate-[a-f0-9]{24}$/
 const RECEIPT_PHASES = new Set(['preparing', 'prepared', 'cleanup-pending', 'cleaned'])
 const MAX_PROTOCOL_FRAMES = 16
 const MAX_OUTBOX_DRAIN_BATCHES = 4
+const PRODUCTION_LIFECYCLE_CREDENTIAL =
+  '/etc/starstack/server/jieya-account-lifecycle-secret'
 const utf8Decoder = new TextDecoder('utf-8', { fatal: true })
 
 const fail = (code) => {
@@ -179,12 +189,37 @@ const createOutboxAdmin = (env) => {
   })
 }
 
-const drainFixtureOutbox = async (db, admin, subject, generation) => {
+const createFixtureLifecycleClient = async (paths) => {
+  if (paths.testing) {
+    const secret = randomBytes(48).toString('base64url')
+    return createJieyaAccountLifecycleClient({
+      secret,
+      fetchImpl: async (url, request) => {
+        if (url !== JIEYA_ACCOUNT_LIFECYCLE_URL
+          || request?.method !== 'POST'
+          || request?.headers?.Host !== JIEYA_ACCOUNT_LIFECYCLE_HOST
+          || request?.headers?.[JIEYA_ACCOUNT_LIFECYCLE_HEADER] !== secret) {
+          fail('INVALID_TEST_LIFECYCLE_WIRE')
+        }
+        return { status: 200, json: async () => ({ status: 'applied' }) }
+      },
+    })
+  }
+  const secret = await readProductionLifecycleCredential(
+    PRODUCTION_LIFECYCLE_CREDENTIAL,
+    0,
+  )
+  return createJieyaAccountLifecycleClient({ secret })
+}
+
+const drainFixtureOutbox = async (db, admin, lifecycleClient, subject, generation) => {
   for (let batch = 0; batch < MAX_OUTBOX_DRAIN_BATCHES; batch += 1) {
     const results = await processIdentityOutboxBatch(db, admin, {
       subject,
       generation,
       limit: 25,
+      lifecycleClient,
+      lifecycleIssuer: JIEYA_ACCOUNT_LIFECYCLE_ISSUER,
     })
     if (results.length === 0) break
     if (results.some((result) => !result.processed)) break
@@ -197,7 +232,13 @@ const drainFixtureOutbox = async (db, admin, subject, generation) => {
   return unresolved.count === 0
 }
 
-const cleanupFixtureAccount = async ({ db, receiptsDirectory, tombstone, env }) => {
+const cleanupFixtureAccount = async ({
+  db,
+  receiptsDirectory,
+  tombstone,
+  env,
+  lifecycleClient,
+}) => {
   let receipt = assertReceipt(
     await readProductionFixtureReceipt(receiptsDirectory, tombstone),
     tombstone,
@@ -241,6 +282,7 @@ const cleanupFixtureAccount = async ({ db, receiptsDirectory, tombstone, env }) 
   const outboxDrained = await drainFixtureOutbox(
     db,
     createOutboxAdmin(env),
+    lifecycleClient,
     receipt.accountSubject,
     generation,
   )
@@ -332,6 +374,7 @@ export const runProductionProtocolFixture = async (env = process.env) => {
   const paths = await resolveProductionFixturePaths(env)
   const releaseLock = await acquireProductionFixtureLock(paths.lockPath)
   let db
+  let lifecycleClient
   let activeTombstone = null
   let cleaned = false
   let closed = false
@@ -343,6 +386,7 @@ export const runProductionProtocolFixture = async (env = process.env) => {
   process.once('SIGINT', onSignal)
   process.once('SIGTERM', onSignal)
   try {
+    lifecycleClient = await createFixtureLifecycleClient(paths)
     db = await openProductionDatabase(paths)
     const seenRequestIds = new Set()
     let state = mode === 'normal' ? 'await-prepare' : 'await-cleanup'
@@ -382,6 +426,7 @@ export const runProductionProtocolFixture = async (env = process.env) => {
           receiptsDirectory: paths.receiptsDirectory,
           tombstone: request.tombstone,
           env,
+          lifecycleClient,
         })
         cleaned = true
         state = 'cleaned'
@@ -415,6 +460,7 @@ export const runProductionProtocolFixture = async (env = process.env) => {
         receiptsDirectory: paths.receiptsDirectory,
         tombstone: activeTombstone,
         env,
+        lifecycleClient,
       }).catch(() => undefined)
     }
     if (db) await db.close().catch(() => undefined)

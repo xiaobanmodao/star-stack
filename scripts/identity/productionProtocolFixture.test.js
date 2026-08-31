@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import {
   chmod,
   lstat,
+  link,
   mkdir,
   mkdtemp,
   readFile,
@@ -10,6 +11,7 @@ import {
   realpath,
   rm,
   symlink,
+  writeFile,
 } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -214,6 +216,11 @@ describe('production protocol fixture helper', () => {
       .toEqual({ count: 0 })
     expect(await verify.get("SELECT COUNT(*) AS count FROM identity_outbox WHERE subject = ? AND status <> 'completed'", active.account_subject))
       .toEqual({ count: 0 })
+    expect(await verify.get(
+      `SELECT status, attempts FROM identity_outbox
+       WHERE subject = ? AND event_type = 'account.deleted'`,
+      active.account_subject,
+    )).toEqual({ status: 'completed', attempts: 1 })
     await verify.close()
 
     const receiptFiles = (await import('node:fs/promises')).readdir(path.join(runtime.root, 'receipts'))
@@ -329,4 +336,17 @@ describe('production protocol fixture helper', () => {
       await db.close()
     }
   }, 30_000)
+
+  it('reads only a private single-link lifecycle credential', async () => {
+    const { readProductionLifecycleCredential } = await import('./productionFixtureSafety.mjs')
+    const runtime = await createRuntime()
+    const credential = path.join(runtime.root, 'lifecycle-credential')
+    const duplicate = path.join(runtime.root, 'lifecycle-credential-hardlink')
+    const secret = randomBytes(48).toString('base64url')
+    await writeFile(credential, secret, { mode: 0o600 })
+
+    await expect(readProductionLifecycleCredential(credential)).resolves.toBe(secret)
+    await link(credential, duplicate)
+    await expect(readProductionLifecycleCredential(credential)).rejects.toThrow(/metadata|link/i)
+  })
 })

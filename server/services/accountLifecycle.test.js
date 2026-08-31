@@ -237,14 +237,16 @@ describe('account lifecycle', () => {
     })
     releaseValidation()
 
-    await expect(Promise.all([transition, outbox])).resolves.toHaveLength(2)
+    const results = await Promise.all([transition, outbox])
+    expect(results).toHaveLength(2)
+    expect(results[1]).toMatchObject({ processed: false, idle: true })
     expect(await db.get(
       `SELECT account_status, auth_generation FROM users WHERE id = 'alice'`,
     )).toEqual({ account_status: 'suspended', auth_generation: 1 })
     expect(await db.get(
       `SELECT status FROM identity_outbox WHERE subject = ?`,
       subjects[0],
-    )).toEqual({ status: 'completed' })
+    )).toEqual({ status: 'pending' })
   })
 
   it('changes a password while atomically advancing generation and revoking every session', async () => {

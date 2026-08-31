@@ -21,7 +21,7 @@ const assertTimestamp = (value) => {
   if (typeof value !== 'string' || !value.trim() || !Number.isFinite(Date.parse(value))) {
     throw new AccountLifecycleError('INVALID_TIMESTAMP', '账号状态时间无效')
   }
-  return value
+  return new Date(value).toISOString()
 }
 
 const revokeIdentitySessions = async (db, { accountId, subject, generation, eventType, timestamp }) => {

@@ -1,4 +1,9 @@
 import { isIP } from 'node:net'
+import {
+  JIEYA_ACCOUNT_LIFECYCLE_HEADER,
+  JIEYA_ACCOUNT_LIFECYCLE_ISSUER,
+  JIEYA_ACCOUNT_LIFECYCLE_URL,
+} from './jieyaLifecycleClient.js'
 
 const SECRET_MIN_LENGTH = 32
 
@@ -76,6 +81,14 @@ const requireSecret = (value, name) => {
 
 export const loadIdentityConfig = (env = process.env) => {
   const enabled = String(env.OIDC_ENABLED || '').toLowerCase() === 'true'
+  const lifecycleFlag = String(env.JIEYA_ACCOUNT_LIFECYCLE_ENABLED || 'false').toLowerCase()
+  if (!['true', 'false'].includes(lifecycleFlag)) {
+    throw new Error('JIEYA_ACCOUNT_LIFECYCLE_ENABLED must be true or false')
+  }
+  const jieyaLifecycleEnabled = lifecycleFlag === 'true'
+  if (jieyaLifecycleEnabled && !enabled) {
+    throw new Error('Jieya account lifecycle delivery requires OIDC identity to be enabled')
+  }
   const production = env.NODE_ENV === 'production'
   const expectedIssuer = production ? IDENTITY_ISSUERS.production : IDENTITY_ISSUERS.local
   const rawIssuer = env.OIDC_ISSUER || expectedIssuer
@@ -94,11 +107,21 @@ export const loadIdentityConfig = (env = process.env) => {
 
   let tokenHookSecret = null
   let logoutBrokerSecret = null
+  let jieyaLifecycleSecret = null
   if (enabled) {
     tokenHookSecret = requireSecret(env.OIDC_TOKEN_HOOK_SECRET, 'Token hook')
     logoutBrokerSecret = requireSecret(env.OIDC_LOGOUT_BROKER_SECRET, 'Logout broker')
     if (tokenHookSecret === logoutBrokerSecret) {
       throw new Error('Token hook and Logout broker secrets must be separate/分离')
+    }
+  }
+  if (jieyaLifecycleEnabled) {
+    jieyaLifecycleSecret = requireSecret(
+      env.JIEYA_ACCOUNT_LIFECYCLE_SECRET,
+      'Jieya account lifecycle',
+    )
+    if ([tokenHookSecret, logoutBrokerSecret].includes(jieyaLifecycleSecret)) {
+      throw new Error('Jieya lifecycle, Token hook and Logout broker secrets must be distinct and separate/分离')
     }
   }
 
@@ -138,6 +161,13 @@ export const loadIdentityConfig = (env = process.env) => {
     logoutBrokerSecret,
     tokenHookHeader: 'x-starstack-hydra-hook',
     logoutBrokerHeader: 'X-StarStack-Logout-Broker',
+    jieyaLifecycle: Object.freeze({
+      enabled: jieyaLifecycleEnabled,
+      endpoint: JIEYA_ACCOUNT_LIFECYCLE_URL,
+      header: JIEYA_ACCOUNT_LIFECYCLE_HEADER,
+      issuer: JIEYA_ACCOUNT_LIFECYCLE_ISSUER,
+      secret: jieyaLifecycleSecret,
+    }),
     accountCookieName: production ? '__Host-starstack_auth' : 'starstack_auth_dev',
     hydraCookies: Object.freeze({
       names: hydraBrowserCookieAllowlist,

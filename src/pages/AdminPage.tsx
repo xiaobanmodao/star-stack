@@ -123,7 +123,9 @@ export default function AdminPage() {
   const handleDeleteUser = async (id: string) => {
     const busyKey = `delete:${id}`
     if (adminActionBusyKey) return
-    if (!window.confirm(`确认删除用户 ${id} ?`)) return
+    if (!window.confirm(
+      `确认永久注销用户 ${id}？\n\n请先让用户导出界芽云档。此操作会使星栈账号进入不可恢复的终态，并触发界芽云档永久删除。`,
+    )) return
     setAdminActionError('')
     setAdminActionMessage('')
     setAdminActionBusyKey(busyKey)
@@ -135,8 +137,8 @@ export default function AdminPage() {
         setAdminActionError(data?.message || '删除失败')
         return
       }
-      setAdminActionMessage('用户已删除')
-      showToast('用户已删除', 'success')
+      setAdminActionMessage('用户已永久注销，界芽生命周期删除事件已进入可靠投递队列')
+      showToast('用户已永久注销', 'success')
       await loadAdminUsers()
     } catch {
       setAdminActionError('网络异常，删除未完成')

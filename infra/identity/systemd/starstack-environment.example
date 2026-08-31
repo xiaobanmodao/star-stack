@@ -23,5 +23,6 @@
   "OIDC_ENABLED": "false",
   "OIDC_ISSUER": "https://auth.xingzhan.cc",
   "OIDC_HYDRA_PUBLIC_URL": "http://127.0.0.1:4444",
-  "OIDC_HYDRA_ADMIN_URL": "http://127.0.0.1:4445"
+  "OIDC_HYDRA_ADMIN_URL": "http://127.0.0.1:4445",
+  "JIEYA_ACCOUNT_LIFECYCLE_ENABLED": "false"
 }

@@ -12,6 +12,7 @@ WorkingDirectory=/opt/star-stack
 LoadCredential=starstack-environment:/etc/starstack/server/starstack-environment
 LoadCredential=oidc-token-hook-secret:/etc/starstack/server/oidc-token-hook-secret
 LoadCredential=oidc-logout-broker-secret:/etc/starstack/server/oidc-logout-broker-secret
+LoadCredential=jieya-account-lifecycle-secret:/etc/starstack/server/jieya-account-lifecycle-secret
 ExecStart=/usr/bin/node /opt/star-stack/scripts/identity/systemd-server-launcher.mjs
 Restart=on-failure
 RestartSec=4s
