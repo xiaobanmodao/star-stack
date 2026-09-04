@@ -7,6 +7,7 @@ import { isTrustedPushEndpoint } from '../utils/pushEndpoint.js'
 import { decodePositiveIntegerCursor, encodeCursor } from '../utils/cursor.js'
 import { getDecorationIdentity, getUnlockedAchievementTypeMap } from '../utils/decorations.js'
 import { getLevelInfo } from '../stats.js'
+import { getPublicAvatarUrl } from '../utils/avatar.js'
 
 const pushSubscriptionRateLimits = new BoundedCache(5000, 60 * 1000)
 const MAX_PUSH_ENDPOINT_LENGTH = 2048
@@ -129,7 +130,9 @@ export const listNotifications = async (req, res) => {
     if (cursorRequested && !cursor) return res.status(400).json({ message: '无效的分页游标' })
     const limit = cursorRequested ? pageSize + 1 : pageSize
     const rows = await db.all(
-      `SELECT n.*, u.name as actor_name, u.avatar as actor_avatar,
+      `SELECT n.*, u.name as actor_name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS actor_has_avatar,
+              u.avatar_revision as actor_avatar_revision,
               u.avatar_frame as actor_avatar_frame, u.avatar_overlay as actor_avatar_overlay,
               u.equipped_title as actor_equipped_title, us.xp as actor_xp
        FROM notifications n LEFT JOIN users u ON n.actor_id = u.id
@@ -153,7 +156,10 @@ export const listNotifications = async (req, res) => {
       notifications: visibleRows.map((n) => ({
         id: n.id, type: n.type,
         actor: {
-          id: n.actor_id || 'system', name: n.actor_name || '系统通知', avatar: n.actor_avatar,
+          id: n.actor_id || 'system', name: n.actor_name || '系统通知',
+          avatar: getPublicAvatarUrl(n.actor_id, Boolean(n.actor_has_avatar), {
+            revision: n.actor_avatar_revision,
+          }),
           ...getDecorationIdentity(
             {
               avatar_frame: n.actor_avatar_frame,

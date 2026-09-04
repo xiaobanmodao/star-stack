@@ -352,6 +352,8 @@ export const initDb = async () => {
       account_tombstoned_at TEXT,
       auth_generation INTEGER NOT NULL DEFAULT 0 CHECK (auth_generation >= 0),
       onboarded_at TEXT,
+      avatar TEXT,
+      avatar_revision INTEGER NOT NULL DEFAULT 0 CHECK (avatar_revision >= 0),
       avatar_frame TEXT NOT NULL DEFAULT 'none',
       avatar_overlay TEXT NOT NULL DEFAULT 'none',
       equipped_title TEXT,
@@ -474,6 +476,9 @@ export const initDb = async () => {
   }
   if (!columnNames.includes('avatar')) {
     await db.exec(`ALTER TABLE users ADD COLUMN avatar TEXT;`)
+  }
+  if (!columnNames.includes('avatar_revision')) {
+    await db.exec(`ALTER TABLE users ADD COLUMN avatar_revision INTEGER NOT NULL DEFAULT 0;`)
   }
   if (!columnNames.includes('rating')) {
     await db.exec(`ALTER TABLE users ADD COLUMN rating REAL NOT NULL DEFAULT 0;`)

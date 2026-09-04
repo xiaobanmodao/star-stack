@@ -1,4 +1,5 @@
 import { getDb } from '../db.js'
+import { getPublicAvatarUrl } from '../utils/avatar.js'
 
 const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000 // 会话 30 天过期
 export const SESSION_COOKIE_NAME = 'starstack_session'
@@ -69,12 +70,19 @@ export const getUserByToken = async (db, token) => {
   const user = await db.get(
     `SELECT id, name, password_hash, email, email_verified_at, is_admin, is_banned,
             account_subject, account_status, auth_generation,
-            avatar, bio, onboarded_at, rating,
+            CASE WHEN avatar IS NULL OR avatar = '' THEN 0 ELSE 1 END AS has_avatar,
+            avatar_revision,
+            bio, onboarded_at, rating,
             avatar_frame, avatar_overlay, equipped_title, created_at
      FROM users WHERE id = ?`,
     session.user_id
   )
-  return user || null
+  if (!user) return null
+  const { has_avatar: hasAvatar, ...safeUser } = user
+  return {
+    ...safeUser,
+    avatar: getPublicAvatarUrl(user.id, Boolean(hasAvatar), { revision: user.avatar_revision }),
+  }
 }
 
 export const requireAdmin = async (req, res) => {

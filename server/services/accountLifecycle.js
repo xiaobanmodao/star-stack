@@ -128,6 +128,7 @@ export const transitionAccountStatus = async (
                email = NULL,
                email_verified_at = NULL,
                avatar = NULL,
+               avatar_revision = avatar_revision + 1,
                bio = '',
                avatar_frame = 'none',
                avatar_overlay = 'none',

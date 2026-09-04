@@ -3,6 +3,7 @@ import { getAuthToken, getUserByToken } from '../middleware/auth.js'
 import { getDecorationIdentity, getUnlockedAchievementTypeMap } from '../utils/decorations.js'
 import { getLevelInfo } from '../stats.js'
 import { getPracticeRating } from '../utils/rating.js'
+import { getPublicAvatarUrl } from '../utils/avatar.js'
 
 function getWeekRange() {
   const now = new Date()
@@ -96,7 +97,8 @@ export const getLeaderboard = async (req, res) => {
             DENSE_RANK() OVER (ORDER BY u.rating DESC) as rank,
             us.user_id,
             u.name as user_name,
-            u.avatar,
+            CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS has_avatar,
+            u.avatar_revision,
             u.rating as value,
             us.solved_problems
            FROM user_stats us
@@ -162,7 +164,8 @@ export const getLeaderboard = async (req, res) => {
             DENSE_RANK() OVER (ORDER BY COUNT(DISTINCT sp.problem_id) DESC) as rank,
             sp.user_id,
             u.name as user_name,
-            u.avatar,
+            CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS has_avatar,
+            u.avatar_revision,
             COUNT(DISTINCT sp.problem_id) as value
            FROM solved_problems sp
            JOIN users u ON sp.user_id = u.id
@@ -236,7 +239,8 @@ export const getLeaderboard = async (req, res) => {
             DENSE_RANK() OVER (ORDER BY COUNT(DISTINCT sp.problem_id) DESC) as rank,
             sp.user_id,
             u.name as user_name,
-            u.avatar,
+            CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS has_avatar,
+            u.avatar_revision,
             COUNT(DISTINCT sp.problem_id) as value
            FROM solved_problems sp
            JOIN users u ON sp.user_id = u.id
@@ -309,7 +313,11 @@ export const getLeaderboard = async (req, res) => {
       rank: row.rank,
       userId: row.user_id || row.userId,
       userName: row.user_name || row.userName,
-      avatar: row.avatar,
+      avatar: getPublicAvatarUrl(
+        row.user_id || row.userId,
+        row.avatar || Boolean(row.has_avatar),
+        { revision: row.avatar_revision },
+      ),
       ...identityByUserId.get(row.user_id || row.userId),
       value: type === 'total' ? getPracticeRating(row.value) : row.value,
       solvedCount: row.solved_problems ?? row.solvedCount ?? null,

@@ -4,11 +4,13 @@ import { createNotification } from '../utils/notifications.js'
 import { getFollowRelations } from '../utils/socialHelpers.js'
 import { getDecorationIdentity, getUnlockedAchievementTypeMap } from '../utils/decorations.js'
 import { getLevelInfo } from '../stats.js'
+import { getPublicAvatarUrl } from '../utils/avatar.js'
 
 const PRESENCE_ONLINE_MS = 60 * 1000
 
 const formatFollowUser = (row, achievementTypes = new Set()) => ({
-  id: row.id, name: row.name, avatar: row.avatar,
+  id: row.id, name: row.name,
+  avatar: getPublicAvatarUrl(row.id, Boolean(row.has_avatar), { revision: row.avatar_revision }),
   online: Boolean(row.last_seen_at) && Date.now() - new Date(row.last_seen_at).getTime() <= PRESENCE_ONLINE_MS,
   ...getDecorationIdentity(row, getLevelInfo(row.xp || 0), achievementTypes),
 })
@@ -92,10 +94,21 @@ export const listBlocks = async (req, res) => {
   const { db, user } = auth
   try {
     const rows = await db.all(
-      `SELECT b.blocked_id as id, u.name, u.avatar, b.created_at FROM blocks b JOIN users u ON u.id = b.blocked_id WHERE b.blocker_id = ? ORDER BY b.created_at DESC`,
+      `SELECT b.blocked_id as id, u.name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS has_avatar,
+              u.avatar_revision, b.created_at
+       FROM blocks b JOIN users u ON u.id = b.blocked_id
+       WHERE b.blocker_id = ? ORDER BY b.created_at DESC`,
       user.id
     )
-    return res.json({ users: rows })
+    return res.json({ users: rows.map(({
+      has_avatar: hasAvatar,
+      avatar_revision: avatarRevision,
+      ...row
+    }) => ({
+      ...row,
+      avatar: getPublicAvatarUrl(row.id, Boolean(hasAvatar), { revision: avatarRevision }),
+    })) })
   } catch (error) {
     console.error('Failed to list blocks:', error)
     return res.status(500).json({ message: '获取屏蔽列表失败' })
@@ -108,7 +121,9 @@ export const listFriends = async (req, res) => {
   const { db, user } = auth
   try {
     const rows = await db.all(
-      `SELECT f1.followee_id as id, u.name, u.avatar, u.avatar_frame, u.avatar_overlay, u.equipped_title, us.xp, p.last_seen_at
+      `SELECT f1.followee_id as id, u.name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS has_avatar,
+              u.avatar_revision, u.avatar_frame, u.avatar_overlay, u.equipped_title, us.xp, p.last_seen_at
        FROM follows f1 JOIN follows f2 ON f1.followee_id = f2.follower_id AND f2.followee_id = ?
        JOIN users u ON u.id = f1.followee_id LEFT JOIN user_stats us ON us.user_id = u.id LEFT JOIN user_presence p ON p.user_id = u.id
        WHERE f1.follower_id = ? ORDER BY p.last_seen_at DESC, f1.created_at DESC`,
@@ -128,7 +143,9 @@ export const listFollowing = async (req, res) => {
   const { db, user } = auth
   try {
     const rows = await db.all(
-      `SELECT f.followee_id as id, u.name, u.avatar, u.avatar_frame, u.avatar_overlay, u.equipped_title, us.xp, p.last_seen_at, f.created_at,
+      `SELECT f.followee_id as id, u.name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS has_avatar,
+              u.avatar_revision, u.avatar_frame, u.avatar_overlay, u.equipped_title, us.xp, p.last_seen_at, f.created_at,
               EXISTS(SELECT 1 FROM follows f2 WHERE f2.follower_id = f.followee_id AND f2.followee_id = ?) as is_friend
        FROM follows f JOIN users u ON u.id = f.followee_id LEFT JOIN user_stats us ON us.user_id = u.id LEFT JOIN user_presence p ON p.user_id = u.id
        WHERE f.follower_id = ? ORDER BY f.created_at DESC`,
@@ -148,7 +165,9 @@ export const listFollowers = async (req, res) => {
   const { db, user } = auth
   try {
     const rows = await db.all(
-      `SELECT f.follower_id as id, u.name, u.avatar, u.avatar_frame, u.avatar_overlay, u.equipped_title, us.xp, p.last_seen_at, f.created_at,
+      `SELECT f.follower_id as id, u.name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS has_avatar,
+              u.avatar_revision, u.avatar_frame, u.avatar_overlay, u.equipped_title, us.xp, p.last_seen_at, f.created_at,
               EXISTS(SELECT 1 FROM follows f2 WHERE f2.follower_id = ? AND f2.followee_id = f.follower_id) as is_friend
        FROM follows f JOIN users u ON u.id = f.follower_id LEFT JOIN user_stats us ON us.user_id = u.id LEFT JOIN user_presence p ON p.user_id = u.id
        WHERE f.followee_id = ? ORDER BY f.created_at DESC`,

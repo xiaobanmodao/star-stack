@@ -271,6 +271,32 @@ BACKUP_FILE=/www/backup/starstack/starstack_YYYYMMDD_HHMMSS.db.gz npm run db:ver
 
 命令会检查 `integrity_check`、核心数据表以及用户、题目、提交记录数量；验证失败时不要删除当前数据库，先保留备份并检查磁盘与 SQLite 锁状态。
 
+### 一次性压缩历史头像
+
+新上传的 PNG/JPG/WebP 会由服务端转为 WebP，并在写入前保证图片数据严格小于 200 KiB；小于限制的 GIF 会原样保留动画，超限 GIF 会被拒绝，避免压缩时丢失动画帧。头像框、头像叠加层和称号字段不会被修改。旧数据库升级后，先停止 API，再使用默认的 dry-run 查看候选数量；命令不会输出头像内容或用户资料：
+
+```bash
+cd /opt/star-stack
+pm2 stop star-stack-api
+node server/migrate.js
+npm run avatars:compress -- \
+  --database /opt/star-stack/server/data/starstack.sqlite
+```
+
+确认报告后指定一个全新的绝对备份路径执行。工具会先使用 SQLite `VACUUM INTO` 创建一致性备份并验证 `integrity_check`，然后使用原头像值做 CAS 更新；迁移期间发生的新上传不会被覆盖：
+
+```bash
+npm run avatars:compress -- \
+  --database /opt/star-stack/server/data/starstack.sqlite \
+  --apply \
+  --backup /www/backup/starstack/before-avatar-compression_YYYYMMDD_HHMMSS.sqlite
+
+pm2 restart star-stack-api
+curl -fsS https://xingzhan.cc/api/health
+```
+
+报告中的 `conflicts` 必须为 `0`；非零时保留备份并重新执行 dry-run。需要回滚时停止 API，先保留迁移后的数据库文件，再将报告对应的 `.sqlite` 备份复制回 `server/data/starstack.sqlite`，恢复服务账号所有权和 `0600` 权限，最后运行 `npm run db:verify` 后再启动 API。不要在 API 写入期间直接覆盖数据库。
+
 ### 安装每日备份
 
 ```bash

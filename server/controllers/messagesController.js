@@ -7,6 +7,7 @@ import { getLevelInfo } from '../stats.js'
 import { getUserLevelInfo } from '../utils/userHelpers.js'
 import { sseConnectionLimiter } from '../utils/connectionLimit.js'
 import { decodePositiveIntegerCursor, encodeCursor } from '../utils/cursor.js'
+import { getPublicAvatarUrl } from '../utils/avatar.js'
 
 const messageRateLimits = new BoundedCache(5000, 3000)
 
@@ -38,14 +39,18 @@ export const searchUsers = async (req, res) => {
     const q = (req.query.q || '').trim()
     if (!q || q.length < 1) return res.json({ users: [] })
     const users = await db.all(
-      `SELECT u.id, u.name, u.avatar, u.avatar_frame, u.avatar_overlay, u.equipped_title, us.xp
+      `SELECT u.id, u.name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS has_avatar,
+              u.avatar_revision,
+              u.avatar_frame, u.avatar_overlay, u.equipped_title, us.xp
        FROM users u LEFT JOIN user_stats us ON us.user_id = u.id
        WHERE (u.id LIKE ? OR u.name LIKE ?) AND u.id != ? AND u.is_banned = 0 LIMIT 10`,
       `%${q}%`, `%${q}%`, user.id
     )
     const achievementMap = await getUnlockedAchievementTypeMap(db, users.map((item) => item.id))
     return res.json({ users: users.map((item) => ({
-      id: item.id, name: item.name, avatar: item.avatar,
+      id: item.id, name: item.name,
+      avatar: getPublicAvatarUrl(item.id, Boolean(item.has_avatar), { revision: item.avatar_revision }),
       ...getUserDecorationFields({
         search_avatar_frame: item.avatar_frame,
         search_avatar_overlay: item.avatar_overlay,
@@ -84,7 +89,8 @@ export const listConversations = async (req, res) => {
         c.last_message_at,
         CASE WHEN c.user1_id = ? THEN c.user2_id ELSE c.user1_id END as other_user_id,
         u.name as other_user_name,
-        u.avatar as other_user_avatar,
+        CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END as other_user_has_avatar,
+        u.avatar_revision as other_user_avatar_revision,
         u.avatar_frame as other_user_avatar_frame,
         u.avatar_overlay as other_user_avatar_overlay,
         u.equipped_title as other_user_equipped_title,
@@ -126,7 +132,10 @@ export const listConversations = async (req, res) => {
       conversations: conversations.map(conv => ({
         conversationId: conv.id,
         otherUser: {
-          id: conv.other_user_id, name: conv.other_user_name, avatar: conv.other_user_avatar,
+          id: conv.other_user_id, name: conv.other_user_name,
+          avatar: getPublicAvatarUrl(conv.other_user_id, Boolean(conv.other_user_has_avatar), {
+            revision: conv.other_user_avatar_revision,
+          }),
           ...getUserDecorationFields(conv, 'other_user', achievementMap.get(conv.other_user_id)),
         },
         lastMessage: conv.last_msg_id ? {
@@ -164,7 +173,10 @@ export const getConversation = async (req, res) => {
     const messageLimit = cursorRequested ? pageSize + 1 : pageSize
 
     const otherUser = await db.get(
-      `SELECT u.id, u.name, u.avatar, u.avatar_frame, u.avatar_overlay, u.equipped_title,
+      `SELECT u.id, u.name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS has_avatar,
+              u.avatar_revision,
+              u.avatar_frame, u.avatar_overlay, u.equipped_title,
               u.is_banned, us.xp
        FROM users u LEFT JOIN user_stats us ON us.user_id = u.id
        WHERE u.id = ?`,
@@ -176,7 +188,9 @@ export const getConversation = async (req, res) => {
 
     const messages = await db.all(
       `SELECT m.id, m.sender_id, m.content, m.is_read, m.created_at,
-              u.name as sender_name, u.avatar as sender_avatar,
+              u.name as sender_name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS sender_has_avatar,
+              u.avatar_revision as sender_avatar_revision,
               u.avatar_frame as sender_avatar_frame, u.avatar_overlay as sender_avatar_overlay,
               u.equipped_title as sender_equipped_title, us.xp as sender_xp
        FROM messages m
@@ -216,7 +230,10 @@ export const getConversation = async (req, res) => {
         const decoration = getUserDecorationFields(m, 'sender', achievementMap.get(m.sender_id))
         return {
           id: m.id, senderId: m.sender_id, senderName: m.sender_name,
-          senderAvatar: m.sender_avatar, content: m.content,
+          senderAvatar: getPublicAvatarUrl(m.sender_id, Boolean(m.sender_has_avatar), {
+            revision: m.sender_avatar_revision,
+          }),
+          content: m.content,
           senderAvatarFrame: decoration.avatarFrame,
           senderAvatarOverlay: decoration.avatarOverlay,
           senderDisplayTitle: decoration.displayTitle,
@@ -225,7 +242,10 @@ export const getConversation = async (req, res) => {
         }
       }),
       otherUser: {
-        id: otherUser.id, name: otherUser.name, avatar: otherUser.avatar,
+        id: otherUser.id, name: otherUser.name,
+        avatar: getPublicAvatarUrl(otherUser.id, Boolean(otherUser.has_avatar), {
+          revision: otherUser.avatar_revision,
+        }),
         ...getUserDecorationFields({
           other_avatar_frame: otherUser.avatar_frame,
           other_avatar_overlay: otherUser.avatar_overlay,

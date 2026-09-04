@@ -1,5 +1,5 @@
 // 每次发布更新版本号，activate 阶段会清理旧前端资源，避免旧 bundle 与新 HTML 混用。
-const CACHE_NAME = 'starstack-v4'
+const CACHE_NAME = 'starstack-v5'
 const STATIC_ASSETS = [
   '/',
   '/starstack.svg',
@@ -27,13 +27,32 @@ self.addEventListener('fetch', (event) => {
   // Skip non-GET and API requests
   if (request.method !== 'GET' || request.url.includes('/api/')) return
 
+  const url = new URL(request.url)
+  const isVersionedAsset = url.origin === self.location.origin
+    && url.pathname.startsWith('/assets/')
+    && /-[A-Za-z0-9_-]{8,}\.[a-z0-9]+$/i.test(url.pathname)
+
+  if (isVersionedAsset) {
+    event.respondWith(
+      caches.match(request).then(async (cached) => {
+        if (cached) return cached
+        const response = await fetch(request)
+        if (!response.ok) return response
+        const cache = await caches.open(CACHE_NAME)
+        await cache.put(request, response.clone())
+        return response
+      })
+    )
+    return
+  }
+
   event.respondWith(
     fetch(request)
       .then((response) => {
         // Cache successful responses for static assets
         if (response.ok && (request.url.match(/\.(js|css|svg|png|jpe?g|webp|gif|ico|woff2?)$/) || request.url.endsWith('/') || request.url.endsWith('/manifest.json'))) {
           const clone = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone))
+          event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(request, clone)))
         }
         return response
       })

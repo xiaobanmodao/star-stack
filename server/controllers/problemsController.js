@@ -28,6 +28,7 @@ import {
 import { normalizeProblemTags } from '../utils/problemTags.js'
 import { normalizeProblemMetadata, serializeProblemMetadata, serializePublicProblemMetadata } from '../utils/problemMetadata.js'
 import { decodePositiveIntegerCursor, encodeCursor } from '../utils/cursor.js'
+import { getPublicAvatarUrl } from '../utils/avatar.js'
 import { getRelatedProblemReason, rankRelatedProblems } from '../utils/relatedProblems.js'
 
 const recordProblemChange = async ({ db, problemId, status, changedBy, snapshot, fromStatus, toStatus, note }) => {
@@ -432,7 +433,9 @@ export const listSolutions = async (req, res) => {
 
     const solutions = await db.all(
       `SELECT dp.id, dp.user_id, dp.title, dp.like_count, dp.comment_count, dp.view_count, dp.created_at,
-              u.name as user_name, u.avatar as user_avatar
+              u.name as user_name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS user_has_avatar,
+              u.avatar_revision as user_avatar_revision
        FROM discussion_posts dp LEFT JOIN users u ON dp.user_id = u.id
        WHERE dp.problem_id = ? AND dp.is_solution = 1 ORDER BY dp.created_at DESC`,
       problemId
@@ -452,7 +455,10 @@ export const listSolutions = async (req, res) => {
 
     return res.json({
       solutions: solutions.map((s) => ({
-        id: s.id, userId: s.user_id, userName: s.user_name, userAvatar: s.user_avatar,
+        id: s.id, userId: s.user_id, userName: s.user_name,
+        userAvatar: getPublicAvatarUrl(s.user_id, Boolean(s.user_has_avatar), {
+          revision: s.user_avatar_revision,
+        }),
         title: s.title, likeCount: s.like_count, commentCount: s.comment_count,
         viewCount: s.view_count, createdAt: s.created_at, isSolution: true,
       })),

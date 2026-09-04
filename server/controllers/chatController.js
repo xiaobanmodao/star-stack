@@ -10,6 +10,7 @@ import { sseConnectionLimiter } from '../utils/connectionLimit.js'
 import { serializeDifficulty } from '../utils/difficulty.js'
 import { getDecorationIdentity, getUnlockedAchievementTypeMap } from '../utils/decorations.js'
 import { getLevelInfo } from '../stats.js'
+import { getPublicAvatarUrl } from '../utils/avatar.js'
 
 const CHAT_VALID_MODULES = new Set(['general', 'oj', 'jieya', 'starcode'])
 const chatRateLimits = new BoundedCache(5000, 1000)
@@ -43,7 +44,10 @@ const touchPresence = async (db, userId) => {
 }
 
 const formatChatMessage = (m) => ({
-  id: m.id, senderId: m.sender_id, senderName: m.sender_name, senderAvatar: m.sender_avatar,
+  id: m.id, senderId: m.sender_id, senderName: m.sender_name,
+  senderAvatar: getPublicAvatarUrl(m.sender_id, Boolean(m.sender_has_avatar), {
+    revision: m.sender_avatar_revision,
+  }),
   senderAvatarFrame: m.sender_avatar_frame || 'none',
   senderAvatarOverlay: m.sender_avatar_overlay || 'none',
   senderDisplayTitle: m.sender_display_title,
@@ -79,7 +83,9 @@ const attachMessageDecorations = async (db, messages) => {
 const loadChatMessageRows = async (db, whereSql, params, limit, beforeId) => {
   const beforeClause = beforeId ? 'AND cm.id < ?' : ''
   const rows = await db.all(
-    `SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar,
+    `SELECT cm.*, u.name as sender_name,
+            CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS sender_has_avatar,
+            u.avatar_revision as sender_avatar_revision,
             u.avatar_frame as sender_avatar_frame, u.avatar_overlay as sender_avatar_overlay,
             u.equipped_title as sender_equipped_title, us.xp as sender_xp,
             (SELECT COUNT(*) FROM chat_messages r WHERE r.thread_parent_id = cm.id) as thread_reply_count
@@ -186,7 +192,9 @@ const getRoomDetail = async (db, roomId) => {
   )
   if (!room) return null
   const members = await db.all(
-    `SELECT m.user_id, m.role, m.joined_at, u.name as user_name, u.avatar as user_avatar,
+    `SELECT m.user_id, m.role, m.joined_at, u.name as user_name,
+            CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS user_has_avatar,
+            u.avatar_revision as user_avatar_revision,
             u.avatar_frame as user_avatar_frame, u.avatar_overlay as user_avatar_overlay,
             u.equipped_title as user_equipped_title, us.xp as user_xp,
             (SELECT last_seen_at FROM user_presence p WHERE p.user_id = m.user_id) as last_seen_at
@@ -209,7 +217,10 @@ const getRoomDetail = async (db, roomId) => {
         achievementMap.get(m.user_id),
       )
       return {
-        userId: m.user_id, userName: m.user_name, userAvatar: m.user_avatar, role: m.role,
+        userId: m.user_id, userName: m.user_name,
+        userAvatar: getPublicAvatarUrl(m.user_id, Boolean(m.user_has_avatar), {
+          revision: m.user_avatar_revision,
+        }), role: m.role,
         ...identity,
         online: Boolean(m.last_seen_at) && Date.now() - new Date(m.last_seen_at).getTime() <= PRESENCE_ONLINE_MS,
       }
@@ -548,7 +559,9 @@ export const sendRoomMessage = async (req, res) => {
     )
     await touchPresence(db, user.id)
     const rows = await db.all(
-      `SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar,
+      `SELECT cm.*, u.name as sender_name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS sender_has_avatar,
+              u.avatar_revision as sender_avatar_revision,
               u.avatar_frame as sender_avatar_frame, u.avatar_overlay as sender_avatar_overlay,
               u.equipped_title as sender_equipped_title, us.xp as sender_xp
        FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id
@@ -655,7 +668,9 @@ export const getThreadReplies = async (req, res) => {
     if (!parent) return res.status(404).json({ message: '消息不存在' })
     if (!(await assertChatScopeAccess(db, user, parent))) return res.status(403).json({ message: '需要加入后才能查看' })
     const rows = await db.all(
-      `SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar,
+      `SELECT cm.*, u.name as sender_name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS sender_has_avatar,
+              u.avatar_revision as sender_avatar_revision,
               u.avatar_frame as sender_avatar_frame, u.avatar_overlay as sender_avatar_overlay,
               u.equipped_title as sender_equipped_title, us.xp as sender_xp,
               (SELECT COUNT(*) FROM chat_messages r WHERE r.thread_parent_id = cm.id) as thread_reply_count
@@ -696,7 +711,9 @@ export const addThreadReply = async (req, res) => {
     await touchPresence(db, user.id)
     await notifyMentions(db, text, user.id, 'mention', parent.channel_key ? 'channel' : 'room', parent.channel_key || parent.room_id, (id) => `在一条消息的回复中提到了你（@${id}）`)
     const rows = await db.all(
-      `SELECT cm.*, u.name as sender_name, u.avatar as sender_avatar,
+      `SELECT cm.*, u.name as sender_name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS sender_has_avatar,
+              u.avatar_revision as sender_avatar_revision,
               u.avatar_frame as sender_avatar_frame, u.avatar_overlay as sender_avatar_overlay,
               u.equipped_title as sender_equipped_title, us.xp as sender_xp,
               0 as thread_reply_count
@@ -988,14 +1005,29 @@ export const searchChat = async (req, res) => {
     const limit = Math.min(30, Math.max(1, parseInt(req.query.limit) || 20))
     const rows = await db.all(
       `SELECT cm.id, cm.channel_key, cm.room_id, cm.sender_id, cm.content, cm.created_at,
-              u.name as sender_name, u.avatar as sender_avatar, cr.name as room_name
+              u.name as sender_name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS sender_has_avatar,
+              u.avatar_revision as sender_avatar_revision,
+              cr.name as room_name
        FROM chat_messages cm LEFT JOIN users u ON cm.sender_id = u.id LEFT JOIN chat_rooms cr ON cm.room_id = cr.id
        WHERE cm.content LIKE ?
          AND (cm.channel_key IS NOT NULL OR cm.room_id IN (SELECT id FROM chat_rooms WHERE type = 'public' UNION SELECT room_id FROM chat_room_members WHERE user_id = ?))
          AND cm.thread_parent_id IS NULL ORDER BY cm.id DESC LIMIT ?`,
       `%${q}%`, user.id, limit
     )
-    return res.json({ messages: rows.map((m) => ({ id: m.id, channelKey: m.channel_key, roomId: m.room_id, roomName: m.room_name, senderId: m.sender_id, senderName: m.sender_name, senderAvatar: m.sender_avatar, content: m.content, createdAt: m.created_at })) })
+    return res.json({ messages: rows.map((m) => ({
+      id: m.id,
+      channelKey: m.channel_key,
+      roomId: m.room_id,
+      roomName: m.room_name,
+      senderId: m.sender_id,
+      senderName: m.sender_name,
+      senderAvatar: getPublicAvatarUrl(m.sender_id, Boolean(m.sender_has_avatar), {
+        revision: m.sender_avatar_revision,
+      }),
+      content: m.content,
+      createdAt: m.created_at,
+    })) })
   } catch (error) {
     console.error('Failed to search chat messages:', error)
     return res.status(500).json({ message: '搜索失败' })
@@ -1101,7 +1133,9 @@ export const getActivityLeaderboard = async (req, res) => {
     const days = Math.min(30, Math.max(1, parseInt(req.query.days) || 7))
     const since = localDay(new Date(Date.now() - (days - 1) * 86400000))
     const rows = await db.all(
-      `SELECT l.user_id, u.name as user_name, u.avatar as user_avatar,
+      `SELECT l.user_id, u.name as user_name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS user_has_avatar,
+              u.avatar_revision as user_avatar_revision,
               u.avatar_frame as user_avatar_frame, u.avatar_overlay as user_avatar_overlay,
               u.equipped_title as user_equipped_title, us.xp as user_xp,
               SUM(l.score) as score
@@ -1130,7 +1164,10 @@ export const getActivityLeaderboard = async (req, res) => {
           achievementMap.get(r.user_id),
         )
         return {
-          rank: index + 1, userId: r.user_id, userName: r.user_name, userAvatar: r.user_avatar,
+          rank: index + 1, userId: r.user_id, userName: r.user_name,
+          userAvatar: getPublicAvatarUrl(r.user_id, Boolean(r.user_has_avatar), {
+            revision: r.user_avatar_revision,
+          }),
           avatarFrame: identity.avatarFrame, avatarOverlay: identity.avatarOverlay,
           displayTitle: identity.displayTitle, displayTitleIcon: identity.displayTitleIcon,
           score: r.score,

@@ -9,9 +9,11 @@ import {
   updateBio,
   markOnboarded,
 } from '../controllers/userController.js'
+import { getUserAvatar } from '../controllers/avatarController.js'
 
 const router = Router()
 
+router.get('/users/:id/avatar', getUserAvatar)
 router.get('/user/profile/:userId', getUserProfile)
 router.get('/user/heatmap/:userId', getUserHeatmap)
 router.get('/user/rating-history/:userId', getRatingHistory)
