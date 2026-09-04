@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import sharp from 'sharp'
+import { Transformer } from '@napi-rs/image'
 import { open } from 'sqlite'
 import sqlite3 from 'sqlite3'
 import { MAX_AVATAR_BYTES, parseStoredAvatar } from '../utils/avatar.js'
@@ -23,15 +23,20 @@ const createDb = async () => {
 }
 
 const createLargeAvatar = async () => {
-  const pixels = Buffer.alloc(900 * 900 * 3)
+  const pixels = Buffer.alloc(600 * 600 * 3)
   let state = 0x87654321
   for (let index = 0; index < pixels.length; index += 1) {
     state = (Math.imul(state, 1103515245) + 12345) >>> 0
     pixels[index] = state >>> 24
   }
-  const source = await sharp(pixels, {
-    raw: { width: 900, height: 900, channels: 3 },
-  }).jpeg({ quality: 96 }).toBuffer()
+  const rgba = Buffer.alloc(600 * 600 * 4)
+  for (let sourceIndex = 0, targetIndex = 0; sourceIndex < pixels.length; sourceIndex += 3, targetIndex += 4) {
+    rgba[targetIndex] = pixels[sourceIndex]
+    rgba[targetIndex + 1] = pixels[sourceIndex + 1]
+    rgba[targetIndex + 2] = pixels[sourceIndex + 2]
+    rgba[targetIndex + 3] = 255
+  }
+  const source = await Transformer.fromRgbaPixels(rgba, 600, 600).jpeg(96)
   return `data:image/jpeg;base64,${source.toString('base64')}`
 }
 

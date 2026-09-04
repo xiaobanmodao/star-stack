@@ -1,10 +1,13 @@
-import sharp from 'sharp'
+import {
+  ResizeFilterType,
+  ResizeFit,
+  Transformer,
+} from '@napi-rs/image'
 
 const STORED_AVATAR_RE = /^data:(image\/(?:png|jpe?g|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/i
 const SUPPORTED_FORMATS = new Set(['png', 'jpeg', 'webp', 'gif'])
 const MAX_AVATAR_SOURCE_BYTES = 2 * 1024 * 1024
 const MAX_AVATAR_INPUT_PIXELS = 16_000_000
-const MAX_AVATAR_FRAMES = 120
 const AVATAR_ATTEMPTS = [
   { size: 512, quality: 82 },
   { size: 512, quality: 70 },
@@ -51,13 +54,28 @@ export const compressAvatarDataUrl = async (value) => {
     throw new Error('图片过大，请选择小于 2MB 的图片')
   }
 
+  if (parsed.contentType === 'image/gif') {
+    const signature = parsed.buffer.subarray(0, 6).toString('ascii')
+    const width = parsed.buffer.length >= 10 ? parsed.buffer.readUInt16LE(6) : 0
+    const height = parsed.buffer.length >= 10 ? parsed.buffer.readUInt16LE(8) : 0
+    const hasImageFrame = parsed.buffer.includes(0x2c, 10)
+    const hasTrailer = parsed.buffer.at(-1) === 0x3b
+    if (!['GIF87a', 'GIF89a'].includes(signature)
+      || !width || !height
+      || width * height > MAX_AVATAR_INPUT_PIXELS
+      || !hasImageFrame
+      || !hasTrailer) {
+      throw new Error('无法识别图片内容')
+    }
+    if (parsed.buffer.length >= MAX_AVATAR_BYTES) {
+      throw new Error('动态头像必须小于 200KB')
+    }
+    return `data:image/gif;base64,${parsed.buffer.toString('base64')}`
+  }
+
   let metadata
   try {
-    metadata = await sharp(parsed.buffer, {
-      animated: true,
-      limitInputPixels: MAX_AVATAR_INPUT_PIXELS,
-      sequentialRead: true,
-    }).metadata()
+    metadata = await new Transformer(parsed.buffer).metadata()
   } catch {
     throw new Error('无法识别图片内容')
   }
@@ -68,30 +86,27 @@ export const compressAvatarDataUrl = async (value) => {
     : parsed.contentType.slice('image/'.length)
   if (metadata.format !== expectedFormat) throw new Error('图片格式与内容不匹配')
   if (!metadata.width || !metadata.height) throw new Error('无法识别图片尺寸')
-  if ((metadata.pages || 1) > MAX_AVATAR_FRAMES) throw new Error('动态头像帧数过多')
+  if (metadata.width * metadata.height > MAX_AVATAR_INPUT_PIXELS) {
+    throw new Error('图片像素尺寸过大')
+  }
+
+  const rotated = [5, 6, 7, 8].includes(metadata.orientation)
+  const sourceWidth = rotated ? metadata.height : metadata.width
+  const sourceHeight = rotated ? metadata.width : metadata.height
 
   for (const attempt of AVATAR_ATTEMPTS) {
-    let pipeline = sharp(parsed.buffer, {
-      animated: true,
-      limitInputPixels: MAX_AVATAR_INPUT_PIXELS,
-      sequentialRead: true,
-    }).rotate()
-
-    pipeline = pipeline.resize({
-      width: attempt.size,
-      height: attempt.size,
-      fit: 'inside',
-      withoutEnlargement: true,
-    })
-
-    const output = await pipeline.webp({
-      quality: attempt.quality,
-      alphaQuality: Math.max(attempt.quality, 50),
-      effort: 4,
-      smartSubsample: true,
-      loop: metadata.loop,
-      delay: metadata.delay,
-    }).toBuffer()
+    const scale = Math.min(1, attempt.size / Math.max(sourceWidth, sourceHeight))
+    const width = Math.max(1, Math.round(sourceWidth * scale))
+    const height = Math.max(1, Math.round(sourceHeight * scale))
+    const output = await new Transformer(parsed.buffer)
+      .rotate()
+      .resize({
+        width,
+        height,
+        fit: ResizeFit.Inside,
+        filter: ResizeFilterType.Lanczos3,
+      })
+      .webp(attempt.quality)
 
     if (output.length < MAX_AVATAR_BYTES) {
       return `data:image/webp;base64,${output.toString('base64')}`

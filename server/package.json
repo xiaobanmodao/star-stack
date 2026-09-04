@@ -9,11 +9,11 @@
     "migrate": "node migrate.js"
   },
   "dependencies": {
+    "@napi-rs/image": "1.14.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "express": "^5.2.1",
     "nodemailer": "^9.0.5",
-    "sharp": "0.35.3",
     "sqlite": "^5.1.1",
     "sqlite3": "^6.0.1"
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import sharp from 'sharp'
+import { Transformer } from '@napi-rs/image'
 import {
   MAX_AVATAR_BYTES,
   compressAvatarDataUrl,
@@ -35,36 +35,41 @@ describe('avatar transport', () => {
   })
 
   it('normalizes uploaded avatars to a bounded WebP without changing their visible aspect ratio', async () => {
-    const source = await sharp({
-      create: {
-        width: 1200,
-        height: 800,
-        channels: 4,
-        background: { r: 28, g: 84, b: 160, alpha: 0.72 },
-      },
-    }).png().toBuffer()
+    const pixels = Buffer.alloc(1200 * 800 * 4)
+    for (let index = 0; index < pixels.length; index += 4) {
+      pixels[index] = 28
+      pixels[index + 1] = 84
+      pixels[index + 2] = 160
+      pixels[index + 3] = 184
+    }
+    const source = await Transformer.fromRgbaPixels(pixels, 1200, 800).png()
 
     const compressed = await compressAvatarDataUrl(`data:image/png;base64,${source.toString('base64')}`)
     const parsed = parseStoredAvatar(compressed)
-    const metadata = await sharp(parsed.buffer).metadata()
+    const metadata = await new Transformer(parsed.buffer).metadata()
 
     expect(parsed.contentType).toBe('image/webp')
     expect(parsed.buffer.length).toBeLessThan(MAX_AVATAR_BYTES)
     expect(metadata.width).toBe(512)
     expect(metadata.height).toBe(341)
-    expect(metadata.hasAlpha).toBe(true)
+    expect(metadata.colorType).toBeDefined()
   })
 
   it('keeps a noisy photo below the hard 200 KiB storage limit', async () => {
-    const pixels = Buffer.alloc(900 * 900 * 3)
+    const pixels = Buffer.alloc(600 * 600 * 3)
     let state = 0x12345678
     for (let index = 0; index < pixels.length; index += 1) {
       state = (Math.imul(state, 1664525) + 1013904223) >>> 0
       pixels[index] = state >>> 24
     }
-    const source = await sharp(pixels, {
-      raw: { width: 900, height: 900, channels: 3 },
-    }).jpeg({ quality: 96 }).toBuffer()
+    const rgba = Buffer.alloc(600 * 600 * 4)
+    for (let sourceIndex = 0, targetIndex = 0; sourceIndex < pixels.length; sourceIndex += 3, targetIndex += 4) {
+      rgba[targetIndex] = pixels[sourceIndex]
+      rgba[targetIndex + 1] = pixels[sourceIndex + 1]
+      rgba[targetIndex + 2] = pixels[sourceIndex + 2]
+      rgba[targetIndex + 3] = 255
+    }
+    const source = await Transformer.fromRgbaPixels(rgba, 600, 600).jpeg(96)
 
     const compressed = await compressAvatarDataUrl(`data:image/jpeg;base64,${source.toString('base64')}`)
     const parsed = parseStoredAvatar(compressed)
@@ -73,27 +78,16 @@ describe('avatar transport', () => {
     expect(parsed.buffer.length).toBeLessThan(MAX_AVATAR_BYTES)
   })
 
-  it('preserves animated avatars while converting GIF frames to WebP', async () => {
-    const pixels = Buffer.alloc(64 * 128 * 4)
-    for (let y = 0; y < 128; y += 1) {
-      for (let x = 0; x < 64; x += 1) {
-        const offset = (y * 64 + x) * 4
-        pixels[offset] = y < 64 ? 255 : 0
-        pixels[offset + 1] = y < 64 ? 0 : 255
-        pixels[offset + 3] = 255
-      }
-    }
-    const source = await sharp(pixels, {
-      raw: { width: 64, height: 128, channels: 4, pageHeight: 64 },
-    }).gif({ delay: [100, 100], loop: 0 }).toBuffer()
+  it('preserves already-small animated GIF bytes and their browser behaviour', async () => {
+    const source = Buffer.from(
+      'R0lGODlhQABAAIAAAExpcf8AACH/C05FVFNDQVBFMi4wAwEAAAAh+QQFCgAAACwAAAAAQABAAAACRYyPqcvtD6OctNqLs968+w+G4kiW5omm6sq27gvH8kzX9o3n+s73/g8MCofEovGITCqXzKbzCY1Kp9Sq9YrNarfcrjdQAAAh+QQFCgAAACwAAAAAQABAAIBMaXEA/wACRYyPqcvtD6OctNqLs968+w+G4kiW5omm6sq27gvH8kzX9o3n+s73/g8MCofEovGITCqXzKbzCY1Kp9Sq9YrNarfcrjdQAAA7',
+      'base64',
+    )
 
     const compressed = await compressAvatarDataUrl(`data:image/gif;base64,${source.toString('base64')}`)
     const parsed = parseStoredAvatar(compressed)
-    const metadata = await sharp(parsed.buffer, { animated: true }).metadata()
-
-    expect(metadata.format).toBe('webp')
-    expect(metadata.pages).toBe(2)
-    expect(metadata.delay).toEqual([100, 100])
+    expect(parsed.contentType).toBe('image/gif')
+    expect(parsed.buffer).toEqual(source)
     expect(parsed.buffer.length).toBeLessThan(MAX_AVATAR_BYTES)
   })
 

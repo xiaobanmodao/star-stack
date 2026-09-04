@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import sharp from 'sharp'
+import { Transformer } from '@napi-rs/image'
 import { MAX_AVATAR_BYTES, parseStoredAvatar } from '../utils/avatar.js'
 
 const mocks = vi.hoisted(() => ({
@@ -74,14 +74,14 @@ describe('avatar controller', () => {
   })
 
   it('compresses an upload before storage and preserves decoration fields', async () => {
-    const source = await sharp({
-      create: {
-        width: 1400,
-        height: 900,
-        channels: 3,
-        background: { r: 42, g: 88, b: 170 },
-      },
-    }).png().toBuffer()
+    const pixels = Buffer.alloc(1400 * 900 * 4)
+    for (let index = 0; index < pixels.length; index += 4) {
+      pixels[index] = 42
+      pixels[index + 1] = 88
+      pixels[index + 2] = 170
+      pixels[index + 3] = 255
+    }
+    const source = await Transformer.fromRgbaPixels(pixels, 1400, 900).png()
     const db = {
       get: vi.fn().mockResolvedValue({ avatar_revision: 6 }),
       run: vi.fn(),

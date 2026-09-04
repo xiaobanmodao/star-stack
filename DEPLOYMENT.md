@@ -273,7 +273,7 @@ BACKUP_FILE=/www/backup/starstack/starstack_YYYYMMDD_HHMMSS.db.gz npm run db:ver
 
 ### 一次性压缩历史头像
 
-新上传的 PNG/JPG/WebP/GIF 会由服务端转为 WebP，并在写入前保证图片数据严格小于 200 KiB。头像框、头像叠加层和称号字段不会被修改。旧数据库升级后，先停止 API，再使用默认的 dry-run 查看候选数量；命令不会输出头像内容或用户资料：
+新上传的 PNG/JPG/WebP 会由服务端转为 WebP，并在写入前保证图片数据严格小于 200 KiB；小于限制的 GIF 会原样保留动画，超限 GIF 会被拒绝，避免压缩时丢失动画帧。头像框、头像叠加层和称号字段不会被修改。旧数据库升级后，先停止 API，再使用默认的 dry-run 查看候选数量；命令不会输出头像内容或用户资料：
 
 ```bash
 cd /opt/star-stack
