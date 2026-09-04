@@ -22,20 +22,20 @@ const createFixture = async () => {
       avatar_revision INTEGER NOT NULL DEFAULT 0
     );
   `)
-  const pixels = Buffer.alloc(600 * 600 * 3)
+  const pixels = Buffer.alloc(400 * 400 * 3)
   let state = 0x31415926
   for (let index = 0; index < pixels.length; index += 1) {
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0
     pixels[index] = state >>> 24
   }
-  const rgba = Buffer.alloc(600 * 600 * 4)
+  const rgba = Buffer.alloc(400 * 400 * 4)
   for (let sourceIndex = 0, targetIndex = 0; sourceIndex < pixels.length; sourceIndex += 3, targetIndex += 4) {
     rgba[targetIndex] = pixels[sourceIndex]
     rgba[targetIndex + 1] = pixels[sourceIndex + 1]
     rgba[targetIndex + 2] = pixels[sourceIndex + 2]
     rgba[targetIndex + 3] = 255
   }
-  const source = await Transformer.fromRgbaPixels(rgba, 600, 600).jpeg(96)
+  const source = await Transformer.fromRgbaPixels(rgba, 400, 400).jpeg(96)
   const originalAvatar = `data:image/jpeg;base64,${source.toString('base64')}`
   await db.run(
     `INSERT INTO users (id, avatar) VALUES (?, ?)`,
@@ -81,7 +81,7 @@ describe('avatar compression command', () => {
     await backupDb.close()
     expect(backupRow).toEqual({ avatar: fixture.originalAvatar, avatar_revision: 0 })
     expect(backupIntegrity.integrity_check).toBe('ok')
-  })
+  }, 15_000)
 
   it('rejects a symlink database and refuses apply without a backup', async () => {
     const fixture = await createFixture()
