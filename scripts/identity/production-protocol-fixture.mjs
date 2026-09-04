@@ -117,7 +117,8 @@ const openProductionDatabase = async (paths) => {
     for (const column of [
       'id', 'name', 'password_hash', 'email', 'email_verified_at', 'is_admin', 'is_banned',
       'account_subject', 'account_status', 'account_tombstoned_at', 'auth_generation',
-      'onboarded_at', 'avatar', 'bio', 'avatar_frame', 'avatar_overlay', 'equipped_title',
+      'onboarded_at', 'avatar', 'avatar_revision', 'bio',
+      'avatar_frame', 'avatar_overlay', 'equipped_title',
       'created_at',
     ]) {
       if (!userColumns.has(column)) throw new Error(`Production users schema is missing ${column}`)

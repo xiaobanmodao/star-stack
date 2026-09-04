@@ -6,13 +6,17 @@ import { getFollowRelations } from '../utils/socialHelpers.js'
 import { localDay } from '../utils/dateHelpers.js'
 import { getDecorationIdentity, getUnlockedAchievementTypes } from '../utils/decorations.js'
 import { getPracticeRating } from '../utils/rating.js'
+import { getPublicAvatarUrl } from '../utils/avatar.js'
 
 export const getUserProfile = async (req, res) => {
   try {
     const db = await getDb()
     const userId = req.params.userId
     const user = await db.get(
-      `SELECT id, name, avatar, avatar_frame, avatar_overlay, equipped_title, rating, created_at, is_admin FROM users WHERE id = ?`, userId
+      `SELECT id, name,
+              CASE WHEN avatar IS NULL OR avatar = '' THEN 0 ELSE 1 END AS has_avatar,
+              avatar_revision, avatar_frame, avatar_overlay, equipped_title, rating, created_at, is_admin
+       FROM users WHERE id = ?`, userId
     )
     if (!user) return res.status(404).json({ message: '用户不存在' })
 
@@ -32,7 +36,8 @@ export const getUserProfile = async (req, res) => {
 
     return res.json({
       user: {
-        id: user.id, name: user.name, avatar: user.avatar,
+        id: user.id, name: user.name,
+        avatar: getPublicAvatarUrl(user.id, Boolean(user.has_avatar), { revision: user.avatar_revision }),
         createdAt: user.created_at, isAdmin: user.is_admin === 1, rating: getPracticeRating(user.rating),
         ...levelInfo, ...getDecorationIdentity(user, levelInfo, achievementTypes),
       },
@@ -184,7 +189,10 @@ export const getSocialProfile = async (req, res) => {
     const db = await getDb()
     const targetId = req.params.id
     const target = await db.get(
-      `SELECT id, name, avatar, avatar_frame, avatar_overlay, equipped_title, is_admin, bio, created_at FROM users WHERE id = ?`, targetId
+      `SELECT id, name,
+              CASE WHEN avatar IS NULL OR avatar = '' THEN 0 ELSE 1 END AS has_avatar,
+              avatar_revision, avatar_frame, avatar_overlay, equipped_title, is_admin, bio, created_at
+       FROM users WHERE id = ?`, targetId
     )
     if (!target) return res.status(404).json({ message: '用户不存在' })
 
@@ -210,7 +218,8 @@ export const getSocialProfile = async (req, res) => {
 
     return res.json({
       user: {
-        id: target.id, name: target.name, avatar: target.avatar,
+        id: target.id, name: target.name,
+        avatar: getPublicAvatarUrl(target.id, Boolean(target.has_avatar), { revision: target.avatar_revision }),
         isAdmin: Boolean(target.is_admin), bio: target.bio || '', createdAt: target.created_at,
         ...levelInfo, ...getDecorationIdentity(target, levelInfo, achievementTypes),
       },

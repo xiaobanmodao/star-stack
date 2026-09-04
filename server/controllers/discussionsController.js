@@ -8,6 +8,7 @@ import { createNotification, notifyMentions } from '../utils/notifications.js'
 import { bumpChatStat } from '../utils/chatStats.js'
 import { BoundedCache } from '../utils/boundedCache.js'
 import { recordAdminAction } from '../utils/adminAudit.js'
+import { getPublicAvatarUrl } from '../utils/avatar.js'
 
 const VALID_MODULES = new Set(['general', 'oj', 'jieya', 'starcode'])
 const postRateLimits = new BoundedCache(5000, 10000)
@@ -75,7 +76,9 @@ export const listDiscussions = async (req, res) => {
     const posts = await db.all(
       `SELECT dp.id, dp.user_id, dp.title, dp.content, dp.problem_id, dp.module_key, dp.view_count, dp.like_count,
               dp.comment_count, dp.is_pinned, dp.created_at, dp.updated_at,
-              u.name as user_name, u.avatar as user_avatar,
+              u.name as user_name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS user_has_avatar,
+              u.avatar_revision as user_avatar_revision,
               u.avatar_frame as user_avatar_frame, u.avatar_overlay as user_avatar_overlay,
               u.equipped_title as user_equipped_title, us.xp as user_xp,
               p.title as problem_title
@@ -102,7 +105,10 @@ export const listDiscussions = async (req, res) => {
     const achievementMap = await getUnlockedAchievementTypeMap(db, posts.map((post) => post.user_id))
     return res.json({
       posts: posts.map(p => ({
-        id: p.id, userId: p.user_id, userName: p.user_name, userAvatar: p.user_avatar,
+        id: p.id, userId: p.user_id, userName: p.user_name,
+        userAvatar: getPublicAvatarUrl(p.user_id, Boolean(p.user_has_avatar), {
+          revision: p.user_avatar_revision,
+        }),
         ...getUserDecorationFields(p, 'user', achievementMap.get(p.user_id)),
         title: p.title, content: p.content, problemId: p.problem_id, problemTitle: p.problem_title,
         moduleKey: p.module_key || 'general',
@@ -125,7 +131,9 @@ export const getDiscussion = async (req, res) => {
     if (!postId) return res.status(400).json({ message: '无效的帖子ID' })
 
     const post = await db.get(
-      `SELECT dp.*, u.name as user_name, u.avatar as user_avatar,
+      `SELECT dp.*, u.name as user_name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS user_has_avatar,
+              u.avatar_revision as user_avatar_revision,
               u.avatar_frame as user_avatar_frame, u.avatar_overlay as user_avatar_overlay,
               u.equipped_title as user_equipped_title, us.xp as user_xp,
               p.title as problem_title
@@ -158,7 +166,9 @@ export const getDiscussion = async (req, res) => {
     }
 
     const comments = await db.all(
-      `SELECT dc.*, u.name as user_name, u.avatar as user_avatar,
+      `SELECT dc.*, u.name as user_name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS user_has_avatar,
+              u.avatar_revision as user_avatar_revision,
               u.avatar_frame as user_avatar_frame, u.avatar_overlay as user_avatar_overlay,
               u.equipped_title as user_equipped_title, us.xp as user_xp
        FROM discussion_comments dc LEFT JOIN users u ON dc.user_id = u.id
@@ -189,7 +199,10 @@ export const getDiscussion = async (req, res) => {
     for (const c of comments) {
       commentMap.set(c.id, {
         id: c.id, postId: c.post_id, userId: c.user_id,
-        userName: c.user_name, userAvatar: c.user_avatar,
+        userName: c.user_name,
+        userAvatar: getPublicAvatarUrl(c.user_id, Boolean(c.user_has_avatar), {
+          revision: c.user_avatar_revision,
+        }),
         ...getUserDecorationFields(c, 'user', achievementMap.get(c.user_id)),
         content: c.content, parentId: c.parent_id,
         likeCount: c.like_count, liked: commentLikedSet.has(c.id),
@@ -210,7 +223,10 @@ export const getDiscussion = async (req, res) => {
     return res.json({
       post: {
         id: post.id, userId: post.user_id, userName: post.user_name,
-        userAvatar: post.user_avatar, title: post.title, content: post.content,
+        userAvatar: getPublicAvatarUrl(post.user_id, Boolean(post.user_has_avatar), {
+          revision: post.user_avatar_revision,
+        }),
+        title: post.title, content: post.content,
         ...getUserDecorationFields(post, 'user', achievementMap.get(post.user_id)),
         problemId: post.problem_id, problemTitle: post.problem_title,
         moduleKey: post.module_key,

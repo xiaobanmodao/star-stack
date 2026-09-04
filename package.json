@@ -34,6 +34,7 @@
     "identity:production:migrate-systemd": "node scripts/identity/migrate-pm2-to-systemd-credentials.mjs",
     "db:verify": "node server/verify-database.js",
     "db:verify-backup": "node server/verify-backup.js",
+    "avatars:compress": "node server/compress-avatars.js",
     "test:release": "node scripts/release-check.mjs",
     "stress": "node scripts/stress-test.mjs",
     "test:watch": "vitest",

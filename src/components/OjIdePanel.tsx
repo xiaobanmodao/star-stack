@@ -1,12 +1,10 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
-import Editor, { loader } from '@monaco-editor/react'
+import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { conf as cppConf, language as baseCppLanguage } from 'monaco-editor/esm/vs/basic-languages/cpp/cpp.js'
 import CustomSelect from './CustomSelect'
 import LoadingState from './ui/LoadingState'
-
-// Pre-configure Monaco loader to start fetching immediately on import
-loader.config({ 'vs/nls': { availableLanguages: { '*': '' } } })
+import '../monaco'
 
 const CPP_STANDARD_TYPES = [
   'string', 'wstring', 'u16string', 'u32string', 'vector', 'array', 'deque', 'list', 'forward_list',

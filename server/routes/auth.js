@@ -12,8 +12,8 @@ import {
   revokeSession,
   updateName,
   updatePassword,
-  updateAvatar,
 } from '../controllers/authController.js'
+import { updateAvatar } from '../controllers/avatarController.js'
 import { getMyDecorations, updateMyDecorations } from '../controllers/decorationController.js'
 import { listMyConnectedApps, revokeMyConnectedApp } from '../controllers/connectedAppsController.js'
 import { retireLegacySso } from '../controllers/legacySsoController.js'
@@ -24,6 +24,7 @@ const loginLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 30, mess
 const registerLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 10, message: '注册请求过于频繁，请稍后再试' })
 const emailCodeLimiter = createRateLimiter({ windowMs: 60 * 60 * 1000, max: 10, message: '验证码请求过于频繁，请稍后再试' })
 const connectedAppRevokeLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 10, message: '应用撤销请求过于频繁，请稍后再试' })
+const avatarUploadLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 10, message: '头像更新过于频繁，请稍后再试' })
 
 router.all('/sso/session', retireLegacySso)
 router.post('/register', registerLimiter, register)
@@ -38,7 +39,7 @@ router.post('/me/sessions/revoke-others', revokeOtherSessions)
 router.delete('/me/sessions/:id', revokeSession)
 router.patch('/me/name', updateName)
 router.post('/me/password', updatePassword)
-router.post('/me/avatar', updateAvatar)
+router.post('/me/avatar', avatarUploadLimiter, updateAvatar)
 router.get('/me/decorations', getMyDecorations)
 router.patch('/me/decorations', updateMyDecorations)
 router.get('/me/connected-apps', listMyConnectedApps)

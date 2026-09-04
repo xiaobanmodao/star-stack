@@ -44,6 +44,7 @@ const createDatabase = async (root) => {
       is_banned INTEGER NOT NULL DEFAULT 0,
       onboarded_at TEXT,
       avatar TEXT,
+      avatar_revision INTEGER NOT NULL DEFAULT 0,
       bio TEXT DEFAULT '',
       avatar_frame TEXT NOT NULL DEFAULT 'none',
       avatar_overlay TEXT NOT NULL DEFAULT 'none',

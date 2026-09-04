@@ -128,10 +128,15 @@ export const fetchJson = async <T = unknown>(url: string, options: FetchJsonOpti
 let ojIdeAssetsPreloadPromise: Promise<unknown> | null = null
 export const preloadOjIdeAssets = () => {
   if (!ojIdeAssetsPreloadPromise) {
-    ojIdeAssetsPreloadPromise = Promise.allSettled([
-      import('./components/OjIdePanel'),
-      import('@monaco-editor/react').then(m => m.loader.init()),
-    ])
+    ojIdeAssetsPreloadPromise = import('./components/OjIdePanel')
+      .then(() => import('./monaco'))
+      .then(({ initializeMonaco }) => initializeMonaco())
+      .catch((error) => {
+        // A transient chunk/network failure must remain retryable when the
+        // user clicks "打开编辑器" again.
+        ojIdeAssetsPreloadPromise = null
+        throw error
+      })
   }
   return ojIdeAssetsPreloadPromise
 }

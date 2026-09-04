@@ -21,6 +21,7 @@ import {
   getDifficultyRank,
   serializeDifficulty,
 } from './utils/difficulty.js'
+import { getPublicAvatarUrl } from './utils/avatar.js'
 import {
   getJudgeQueueSnapshot,
   recoverPendingSubmissions,
@@ -399,11 +400,24 @@ app.get('/api/oj/recent-ac', async (req, res) => {
   try {
     const db = await getDb()
     const recentAC = await db.all(
-      `SELECT s.created_at, u.name as user_name, u.avatar, p.id as problem_id, p.title as problem_title
+      `SELECT s.created_at, s.user_id, u.name as user_name,
+              CASE WHEN u.avatar IS NULL OR u.avatar = '' THEN 0 ELSE 1 END AS user_has_avatar,
+              u.avatar_revision as user_avatar_revision,
+              p.id as problem_id, p.title as problem_title
        FROM submissions s JOIN users u ON s.user_id = u.id JOIN problems p ON s.problem_id = p.id
        WHERE s.status = 'Accepted' AND p.status = 'published' ORDER BY s.created_at DESC LIMIT 10`
     )
-    return res.json({ recentAC })
+    return res.json({
+      recentAC: recentAC.map(({
+        user_has_avatar: hasAvatar,
+        user_avatar_revision: avatarRevision,
+        user_id: userId,
+        ...item
+      }) => ({
+        ...item,
+        avatar: getPublicAvatarUrl(userId, Boolean(hasAvatar), { revision: avatarRevision }),
+      })),
+    })
   } catch (error) {
     console.error('Failed to get recent AC:', error)
     return res.status(500).json({ message: '获取动态失败' })

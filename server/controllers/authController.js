@@ -25,6 +25,7 @@ import {
 } from '../utils/emailVerification.js'
 import { createAccountSubject } from '../utils/accountIdentityMigration.js'
 import { changeAccountPassword } from '../services/accountLifecycle.js'
+import { getPublicAvatarUrl } from '../utils/avatar.js'
 
 const createToken = () => randomBytes(24).toString('hex')
 export const getSessionFingerprint = (token) => createHash('sha256').update(String(token)).digest('hex').slice(0, 16)
@@ -348,7 +349,9 @@ export const login = async (req, res) => {
   const db = await getDb()
   const user = await db.get(
     `SELECT id, name, password_hash, email, is_admin, is_banned, account_status,
-            avatar, avatar_frame, avatar_overlay, equipped_title, onboarded_at
+            CASE WHEN avatar IS NULL OR avatar = '' THEN 0 ELSE 1 END AS has_avatar,
+            avatar_revision,
+            avatar_frame, avatar_overlay, equipped_title, onboarded_at
      FROM users WHERE id = ?`,
     id
   )
@@ -370,6 +373,8 @@ export const login = async (req, res) => {
     token, user.id, new Date().toISOString()
   )
   setSessionCookie(res, token)
+  user.avatar = getPublicAvatarUrl(user.id, Boolean(user.has_avatar), { revision: user.avatar_revision })
+  delete user.has_avatar
   const serialized = await serializeUser(db, user)
   return res.json({ token, user: serialized })
 }
@@ -510,35 +515,4 @@ export const updatePassword = async (req, res) => {
     revokedAllSessions: true,
     requiresLogin: true,
   })
-}
-
-export const updateAvatar = async (req, res) => {
-  const token = getAuthToken(req)
-  if (!token) {
-    return res.status(401).json({ message: '未登录' })
-  }
-  const { avatar } = req.body || {}
-  if (typeof avatar !== 'string' || !avatar) {
-    return res.status(400).json({ message: '请提供头像数据' })
-  }
-  // MIME 白名单：仅允许常见位图格式，拒绝 svg（可携带脚本）
-  if (!/^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(avatar)) {
-    return res.status(400).json({ message: '仅支持 PNG/JPG/WebP/GIF 图片' })
-  }
-  if (avatar.length > 3000000) {
-    return res.status(400).json({ message: '图片过大，请选择小于 2MB 的图片' })
-  }
-  const db = await getDb()
-  const user = await getUserByToken(db, token)
-  if (!user) {
-    return res.status(401).json({ message: '登录已失效' })
-  }
-  if (user.is_banned) {
-    await db.run(`DELETE FROM sessions WHERE token = ?`, token)
-    return res.status(403).json({ message: '账号已被封禁' })
-  }
-  await db.run(`UPDATE users SET avatar = ? WHERE id = ?`, avatar, user.id)
-  user.avatar = avatar
-  const serialized = await serializeUser(db, user)
-  return res.json({ user: serialized })
 }
